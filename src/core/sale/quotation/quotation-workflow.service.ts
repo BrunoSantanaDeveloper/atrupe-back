@@ -24,8 +24,12 @@ import {
   QuotationForFinancial,
   ProductionStageJson,
 } from './quotation-financial.types';
-import { calculateFinalValue } from './quotation.utils';
-import { soldMeasureOf } from './item-base-price';
+import {
+  BASE_PRICE_ITEM_SELECT,
+  basePriceContext,
+  discountOverBase,
+  soldMeasureOf,
+} from './item-base-price';
 import { PlanControlService } from '../../plan/plan-control.service';
 import { companyWithoutKeys } from 'src/shared/company/company-keys';
 import { ProductSaleService } from '../../assembly/product-sale.service';
@@ -128,24 +132,6 @@ export type ApprovedOrder = Order & {
 };
 
 /** Quanto existe de cada passo da aprovação; o reprocesso compara antes e depois. */
-/** O que a conta do limite de desconto do vendedor lê do orçamento. */
-type DiscountInput = {
-  totalValue: number;
-  quotationPayment?: {
-    finalValue?: number | null;
-    discountTotal?: number | null;
-    discountValue?: number | null;
-    discountType?: string | null;
-  } | null;
-  quotationProduct?:
-    | {
-        totalValue?: number | null;
-        addition?: number | null;
-        linesTotal?: number | null;
-      }[]
-    | null;
-};
-
 type ApprovalState = {
   order: number;
   deliverySchedule: number;
@@ -346,59 +332,38 @@ export class QuotationWorkflowService {
   }
 
   /**
-   * O limite de desconto do vendedor (EC-2): o desconto do orçamento sobre a
-   * soma dos itens, com o acréscimo e as linhas acrescentadas fora dele
-   * (ALT-25, ORC-5). O /finish confere; a aprovação e o "Cobrar" da venda
-   * rápida, que não passam por ele, também (revisão de 23/10/2026).
+   * O limite de desconto do vendedor (EC-2, ALT-8): o desconto sobre a soma
+   * dos preços base do cadastro (baixar o preço do item conta como desconto),
+   * a mesma conta da tela (lib/discountLimit). Acréscimo e linhas ficam
+   * fora; item sem preço base também. O /finish, a aprovação e o "Cobrar" da
+   * venda rápida conferem (pacote de 26/10/2026; antes, sobre o valor
+   * digitado).
    */
-  private assertDiscountLimit(
-    quotation: DiscountInput,
+  private async assertDiscountLimit(
+    quotationId: string,
+    companyId: string,
+    generalDiscount: number | null | undefined,
     maxDiscount: number | null | undefined,
   ) {
     if (maxDiscount === null || maxDiscount === undefined) return;
-    const originalValue =
-      quotation.quotationProduct?.reduce(
-        (sum, product) => sum + (product.totalValue || 0),
-        0,
-      ) || quotation.totalValue;
-    // O acréscimo e as linhas acrescentadas ficam fora do limite de
-    // desconto (ALT-25, ORC-5): entram no que foi vendido, não no desconto
-    const extras =
-      quotation.quotationProduct?.reduce(
-        (sum, product) =>
-          sum + (product.addition || 0) + (product.linesTotal || 0),
-        0,
-      ) ?? 0;
-
-    let finalValue = quotation.quotationPayment?.finalValue;
-
-    if (!finalValue && quotation.quotationPayment?.discountTotal) {
-      finalValue =
-        quotation.totalValue - quotation.quotationPayment.discountTotal;
-    }
-
-    if (!finalValue) {
-      finalValue = calculateFinalValue(
-        quotation.totalValue,
-        quotation.quotationPayment?.discountValue ?? null,
-        quotation.quotationPayment?.discountType ?? null,
-      );
-    }
-    if (!originalValue) return;
-
-    const totalDiscount = originalValue + extras - finalValue;
-    // Arredonda antes de comparar: 10% de R$ 1.163,73 dá 10.000000000000002
-    // em ponto flutuante, e o checkout recusava um desconto de exatamente
-    // 10% com a mensagem "10.00% excede 10%". O mesmo valor arredondado vai
-    // na mensagem, para o texto nunca contradizer a comparação.
-    const discountPercentage =
-      Math.round(
-        ((totalDiscount / originalValue) * 100 + Number.EPSILON) * 100,
-      ) / 100;
-
-    if (discountPercentage > maxDiscount) {
+    const items = await this.prisma.quotationProduct.findMany({
+      where: { quotationId },
+      select: BASE_PRICE_ITEM_SELECT,
+    });
+    const context = await basePriceContext(
+      this.prisma,
+      this.planControl,
+      companyId,
+      items.filter((item) => item.origin === 'COMPOSED').map((item) => item.id),
+    );
+    const { base, percentage } = discountOverBase(
+      items,
+      context,
+      generalDiscount ?? 0,
+    );
+    if (base > 0 && percentage > maxDiscount) {
       throw new BadRequestException(
-        `O desconto aplicado (${discountPercentage.toFixed(2)}%) excede o limite máximo permitido para este vendedor (${maxDiscount}%).`,
+        `O desconto aplicado (${percentage.toFixed(2)}%) excede o limite máximo permitido para este vendedor (${maxDiscount}%).`,
       );
     }
   }
@@ -693,8 +658,10 @@ export class QuotationWorkflowService {
     // O limite de desconto do vendedor vale aqui também: a venda rápida vai
     // direto ao "Cobrar" ou ao caixa, sem o /finish. A importação não confere
     if (options.creditCheck !== false) {
-      this.assertDiscountLimit(
-        current,
+      await this.assertDiscountLimit(
+        quotationId,
+        current.companyId,
+        current.quotationPayment?.discountTotal,
         current.seller?.sellerProfile?.maxDiscount,
       );
     }
@@ -1691,8 +1658,13 @@ export class QuotationWorkflowService {
       );
     }
 
-    // Validação de desconto máximo
-    this.assertDiscountLimit(quotation, maxDiscount);
+    // Validação de desconto máximo, sobre o preço base (ALT-8)
+    await this.assertDiscountLimit(
+      quotationId,
+      quotation.companyId,
+      quotation.quotationPayment?.discountTotal,
+      maxDiscount,
+    );
 
     const finishedAt = new Date();
     const proposalValidity = quotation.series?.proposalValidity || 0;

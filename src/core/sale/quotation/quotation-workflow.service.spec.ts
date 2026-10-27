@@ -62,6 +62,19 @@ const itemsOnly =
         ? Promise.reject(rows)
         : Promise.resolve(rows);
 
+/**
+ * Os itens com preço base para a conta do limite de desconto (ALT-8): só a
+ * consulta dela pede o linesTotal; as outras (o item montado sem etapas, o
+ * terceirizado) recebem a lista vazia.
+ */
+const itemsForDiscountLimit = (
+  findMany: jest.Mock,
+  items: Record<string, unknown>[],
+) =>
+  findMany.mockImplementation(async (args) =>
+    args?.select?.linesTotal ? items : [],
+  );
+
 const createMockPrismaService = () => ({
   // O perfil do vendedor (somente enviar ao caixa, FC-12.1): sem perfil
   employee: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -426,6 +439,17 @@ describe('QuotationWorkflowService', () => {
         prisma.quotation.findUnique.mockImplementation(async (args) =>
           args.select ? withDiscount(9000) : mockQuotation,
         );
+        // Preço base 100,00 (o do cadastro) e o item vendido por 90,00
+        itemsForDiscountLimit(prisma.quotationProduct.findMany, [
+          {
+            id: 'item-1',
+            origin: 'MATERIAL',
+            totalValue: 10000,
+            finalValue: 9000,
+            addition: 0,
+            linesTotal: 0,
+          },
+        ]);
 
         await expect(
           service.approve(mockQuotationId, mockUserId),
@@ -433,6 +457,63 @@ describe('QuotationWorkflowService', () => {
           'O desconto aplicado (10.00%) excede o limite máximo permitido para este vendedor (5%).',
         );
         expect(prisma.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('baixar o preço do produto abaixo do cadastro conta como desconto (ALT-8)', async () => {
+        prisma.quotation.findUnique.mockImplementation(async (args) =>
+          args.select ? withDiscount(7000) : mockQuotation,
+        );
+        // R$ 100,00/m² no cadastro, 1 m²; vendido por R$ 70,00
+        itemsForDiscountLimit(prisma.quotationProduct.findMany, [
+          {
+            id: 'item-1',
+            origin: 'PRODUCT',
+            quantity: 1,
+            totalValue: 7000,
+            finalValue: 7000,
+            addition: 0,
+            linesTotal: 0,
+            items: [
+              {
+                unitKind: 'AREA',
+                quantity: 1,
+                width: 1000,
+                height: 1000,
+                productItem: { unitCost: 0.01 },
+              },
+            ],
+          },
+        ]);
+
+        await expect(
+          service.approve(mockQuotationId, mockUserId),
+        ).rejects.toThrow(
+          'O desconto aplicado (30.00%) excede o limite máximo permitido para este vendedor (5%).',
+        );
+      });
+
+      it('item sem preço base fica fora: o terceirizado avulso não trava', async () => {
+        prisma.quotation.findUnique.mockImplementation(async (args) =>
+          args.select
+            ? withDiscount(0)
+            : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+        );
+        itemsForDiscountLimit(prisma.quotationProduct.findMany, [
+          {
+            id: 'item-1',
+            origin: 'OUTSOURCED',
+            quantity: 1,
+            totalValue: 0,
+            finalValue: 29000,
+            addition: 0,
+            linesTotal: 29000,
+            items: [],
+          },
+        ]);
+
+        await expect(
+          service.approve(mockQuotationId, mockUserId),
+        ).resolves.toMatchObject({ id: mockOrderId });
       });
 
       it('aprova com desconto dentro do limite', async () => {
@@ -1193,6 +1274,18 @@ describe('QuotationWorkflowService', () => {
       { totalValue: 50403 },
     ];
 
+    // O limite mede sobre o preço base (ALT-8): o material de venda direta
+    // tem a base igual ao valor do cadastro, o que fixa a base em 116373
+    const comBase = (items: { totalValue: number }[]) =>
+      items.map((item, index) => ({
+        id: `qp-${index}`,
+        origin: 'MATERIAL',
+        totalValue: item.totalValue,
+        finalValue: item.totalValue,
+        addition: 0,
+        linesTotal: 0,
+      }));
+
     const mockFinishWithDiscount = (
       maxDiscount: number,
       finalValue: number,
@@ -1205,10 +1298,16 @@ describe('QuotationWorkflowService', () => {
           billing: 'ON_ORDER',
           quotationInstallment: [{}],
           finalValue,
+          // O desconto geral das condições
+          discountTotal: 116373 - finalValue,
         },
         quotationProduct: itensDeCemPorCento,
         series: { proposalValidity: 30 },
       });
+      itemsForDiscountLimit(
+        prisma.quotationProduct.findMany,
+        comBase(itensDeCemPorCento),
+      );
       prisma.quotation.update.mockResolvedValue({
         ...mockQuotation,
         status: QuotationStatus.DONE,
@@ -1283,6 +1382,17 @@ describe('QuotationWorkflowService', () => {
         ],
         series: { proposalValidity: 30 },
       });
+      // Base 100,00; o item vale 90,00 sem o acréscimo e as linhas
+      itemsForDiscountLimit(prisma.quotationProduct.findMany, [
+        {
+          id: 'qp-1',
+          origin: 'MATERIAL',
+          totalValue: 10000,
+          finalValue: 17000,
+          addition: 3000,
+          linesTotal: 5000,
+        },
+      ]);
 
       await expect(service.finish(mockQuotationId, mockUserId)).rejects.toThrow(
         'O desconto aplicado (10.00%) excede o limite máximo permitido para este vendedor (5%).',

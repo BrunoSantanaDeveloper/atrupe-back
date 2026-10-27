@@ -1,4 +1,8 @@
-import { basePriceOf, BasePriceContext } from './item-base-price';
+import {
+  basePriceOf,
+  BasePriceContext,
+  discountOverBase,
+} from './item-base-price';
 import { transformQuotationItem } from './quotation.transformers';
 
 /**
@@ -144,5 +148,64 @@ describe('transformQuotationItem — basePrice', () => {
 
   it('fica de fora sem o contexto (a resposta de um item só)', () => {
     expect(transformQuotationItem(qp)).not.toHaveProperty('basePrice');
+  });
+});
+
+/**
+ * O limite de desconto sobre o preço base (ALT-8), a mesma conta da tela
+ * (lib/discountLimit do front): a soma das bases contra o que os itens com
+ * base valem (sem acréscimo e linhas), mais o desconto geral.
+ */
+describe('discountOverBase', () => {
+  const plain: BasePriceContext = { suggested: new Map(), tiers: true };
+  const material = (id: string, base: number, finalValue: number) => ({
+    id,
+    origin: 'MATERIAL',
+    totalValue: base,
+    finalValue,
+    addition: 0,
+    linesTotal: 0,
+  });
+
+  it('o preço abaixo da base é desconto, e o desconto geral soma', () => {
+    expect(discountOverBase([material('a', 10000, 9000)], plain, 500)).toEqual({
+      base: 10000,
+      discount: 1500,
+      percentage: 15,
+    });
+  });
+
+  it('item acima da base compensa desconto em outro', () => {
+    expect(
+      discountOverBase(
+        [material('a', 10000, 11000), material('b', 10000, 9000)],
+        plain,
+      ),
+    ).toEqual({ base: 20000, discount: 0, percentage: 0 });
+  });
+
+  it('o acréscimo e as linhas ficam fora', () => {
+    const item = {
+      ...material('a', 10000, 17000),
+      addition: 3000,
+      linesTotal: 5000,
+    };
+    expect(discountOverBase([item], plain).percentage).toBe(10);
+  });
+
+  it('item sem preço base fica fora da conta', () => {
+    const outsourced = {
+      id: 'b',
+      origin: 'OUTSOURCED',
+      totalValue: 0,
+      finalValue: 29000,
+      linesTotal: 29000,
+      items: [],
+    };
+    expect(discountOverBase([outsourced], plain)).toEqual({
+      base: 0,
+      discount: 0,
+      percentage: 0,
+    });
   });
 });

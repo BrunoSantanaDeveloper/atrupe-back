@@ -149,6 +149,76 @@ export function basePriceOf(
 }
 
 /**
+ * O que a conta do preço base lê de cada item (o mesmo que o detalhe lê),
+ * mais o valor final, o acréscimo e as linhas para o limite de desconto.
+ */
+export const BASE_PRICE_ITEM_SELECT = {
+  id: true,
+  origin: true,
+  quantity: true,
+  totalValue: true,
+  finalValue: true,
+  addition: true,
+  linesTotal: true,
+  variation: { select: { unitPrice: true } },
+  product: {
+    select: {
+      priceTiers: {
+        where: { variationId: null },
+        select: { from: true, unitPrice: true },
+      },
+    },
+  },
+  items: {
+    select: {
+      unitKind: true,
+      quantity: true,
+      width: true,
+      height: true,
+      length: true,
+      volume: true,
+      weight: true,
+      distance: true,
+      duration: true,
+      productItem: { select: { unitCost: true } },
+    },
+  },
+} as const;
+
+/**
+ * O desconto do orçamento sobre a soma dos preços base (ALT-8, EC-2), a
+ * mesma conta da tela (lib/discountLimit): a soma das bases dos itens com
+ * preço base contra o que esses itens valem (o valor final, sem o acréscimo
+ * e as linhas, ALT-25 e ORC-5), mais o desconto geral das condições. Item
+ * acima da base compensa desconto em outro; item sem preço base fica fora.
+ */
+export function discountOverBase(
+  items: (BasePriceItem & {
+    finalValue?: number | null;
+    addition?: number | null;
+    linesTotal?: number | null;
+  })[],
+  context: BasePriceContext,
+  generalDiscount = 0,
+) {
+  let base = 0;
+  let effective = 0;
+  for (const item of items) {
+    const itemBase = basePriceOf(item, context) ?? 0;
+    if (itemBase <= 0) continue;
+    base += itemBase;
+    effective +=
+      (item.finalValue || 0) - (item.addition || 0) - (item.linesTotal || 0);
+  }
+  const discount = Math.max(base - effective + (generalDiscount || 0), 0);
+  const percentage =
+    base > 0
+      ? Math.round(((discount / base) * 100 + Number.EPSILON) * 100) / 100
+      : 0;
+  return { base, discount, percentage };
+}
+
+/**
  * O que a conta precisa além do item: o preço sugerido dos retratos (só
  * ele; o retrato tem custo e não sai para a tela, ORC-7) e se as faixas
  * valem no plano da empresa.
