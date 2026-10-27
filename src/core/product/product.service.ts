@@ -593,8 +593,10 @@ export class ProductService {
           }),
           ...(updateProductDto.allowEditValues !== undefined && {
             allowEditValues: updateProductDto.allowEditValues,
-            ...outsourced,
           }),
+          // O terceirizado vale por si: dentro do bloco acima, só gravava
+          // quando o corpo trazia também o allowEditValues
+          ...outsourced,
           items: {
             upsert: itemsWithId?.map((item) => ({
               where: { id: item.id },

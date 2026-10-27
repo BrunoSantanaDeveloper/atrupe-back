@@ -31,6 +31,7 @@ describe('ProductService.update parcial', () => {
         findFirst: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
       },
+      supplier: { count: jest.fn().mockResolvedValue(1) },
     };
     service = new ProductService(prisma, {} as any);
   });
@@ -58,5 +59,22 @@ describe('ProductService.update parcial', () => {
     expect(
       prisma.product.update.mock.calls[0][0].data.productionStages,
     ).toEqual([]);
+  });
+
+  // O terceirizado gravava só junto do allowEditValues (pacote de 26/10)
+  it('liga o terceirizado sem mandar as liberações de edição', async () => {
+    await service.update('pr-1', {
+      isOutsourced: true,
+      outsourcedCost: 0.02,
+      supplierIds: ['s-1'],
+    } as any);
+
+    const data = prisma.product.update.mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      isOutsourced: true,
+      outsourcedCost: 0.02,
+      suppliers: { set: [{ id: 's-1' }] },
+    });
+    expect(data).not.toHaveProperty('allowEditValues');
   });
 });
