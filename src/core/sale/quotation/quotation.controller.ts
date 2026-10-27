@@ -85,6 +85,8 @@ import {
   UpdateMaterialItemDto,
 } from './dto/material-item.dto';
 import { QuickSaleService } from '../quick-sale/quick-sale.service';
+import { FollowUpService } from './follow-up/follow-up.service';
+import { RegisterContactDto } from './follow-up/follow-up.dto';
 import { QUICK_SALE_LOCKED, isAtCashier } from '../quick-sale/quick-sale.rules';
 import { ReceiptDto } from '../../financial/cash-control/dto/receipt-part.dto';
 
@@ -129,6 +131,7 @@ export class QuotationController {
     private readonly composed: ComposedItemService,
     private readonly assemblies: ProductAssemblyService,
     private readonly quickSale: QuickSaleService,
+    private readonly followUp: FollowUpService,
   ) {}
 
   /**
@@ -1096,6 +1099,43 @@ export class QuotationController {
     }
     await this.validateOwnership(id, req.user, 'edit');
     return this.quotationService.billQuotation(id);
+  }
+
+  // Registrar contato (CRM-1, 27/10/2026): grava o contato e, no mesmo
+  // corpo, o próximo contato, o lembrete e o marcador
+  @Post(':id/contact')
+  @HasPermission('edit', 'sale:quotation')
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'Registra um contato da negociação (CRM-1)' })
+  @ApiParam({ name: 'id', description: 'ID do orçamento' })
+  async registerContact(
+    @Param('id') id: string,
+    @Body() dto: RegisterContactDto,
+    @Req() req,
+  ) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+    await this.validateOwnership(id, req.user, 'edit');
+    return this.followUp.registerContact(
+      { userId: req.user.userId, companyId: req.user.companyId },
+      id,
+      dto,
+    );
+  }
+
+  // A linha do tempo da negociação: contatos e eventos juntos (CRM-1)
+  @Get(':id/contacts')
+  @HasPermission('view', 'sale:quotation')
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'Contatos e eventos do orçamento (CRM-1)' })
+  @ApiParam({ name: 'id', description: 'ID do orçamento' })
+  async contacts(@Param('id') id: string, @Req() req) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+    await this.validateOwnership(id, req.user, 'view');
+    return this.followUp.timeline(req.user.companyId, id);
   }
 
   @Post(':id/reject')

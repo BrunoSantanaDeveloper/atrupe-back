@@ -1415,6 +1415,8 @@ model Quotation {
   nextContactAt     DateTime?
   nextContactNote   String?
   quickSale         Boolean            @default(false)
+  /// Contatos registrados na negociação (CRM fase 2, 27/10/2026)
+  contacts          QuotationContact[]
   isImported        Boolean            @default(false)
   quotationNumber   Int?
   legacyId          String?
@@ -5024,4 +5026,60 @@ enum StatementLineStatus {
   UNMATCHED
   CREATED
   IGNORED
+}
+
+// ---------------------------------------------------------------------------
+// CRM fase 2 (27/10/2026): contatos da negociação e configuração do
+// acompanhamento. O contato é uma tabela própria, não o histórico do
+// orçamento: o cliente agrega contatos de vários orçamentos e o relatório
+// conta por resultado.
+// ---------------------------------------------------------------------------
+
+enum ContactChannel {
+  WHATSAPP
+  PHONE
+  EMAIL
+  IN_PERSON
+}
+
+enum ContactOutcome {
+  WAITING_CLIENT
+  ADJUST_REQUESTED
+  WILL_CLOSE
+  NO_RESPONSE
+  OTHER
+}
+
+model QuotationContact {
+  id          String         @id @default(uuid())
+  companyId   String
+  quotationId String
+  clientId    String?
+  userId      String
+  userName    String?
+  channel     ContactChannel @default(WHATSAPP)
+  outcome     ContactOutcome @default(WAITING_CLIENT)
+  note        String?
+  at          DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+  quotation   Quotation      @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@index([quotationId, at])
+  @@index([clientId, at])
+  @@index([companyId, at])
+  @@map("quotation_contacts")
+}
+
+model FollowUpSettings {
+  id                   String   @id @default(uuid())
+  companyId            String   @unique
+  templateProposalSent String?
+  templateValidity     String?
+  templateResume       String?
+  dailyEmail           Boolean  @default(false)
+  dailyEmailHour       Int      @default(8)
+  inactiveDays         Int      @default(90)
+  updatedAt            DateTime @updatedAt
+
+  @@map("follow_up_settings")
 }

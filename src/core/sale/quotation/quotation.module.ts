@@ -26,6 +26,8 @@ import { CreditCheckService } from './credit-check.service';
 import { ComposedItemService } from './composed-item.service';
 import { QuickSaleService } from '../quick-sale/quick-sale.service';
 import { QuickSaleController } from '../quick-sale/quick-sale.controller';
+import { FollowUpService } from './follow-up/follow-up.service';
+import { FollowUpController } from './follow-up/follow-up.controller';
 
 @Module({
   imports: [
@@ -46,7 +48,7 @@ import { QuickSaleController } from '../quick-sale/quick-sale.controller';
     ProductionModule,
   ],
   // A venda rápida (Fase 7.3) é o mesmo orçamento
-  controllers: [QuotationController, QuickSaleController],
+  controllers: [QuotationController, QuickSaleController, FollowUpController],
   providers: [
     QuotationService,
     QuotationCrudService,
@@ -61,6 +63,8 @@ import { QuickSaleController } from '../quick-sale/quick-sale.controller';
     // O item montado na hora (ORC-11, Fase 4.5)
     ComposedItemService,
     QuickSaleService,
+    // Acompanhamento comercial (CRM fase 2)
+    FollowUpService,
   ],
   exports: [
     QuotationService,
@@ -72,6 +76,7 @@ import { QuickSaleController } from '../quick-sale/quick-sale.controller';
     QuotationImportService,
     CreditCheckService,
     QuickSaleService,
+    FollowUpService,
   ],
 })
 export class QuotationModule {}

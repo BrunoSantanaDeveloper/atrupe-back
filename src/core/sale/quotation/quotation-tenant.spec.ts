@@ -47,6 +47,8 @@ describe('Orçamento: outra empresa', () => {
       assemblies as any,
       // A venda rápida (Fase 7.3)
       { create: jest.fn(), charge: jest.fn(), cashStatus: jest.fn() } as any,
+      // Acompanhamento comercial (CRM fase 2)
+      {} as any,
     );
     const req = { user: { userId: 'u-a', companyId: 'empresa-a' } };
     const id = '6f1c2b8e-4d3a-4f5b-9c7d-1e2f3a4b5c6d';

@@ -94,12 +94,12 @@ export class FilterQuotationDto extends BaseFilterDTO {
   tagId?: string;
 
   @IsOptional()
-  @IsIn(['due'])
+  @IsIn(['due', 'none', 'expiring'])
   @ApiProperty({
     description:
-      '"due": orçamentos em Digitação ou Aguardando com próximo contato até hoje (a lista "para retomar")',
+      '"due": em negociação com próximo contato até hoje ou proposta vencendo em até 2 dias ("para retomar"); "none": Aguardando sem próximo contato; "expiring": Aguardando com validade em até 2 dias (CRM-2, 27/10/2026)',
     required: false,
-    enum: ['due'],
+    enum: ['due', 'none', 'expiring'],
   })
-  nextContact?: 'due';
+  nextContact?: 'due' | 'none' | 'expiring';
 }

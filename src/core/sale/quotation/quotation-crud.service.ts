@@ -29,6 +29,11 @@ import { copyItemLines } from './quotation-lines.service';
 import { itemValue } from './quotation-totals';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 import { followDeliveryInTx } from '../../production/production-follow';
+import {
+  dueWhere,
+  expiringWhere,
+  noContactWhere,
+} from './follow-up/follow-up.service';
 
 const EXPORT_LIMIT = '10000';
 
@@ -377,21 +382,21 @@ export class QuotationCrudService {
       const status = isOverdue ? 'OVERDUE' : quotation.status;
       statusCount[status]++;
     });
-    // "Para retomar hoje": próximo contato até o fim de hoje, em negociação
-    const retomar = await this.prisma.quotation.count({
-      where: {
-        companyId,
-        isActive: true,
-        status: { in: ['OPEN', 'DONE'] },
-        nextContactAt: { lte: endOfDay(new Date()) },
-        ...(sellerId ? { sellerId } : {}),
-      },
-    });
+    // Aba Aguardando (CRM-2, 27/10/2026): para retomar (contato até hoje ou
+    // proposta vencendo), sem próximo contato e vencendo
+    const scope = { companyId, ...(sellerId ? { sellerId } : {}) };
+    const [retomar, semContato, vencendo] = await Promise.all([
+      this.prisma.quotation.count({ where: { ...scope, ...dueWhere() } }),
+      this.prisma.quotation.count({ where: { ...scope, ...noContactWhere() } }),
+      this.prisma.quotation.count({ where: { ...scope, ...expiringWhere() } }),
+    ]);
 
     const total = Object.values(statusCount).reduce((acc, cur) => acc + cur, 0);
 
     return {
       retomar,
+      semContato,
+      vencendo,
       ...statusCount,
       TOTAL: total,
     };
@@ -484,14 +489,16 @@ export class QuotationCrudService {
         where = { ...where, tagId: dto.tagId };
       }
 
-      // "Para retomar": próximo contato até o fim de hoje, com o orçamento
-      // ainda em negociação (acompanhamento comercial, 24/10/2026)
+      // "Para retomar": próximo contato até o fim de hoje ou proposta
+      // vencendo, com o orçamento ainda em negociação (CRM-2, 27/10/2026);
+      // "sem próximo contato" e "vencendo" são os outros filtros da aba
+      // Aguardando
       if (dto.nextContact === 'due') {
-        where = {
-          ...where,
-          status: { in: ['OPEN', 'DONE'] },
-          nextContactAt: { lte: endOfDay(new Date()) },
-        };
+        where = { ...where, ...dueWhere() };
+      } else if (dto.nextContact === 'none') {
+        where = { ...where, ...noContactWhere() };
+      } else if (dto.nextContact === 'expiring') {
+        where = { ...where, ...expiringWhere() };
       }
 
       if (dto.date) {
@@ -528,6 +535,12 @@ export class QuotationCrudService {
           where,
           include: {
             tag: true,
+            // O último contato registrado (CRM-2)
+            contacts: {
+              orderBy: { at: 'desc' },
+              take: 1,
+              select: { at: true, channel: true, outcome: true },
+            },
             reasons: { select: { id: true, reason: true } },
             series: true,
             client: true,
@@ -611,6 +624,13 @@ export class QuotationCrudService {
               : null,
             nextContactAt: (quotation as any).nextContactAt ?? null,
             nextContactNote: (quotation as any).nextContactNote ?? null,
+            lastContact: (quotation as any).contacts?.[0]
+              ? {
+                  at: (quotation as any).contacts[0].at,
+                  channel: (quotation as any).contacts[0].channel,
+                  outcome: (quotation as any).contacts[0].outcome,
+                }
+              : null,
             serie: quotation.series
               ? {
                   id: quotation.series.id,

@@ -4452,4 +4452,172 @@ export class ReportService {
       totalValue,
     };
   }
+
+  /**
+   * Conversão por origem de contato e por vendedor (CRM-6, 27/10/2026):
+   * quantos orçamentos foram criados no período, quantos aprovaram, a taxa
+   * e o tempo médio até fechar (criação → aprovação), em dias.
+   */
+  async getConversion(companyId: string, filters: SalesReportFilterDto) {
+    const { startDate, endDate } = this.getDateRange(filters);
+    const rows = await this.prisma.quotation.findMany({
+      where: {
+        ...this.getSalesQuotationFilters(companyId, filters),
+        isActive: true,
+        createdAt: { gte: startDate, lte: endDate },
+      },
+      select: {
+        status: true,
+        createdAt: true,
+        approvedAt: true,
+        totalValue: true,
+        contactSource: { select: { id: true, name: true } },
+        seller: { select: { id: true, name: true } },
+      },
+    });
+    type Row = {
+      id: string | null;
+      name: string;
+      quotations: number;
+      approved: number;
+      value: number;
+      days: number[];
+    };
+    const group = (
+      key: (row: (typeof rows)[number]) => { id: string | null; name: string },
+    ) => {
+      const map = new Map<string, Row>();
+      for (const row of rows) {
+        const k = key(row);
+        const entry = map.get(k.id ?? 'none') ?? {
+          id: k.id,
+          name: k.name,
+          quotations: 0,
+          approved: 0,
+          value: 0,
+          days: [],
+        };
+        entry.quotations += 1;
+        if (row.status === 'APPROVED') {
+          entry.approved += 1;
+          entry.value += Math.round(row.totalValue || 0);
+          if (row.approvedAt) {
+            entry.days.push(
+              (row.approvedAt.getTime() - row.createdAt.getTime()) / 86400000,
+            );
+          }
+        }
+        map.set(k.id ?? 'none', entry);
+      }
+      return [...map.values()]
+        .map(({ days, ...entry }) => ({
+          ...entry,
+          rate: entry.quotations
+            ? Math.round((entry.approved / entry.quotations) * 1000) / 10
+            : 0,
+          averageDays: days.length
+            ? Math.round((days.reduce((a, b) => a + b, 0) / days.length) * 10) /
+              10
+            : null,
+        }))
+        .sort((a, b) => b.quotations - a.quotations);
+    };
+    return {
+      byOrigin: group((row) => ({
+        id: row.contactSource?.id ?? null,
+        name: row.contactSource?.name ?? 'Sem origem',
+      })),
+      bySeller: group((row) => ({
+        id: row.seller?.id ?? null,
+        name: row.seller?.name ?? 'Sem vendedor',
+      })),
+    };
+  }
+
+  /**
+   * Clientes sem compra há N dias (CRM-4, 27/10/2026): quem já comprou e
+   * não compra há mais de N dias, com a última venda para "repetir o
+   * último pedido". Cliente que nunca comprou não entra: é prospecção.
+   */
+  async getInactiveClients(companyId: string, days: number, sellerId?: string) {
+    const limit = new Date();
+    limit.setDate(limit.getDate() - days);
+    const last = await this.prisma.quotation.groupBy({
+      by: ['clientId'],
+      where: {
+        companyId,
+        isActive: true,
+        status: 'APPROVED',
+        clientId: { not: null },
+        ...(sellerId ? { sellerId } : {}),
+      },
+      _max: { approvedAt: true },
+      _count: { _all: true },
+      _sum: { totalValue: true },
+    });
+    const inactive = last.filter(
+      (row) => row._max.approvedAt && row._max.approvedAt < limit,
+    );
+    if (!inactive.length) return { days, clients: [] };
+    const ids = inactive.map((row) => row.clientId as string);
+    const [clients, lastSales] = await Promise.all([
+      this.prisma.client.findMany({
+        where: { id: { in: ids }, status: { not: 'INACTIVE' } },
+        select: { id: true, name: true, mobile: true, phone: true },
+      }),
+      this.prisma.quotation.findMany({
+        where: {
+          companyId,
+          isActive: true,
+          status: 'APPROVED',
+          clientId: { in: ids },
+        },
+        orderBy: { approvedAt: 'desc' },
+        select: {
+          id: true,
+          clientId: true,
+          approvedAt: true,
+          totalValue: true,
+          description: true,
+          quotationNumber: true,
+          series: { select: { code: true } },
+        },
+      }),
+    ]);
+    const lastByClient = new Map<string, (typeof lastSales)[number]>();
+    for (const sale of lastSales) {
+      if (sale.clientId && !lastByClient.has(sale.clientId)) {
+        lastByClient.set(sale.clientId, sale);
+      }
+    }
+    const now = Date.now();
+    return {
+      days,
+      clients: clients
+        .map((client) => {
+          const row = inactive.find((r) => r.clientId === client.id)!;
+          const sale = lastByClient.get(client.id);
+          return {
+            id: client.id,
+            name: client.name,
+            phone: client.mobile || client.phone || null,
+            purchases: row._count._all,
+            total: Math.round(row._sum.totalValue || 0),
+            lastPurchaseAt: row._max.approvedAt?.toISOString() ?? null,
+            daysSince: row._max.approvedAt
+              ? Math.floor((now - row._max.approvedAt.getTime()) / 86400000)
+              : null,
+            lastQuotation: sale
+              ? {
+                  id: sale.id,
+                  reference: `${sale.quotationNumber ?? ''}-${sale.series?.code ?? ''}`,
+                  description: sale.description,
+                  value: Math.round(sale.totalValue || 0),
+                }
+              : null,
+          };
+        })
+        .sort((a, b) => (b.daysSince ?? 0) - (a.daysSince ?? 0)),
+    };
+  }
 }

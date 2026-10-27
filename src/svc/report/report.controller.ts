@@ -193,6 +193,33 @@ export class ReportController {
     return this.reportService.getLossesByReason(companyId, filters);
   }
 
+  // Conversão por origem e por vendedor (CRM-6, 27/10/2026)
+  @Get('sales/conversion')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
+  async getConversion(
+    @Query() filters: SalesReportFilterDto,
+    @Req() req: Request,
+  ) {
+    const companyId = (req as any).user?.companyId;
+    await this.enforceSalesPermission(req, filters);
+    return this.reportService.getConversion(companyId, filters);
+  }
+
+  // Clientes sem compra há N dias (CRM-4, 27/10/2026)
+  @Get('sales/inactive-clients')
+  @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
+  async getInactiveClients(@Query('days') days: string, @Req() req: Request) {
+    const companyId = (req as any).user?.companyId;
+    const filters: { sellerId?: string } = {};
+    await this.enforceSalesPermission(req, filters);
+    const n = Math.min(730, Math.max(7, Number(days) || 90));
+    return this.reportService.getInactiveClients(
+      companyId,
+      n,
+      filters.sellerId,
+    );
+  }
+
   @Get('sales/quotations-origin')
   @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
   async getQuotationsOrigin(
