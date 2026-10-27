@@ -224,12 +224,6 @@ export class ReportService {
   // ============== SALES REPORT METHODS ==============
 
   /**
-   * O filtro chega como 'YYYY-MM-DD' e `new Date()` lia isso como meia-noite
-   * UTC. Com `lte` na meia-noite, o último dia do período ficava inteiro de
-   * fora — uma venda aprovada em 31/08 não aparecia no relatório de agosto.
-   * `parseProjectDayBoundary` monta início/fim do dia no fuso da operação.
-   */
-  /**
    * Perdas por motivo (24/10/2026): os orçamentos rejeitados e as vendas
    * canceladas no período, agrupados pelo motivo informado. Sem motivo (START
    * ou registro antigo) entra como "Sem motivo". Valor em centavos, como o
@@ -302,6 +296,12 @@ export class ReportService {
     };
   }
 
+  /**
+   * O filtro chega como 'YYYY-MM-DD' e `new Date()` lia isso como meia-noite
+   * UTC. Com `lte` na meia-noite, o último dia do período ficava inteiro de
+   * fora — uma venda aprovada em 31/08 não aparecia no relatório de agosto.
+   * `parseProjectDayBoundary` monta início/fim do dia no fuso da operação.
+   */
   private getDateRange(filters: SalesReportFilterDto) {
     const now = new Date();
     const startDate = filters.startDate
