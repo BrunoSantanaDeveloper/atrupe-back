@@ -27,6 +27,7 @@ import {
   OpenCashSessionDto,
   ReceiveSaleDto,
   SaleReasonDto,
+  RejectSaleDto,
 } from './dto/pdv.dto';
 
 const UUID = new ParseUUIDPipe({ version: '4' });
@@ -179,6 +180,20 @@ export class PdvController {
       dto.reason,
       await this.pdv.actorOf(req.user),
     );
+  }
+
+  // Rejeitar a venda que ainda não recebeu nada (FC-13.1, 27/10/2026): o
+  // cliente desistiu no balcão. É a permissão de operar o caixa, não a de
+  // cancelar venda paga
+  @Post('sale/:id/reject')
+  @HasPermission('edit', 'financial:pdv')
+  @ApiOperation({ summary: 'Rejeita a venda da fila, sem valor recebido' })
+  async reject(
+    @Req() req,
+    @Param('id', UUID) id: string,
+    @Body() dto: RejectSaleDto,
+  ) {
+    return this.pdv.reject(req.user, id, dto, await this.pdv.actorOf(req.user));
   }
 
   // Cancelar venda paga é permissão restrita (FC-15): a de excluir

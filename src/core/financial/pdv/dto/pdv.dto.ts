@@ -116,6 +116,14 @@ export class SaleReasonDto {
   reason: string;
 }
 
+/** Rejeitar a venda na fila do caixa (FC-13.1): o motivo de rejeição do cadastro, quando o plano o tem. */
+export class RejectSaleDto {
+  @ApiPropertyOptional({ description: 'Motivo de rejeição (cadastro)' })
+  @IsOptional()
+  @IsUUID('4')
+  reasonId?: string;
+}
+
 /** O cadastro da frente de caixa (FC-7, FC-15, FC-18): o que vier muda. */
 export class CashFrontDto {
   @ApiPropertyOptional()

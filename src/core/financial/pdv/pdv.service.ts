@@ -39,6 +39,7 @@ import {
   CashFrontDto,
   OpenCashSessionDto,
   ReceiveSaleDto,
+  RejectSaleDto,
 } from './dto/pdv.dto';
 
 type Tx = Prisma.TransactionClient;
@@ -1057,6 +1058,84 @@ export class PdvService {
         createdByName: actor.name,
       } as Prisma.OrderHistoryUncheckedCreateInput,
     });
+  }
+
+  /**
+   * Rejeita a venda da fila que ainda não recebeu nada (FC-13.1,
+   * 27/10/2026): o cliente desistiu no balcão. O orçamento volta a
+   * "rejeitado", com o motivo do cadastro quando houver, a O.S. e a agenda
+   * são canceladas e a venda sai da fila. Sem estorno: nada entrou. Com
+   * valor recebido, o caminho é o cancelamento com estorno (`reverse`).
+   */
+  async reject(user: User, id: string, dto: RejectSaleDto, actor: CashActor) {
+    const sale = await this.sale(user.companyId, id);
+    if (sale.cancelled) bad('Esta venda já foi cancelada');
+    if (sale.paid > 0) {
+      bad(
+        'Esta venda já recebeu um valor: use "Cancelar a venda", que faz o estorno',
+      );
+    }
+    if (!sale.goesToCash) {
+      bad('Esta venda já foi faturada para o cliente: cancele pelo Fluxo');
+    }
+    const reason = dto.reasonId
+      ? await this.prisma.reasons.findFirst({
+          where: { id: dto.reasonId, companyId: user.companyId },
+          select: { id: true, reason: true },
+        })
+      : null;
+    if (dto.reasonId && !reason) bad('Motivo de rejeição não encontrado');
+    const why = reason ? reason.reason : 'Rejeitada no caixa';
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.quotation.update({
+          where: { id: sale.quotationId },
+          data: {
+            status: 'REJECTED',
+            ...(reason ? { reasonId: reason.id } : {}),
+          },
+        });
+        await tx.deliverySchedule.updateMany({
+          where: { quotationId: sale.quotationId },
+          data: { status: 'CANCELED' },
+        });
+        await cancelProjectOfQuotationInTx(tx, sale.quotationId, {
+          userId: actor.id,
+          name: actor.name,
+        });
+        await tx.order.updateMany({
+          where: { quotationId: sale.quotationId },
+          data: { status: 'CANCELED', canceledAt: new Date() },
+        });
+        await tx.pendingSale.update({
+          where: { id: sale.id },
+          data: {
+            cancelled: true,
+            cancelledAt: new Date(),
+            cancelReason: why,
+            claimedSessionId: null,
+          },
+        });
+        await tx.quotationHistory.create({
+          data: {
+            quotationId: sale.quotationId,
+            action: 'REJECTED',
+            description: `Venda rejeitada no caixa por ${actor.name}${reason ? `: ${reason.reason}` : ''}`,
+            createdBy: actor.id,
+            createdByName: actor.name,
+          } as Prisma.QuotationHistoryUncheckedCreateInput,
+        });
+        await this.orderHistory(
+          tx,
+          sale.quotationId,
+          'CANCELED',
+          `Venda rejeitada no caixa por ${actor.name}${reason ? `: ${reason.reason}` : ''}`,
+          actor,
+        );
+      },
+      { timeout: 20000 },
+    );
+    return { rejected: true, reason: reason?.reason ?? null };
   }
 
   /**
