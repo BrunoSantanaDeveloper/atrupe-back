@@ -102,4 +102,25 @@ export class FilterQuotationDto extends BaseFilterDTO {
     enum: ['due', 'none', 'expiring'],
   })
   nextContact?: 'due' | 'none' | 'expiring';
+
+  // Ordenação da lista (27/10/2026): pela data de criação (padrão) ou pela
+  // data do próximo contato; os grupos da lista seguem a mesma data
+  @IsOptional()
+  @IsIn(['createdAt', 'nextContactAt'])
+  @ApiProperty({
+    description:
+      'Data que ordena e agrupa a lista: criação (padrão) ou próximo contato',
+    required: false,
+    enum: ['createdAt', 'nextContactAt'],
+  })
+  orderBy?: 'createdAt' | 'nextContactAt';
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  @ApiProperty({
+    description: 'Sentido da ordenação; padrão desc (mais novo primeiro)',
+    required: false,
+    enum: ['asc', 'desc'],
+  })
+  sort?: 'asc' | 'desc';
 }

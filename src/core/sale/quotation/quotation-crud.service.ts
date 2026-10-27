@@ -575,17 +575,31 @@ export class QuotationCrudService {
           },
           take: Number(dto.limit),
           skip: (Number(dto.page) - 1) * Number(dto.limit),
-          orderBy: {
-            createdAt: 'desc',
-          },
+          // Pela data de criação (padrão) ou pelo próximo contato, sem data
+          // por último (27/10/2026)
+          orderBy:
+            dto.orderBy === 'nextContactAt'
+              ? [
+                  { nextContactAt: { sort: dto.sort ?? 'asc', nulls: 'last' } },
+                  { createdAt: 'desc' },
+                ]
+              : { createdAt: dto.sort ?? 'desc' },
         }),
         this.prisma.quotation.count({ where }),
       ]);
 
-      // Group quotations by date (createdAt) for frontend display
+      // Os grupos da lista seguem a data da ordenação: dia de criação ou dia
+      // do próximo contato ("none" para quem não tem)
+      const byNextContact = dto.orderBy === 'nextContactAt';
       const grouped: Record<string, QuotationGroup> = quotations.reduce(
         (acc, quotation) => {
-          const date = quotation.createdAt.toISOString().split('T')[0];
+          const date = byNextContact
+            ? (quotation as any).nextContactAt
+              ? ((quotation as any).nextContactAt as Date)
+                  .toISOString()
+                  .split('T')[0]
+              : 'none'
+            : quotation.createdAt.toISOString().split('T')[0];
           if (!acc[date]) {
             acc[date] = {
               date: date,
@@ -652,11 +666,16 @@ export class QuotationCrudService {
         {} as Record<string, QuotationGroup>,
       );
 
+      const direction = dto.sort ?? (byNextContact ? 'asc' : 'desc');
       return {
         total,
-        data: Object.values(grouped).sort((a, b) =>
-          b.date.localeCompare(a.date),
-        ),
+        data: Object.values(grouped).sort((a, b) => {
+          if (a.date === 'none') return 1;
+          if (b.date === 'none') return -1;
+          return direction === 'asc'
+            ? a.date.localeCompare(b.date)
+            : b.date.localeCompare(a.date);
+        }),
       };
     } catch (error) {
       this.logger.error('Error in findAll:', error.stack);
