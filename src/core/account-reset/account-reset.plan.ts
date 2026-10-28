@@ -142,6 +142,12 @@ export const RESET_STEPS: ResetStep[] = [
   },
   { model: 'DeliveryInfo', group: 'documents', where: byQuotation },
   { model: 'QuotationHistory', group: 'documents', where: byQuotation },
+  // Os contatos da negociação (CRM fase 2) saem com o orçamento
+  {
+    model: 'QuotationContact',
+    group: 'documents',
+    where: (companyId) => ({ companyId }),
+  },
   {
     model: 'QuotationInstallment',
     group: 'documents',
@@ -480,6 +486,12 @@ export const RESET_STEPS: ResetStep[] = [
   },
   {
     model: 'QuickSaleSettings',
+    group: 'settings',
+    where: (companyId) => ({ companyId }),
+  },
+  // Modelos de mensagem e e-mail diário do acompanhamento (CRM fase 2)
+  {
+    model: 'FollowUpSettings',
     group: 'settings',
     where: (companyId) => ({ companyId }),
   },

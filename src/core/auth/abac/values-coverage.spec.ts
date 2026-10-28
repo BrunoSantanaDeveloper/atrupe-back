@@ -61,6 +61,9 @@ const SEM_VALOR: Record<string, string> = {
   // O item montado na hora (ORC-11): processos e produtos para as etapas
   'QuotationController.composedNextStep': APOIO,
   'QuotationController.composedPartCandidates': APOIO,
+  // A linha do tempo da negociação (CRM fase 2): contatos e eventos do
+  // histórico, sem campo de valor
+  'QuotationController.contacts': 'linha do tempo da negociação, sem valor',
   // A leitura da composição do rascunho omite o preço sem a permissão e
   // nunca devolve o custo (withoutCost), como a leitura da composição
   'QuotationController.readComposedDraft':
