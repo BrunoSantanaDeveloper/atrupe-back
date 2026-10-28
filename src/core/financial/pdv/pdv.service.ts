@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { addMonths } from 'date-fns';
 import { PrismaService } from 'nestjs-prisma';
 import {
@@ -733,6 +734,9 @@ export class PdvService {
       net?: number;
     }[] = [];
     const date = new Date();
+    // O dinheiro a aprovar e a quebra do fechamento andam juntos (4.1.3): o
+    // Controle de caixa mostra um pedido só, com a quebra como detalhe
+    const closingLink = randomUUID();
     // O dia das contas que recebem o fechamento (CX-0, 4.1.1): o que o
     // sistema faz sozinho não trava ninguém. Sem caixa aberto, o sistema abre
     // o do dia; se nem isso der, o lançamento entra direto na conta
@@ -767,7 +771,7 @@ export class PdvService {
               drawer.id,
               cashTransfer,
               `Fechamento FC nº ${session.number} · Dinheiro`,
-              { awaitingApproval: cashTransfer > 0 },
+              { awaitingApproval: cashTransfer > 0, linkedId: closingLink },
             );
             transfers.push({
               method: 'CASH',
@@ -787,6 +791,7 @@ export class PdvService {
               date,
               reason: note,
               withoutRegisterFallback: true,
+              linkedId: closingLink,
               // A quebra fica no nome de quem operava
               responsible: {
                 id: session.operatorId,

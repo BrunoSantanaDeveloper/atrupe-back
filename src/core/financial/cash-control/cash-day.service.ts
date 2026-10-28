@@ -284,8 +284,33 @@ export class CashDayService {
       ...row.transactions.map((item) => item.subCategoryId),
     ]);
     const day = dayOf(row.openingDate);
+    // A quebra do fechamento da frente de caixa vem no valor a aprovar
+    // (4.1.3): quanto, o sentido e no nome de quem
+    const breakages = new Map(
+      row.transactions
+        .filter(
+          (item) =>
+            item.linkedId &&
+            (item.kind === 'SHORTAGE' || item.kind === 'OVERAGE'),
+        )
+        .map((item) => [
+          item.linkedId,
+          {
+            amount: Math.abs(movementView(item).amount),
+            direction: item.kind as 'SHORTAGE' | 'OVERAGE',
+            responsible: item.responsibleName ?? '',
+          },
+        ]),
+    );
     const movements: Movement[] = [
-      ...row.transactions.map((item) => movementView(item, names)),
+      ...row.transactions.map((item) => {
+        const view = movementView(item, names);
+        const breakage =
+          item.awaitingApproval && item.linkedId
+            ? breakages.get(item.linkedId)
+            : undefined;
+        return breakage ? { ...view, breakage } : view;
+      }),
       ...(await this.provisions(row.bankAccountId, day)),
     ];
     const opening = toCents(row.openingBalance) ?? 0;
