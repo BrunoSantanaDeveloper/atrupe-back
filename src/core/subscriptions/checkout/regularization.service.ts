@@ -28,7 +28,8 @@ import {
 export type RegularizationReason =
   | 'FIRST_CHARGE_PENDING'
   | 'OVERDUE'
-  | 'CHECKOUT_PENDING';
+  | 'CHECKOUT_PENDING'
+  | 'EVOLUTION_PENDING';
 
 /**
  * Regularização de uma cobrança em aberto.
@@ -60,6 +61,23 @@ export class RegularizationService {
     const ctx = await this.quoteService.getBillingContext(companyId);
     if (!ctx.hasOpenCharge || !ctx.current) return { required: false as const };
 
+    // A contratação que espera o pagamento é CHECKOUT_PENDING mesmo com a
+    // primeira cobrança vencida: não há mensalidade atrasada de um plano que
+    // nem foi liberado. Dívida do plano em curso vem antes da evolução.
+    const reason: RegularizationReason = ctx.firstChargePending
+      ? 'FIRST_CHARGE_PENDING'
+      : ctx.hasOverdue && !ctx.awaitingActivation
+        ? 'OVERDUE'
+        : ctx.evolutionPending
+          ? 'EVOLUTION_PENDING'
+          : 'CHECKOUT_PENDING';
+    // Na evolução à espera do pagamento, o plano, o ciclo e o valor são os
+    // dela, e é nela que o aceite fica.
+    const target =
+      reason === 'EVOLUTION_PENDING' && ctx.pendingEvolution
+        ? ctx.pendingEvolution
+        : ctx.current;
+
     const [session, terms, lastAcceptance, customer] = await Promise.all([
       this.session.build(companyId),
       this.acceptance.currentTerms(),
@@ -68,18 +86,9 @@ export class RegularizationService {
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.customer.findUnique({
-        where: { id: ctx.current.customerId },
+        where: { id: target.customerId },
       }),
     ]);
-
-    // A contratação que espera o pagamento é CHECKOUT_PENDING mesmo com a
-    // primeira cobrança vencida: não há mensalidade atrasada de um plano que
-    // nem foi liberado.
-    const reason: RegularizationReason = ctx.firstChargePending
-      ? 'FIRST_CHARGE_PENDING'
-      : ctx.hasOverdue && !ctx.awaitingActivation
-        ? 'OVERDUE'
-        : 'CHECKOUT_PENDING';
 
     const contractor = contractorOnFile(lastAcceptance, customer);
 
@@ -89,18 +98,18 @@ export class RegularizationService {
       situation: session.billing.situation,
       daysOverdue: session.billing.daysOverdue,
       subscription: {
-        id: ctx.current.id,
-        planName: ctx.current.plan.name,
-        cycle: ctx.current.cycle,
-        billingType: ctx.current.billingType,
-        valueCents: Math.round(ctx.current.value * 100),
-        installmentCount: ctx.current.installmentCount ?? null,
+        id: target.id,
+        planName: target.plan.name,
+        cycle: target.cycle,
+        billingType: target.billingType,
+        valueCents: Math.round(target.value * 100),
+        installmentCount: target.installmentCount ?? null,
       },
       contractor,
       chargeInFocus: session.billing.chargeInFocus,
       // O anual parcelado é pago no cartão: uma parcela em Pix deixaria as
       // outras sem cartão para cobrar.
-      allowedBillingTypes: isInstallmentBilling(ctx.current)
+      allowedBillingTypes: isInstallmentBilling(target)
         ? (['CREDIT_CARD'] as CheckoutBillingType[])
         : [...CHECKOUT_BILLING_TYPES],
       terms: { id: terms.id, version: terms.version },

@@ -159,6 +159,7 @@ describe('AdminDashboardService', () => {
       mockPrismaService.company.count
         .mockResolvedValueOnce(10) // active
         .mockResolvedValueOnce(2) // blocked
+        .mockResolvedValueOnce(4) // awaiting payment
         .mockResolvedValueOnce(3) // inactive
         .mockResolvedValueOnce(1); // canceled
 
@@ -167,10 +168,40 @@ describe('AdminDashboardService', () => {
       expect(result.data).toEqual({
         ACTIVE: 10,
         BLOCKED: 2,
+        AWAITING_PAYMENT: 4,
         INACTIVE: 3,
         CANCELED: 1,
-        TOTAL: 16,
+        TOTAL: 20,
       });
+    });
+
+    it('contratação à espera do pagamento tem aba própria, fora de Inativas e Canceladas', async () => {
+      mockPrismaService.company.count.mockResolvedValue(0);
+
+      await service.getActiveTotals();
+
+      const where = (n: number) =>
+        mockPrismaService.company.count.mock.calls[n - 1][0].where;
+      const awaiting = {
+        AND: [
+          ACCOUNT_SUBSCRIPTION_WHERE,
+          expect.objectContaining({
+            status: 'INACTIVE',
+            contractedAt: { not: null },
+            endedReason: null,
+          }),
+        ],
+      };
+      expect(where(3)).toEqual({
+        blockLevel: 'NONE',
+        Subscription: {
+          some: awaiting,
+          none: { AND: [ACCOUNT_SUBSCRIPTION_WHERE, { status: 'ACTIVE' }] },
+        },
+      });
+      // Inativas (sem bloqueio) e Canceladas não levam quem aguarda o pagamento.
+      expect(where(4).OR[1].Subscription.none.OR).toContainEqual(awaiting);
+      expect(where(5).Subscription.none.OR).toContainEqual(awaiting);
     });
 
     it('não conta contratação que não chegou ao fim', async () => {
@@ -405,6 +436,28 @@ describe('AdminDashboardService', () => {
           additionalUserPriceCents: 1500,
         },
       });
+    });
+
+    it('contratação à espera do pagamento aparece como "aguardando pagamento", não como inativa', async () => {
+      const awaiting = company({
+        Subscription: [subscription({ status: 'INACTIVE', endedReason: null })],
+      });
+
+      const result: any = await listWith(
+        [awaiting],
+        {},
+        {
+          charges: [
+            { subscriptionId: 'sub-1', status: 'PENDING', dueDate: FUTURE },
+          ],
+        },
+      );
+      expect(result.data[0].status).toBe('AWAITING_PAYMENT');
+
+      // Sem cobrança em aberto, é inativa mesmo.
+      mockPrismaService.company.findMany.mockReset();
+      const inactive: any = await listWith([awaiting]);
+      expect(inactive.data[0].status).toBe('INACTIVE');
     });
 
     it('a conta mostra a assinatura ativa, não uma contratação mais nova que não foi concluída', async () => {

@@ -154,6 +154,35 @@ describe('SubscriptionQuoteService', () => {
       expect(ctx.intent).toBe('REGULARIZATION');
     });
 
+    it('evolução à espera do pagamento: o plano em curso segue, e é cobrança em aberto', async () => {
+      const lite = aguardando({
+        id: 'sub-lite',
+        previousSubscriptionId: 'sub-1',
+        plan: plan('LITE', 23000),
+      });
+      withSubscriptions(subscription(), lite);
+
+      const ctx = await service.getBillingContext('company-1', AGORA);
+
+      expect(prisma.subscription.findFirst).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'INACTIVE',
+            previousSubscriptionId: 'sub-1',
+            contractedAt: { not: null },
+          }),
+        }),
+      );
+      expect(ctx.current?.id).toBe('sub-1');
+      expect(ctx.pendingEvolution?.id).toBe('sub-lite');
+      expect(ctx.evolutionPending).toBe(true);
+      expect(ctx.awaitingActivation).toBe(false);
+      // Até ser paga (ou desfeita), não há outra evolução nem complemento.
+      expect(ctx.hasOpenCharge).toBe(true);
+      expect(ctx.intent).toBe('REGULARIZATION');
+    });
+
     it('a de antes da regra, já liberada com a cobrança pendente, segue como estava', async () => {
       withSubscriptions(aguardando({ status: 'ACTIVE' }));
 

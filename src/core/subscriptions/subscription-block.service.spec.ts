@@ -40,6 +40,8 @@ describe('SubscriptionBlockService', () => {
     getSubscriptionPayments: jest.fn(),
     getInstallmentPayments: jest.fn(),
     mapAsaasPaymentStatus: jest.fn((status: string) => status),
+    deleteAsaasPayment: jest.fn(),
+    cancelAsaasSubscription: jest.fn(),
     // O serviço pede as cobranças pelo modo; o mock responde como o gateway:
     // parcelas do parcelamento, ou cobranças da assinatura.
     getChargesOf: jest.fn((sub: any) =>
@@ -1423,6 +1425,464 @@ describe('SubscriptionBlockService', () => {
       // Sem vencida não quer dizer paga: a assinatura segue INACTIVE.
       expect(mockPrismaService.subscription.update).not.toHaveBeenCalled();
       expect(tx.subscription.updateMany).not.toHaveBeenCalled();
+    });
+  });
+  describe('evolução paga e contratação nunca paga (regra de 20/10)', () => {
+    const tx = {
+      subscription: {
+        updateMany: jest.fn(),
+        findMany: jest.fn(),
+        update: jest.fn(),
+      },
+      payment: { updateMany: jest.fn() },
+      couponUsage: { deleteMany: jest.fn() },
+      coupon: { update: jest.fn() },
+      subscriptionHistory: { create: jest.fn() },
+    };
+    const ACTOR = { id: 'admin-1', name: 'Ana (Sincronizar com Asaas)' };
+    const MARKED = { accessAfterPayment: true };
+
+    /** As assinaturas que o "banco" conhece, por id. */
+    let subscriptions: Record<string, any>;
+    /** O histórico de cada assinatura. */
+    let histories: Record<string, any[]>;
+    /** As cobranças locais, pelo id do Asaas. */
+    let localCharges: Record<string, any>;
+    /** As cobranças de cada assinatura no Asaas. */
+    let asaasCharges: Record<string, any[]>;
+    /** Assinaturas com cobrança paga aqui. */
+    let paid: Set<string>;
+
+    const local = (id: string, subscriptionId: string, status: string) => ({
+      id: `local-${id}`,
+      subscriptionId,
+      asaasPaymentId: id,
+      status,
+      invoiceUrl: `https://asaas/i/${id}`,
+      bankSlipUrl: `https://asaas/b/${id}`,
+      confirmedDate: null,
+      paymentDate: null,
+    });
+
+    beforeEach(() => {
+      for (const fn of [
+        tx.subscription.updateMany,
+        tx.subscription.findMany,
+        tx.subscription.update,
+        tx.payment.updateMany,
+        tx.couponUsage.deleteMany,
+        tx.coupon.update,
+        tx.subscriptionHistory.create,
+      ]) {
+        fn.mockReset();
+      }
+      tx.subscription.updateMany.mockResolvedValue({ count: 1 });
+      tx.subscription.findMany.mockResolvedValue([]);
+      tx.payment.updateMany.mockResolvedValue({ count: 1 });
+      tx.couponUsage.deleteMany.mockResolvedValue({ count: 1 });
+      mockPrismaService.$transaction.mockImplementation((fn: any) => fn(tx));
+      mockAsaasGatewayService.deleteAsaasPayment.mockReset();
+      mockAsaasGatewayService.cancelAsaasSubscription.mockReset();
+      mockAsaasGatewayService.deleteAsaasPayment.mockResolvedValue(undefined);
+      mockAsaasGatewayService.cancelAsaasSubscription.mockResolvedValue(
+        undefined,
+      );
+
+      subscriptions = {
+        'sub-start': {
+          id: 'sub-start',
+          status: 'ACTIVE',
+          companyId: 'company-1',
+          previousSubscriptionId: null,
+          asaasSubscriptionId: 'sub_old',
+          asaasInstallmentId: null,
+          billingMode: null,
+          plan: { name: 'Atrupe Start' },
+        },
+        'sub-lite': {
+          id: 'sub-lite',
+          status: 'INACTIVE',
+          companyId: 'company-1',
+          previousSubscriptionId: 'sub-start',
+          asaasSubscriptionId: 'sub_lite',
+          asaasInstallmentId: null,
+          billingMode: null,
+          plan: { name: 'Atrupe Lite' },
+        },
+        'sub-contrato': {
+          id: 'sub-contrato',
+          status: 'INACTIVE',
+          companyId: 'company-2',
+          previousSubscriptionId: null,
+          asaasSubscriptionId: 'sub_contrato',
+          asaasInstallmentId: null,
+          billingMode: null,
+          plan: { name: 'Atrupe Start' },
+        },
+      };
+      histories = {
+        'sub-lite': [{ action: 'EVOLUTION_CONTRACTED', metadata: MARKED }],
+        'sub-contrato': [{ action: 'CONTRACTED', metadata: MARKED }],
+      };
+      localCharges = {
+        pay_evolucao: local('pay_evolucao', 'sub-lite', 'OVERDUE'),
+        pay_contrato: local('pay_contrato', 'sub-contrato', 'OVERDUE'),
+      };
+      asaasCharges = {
+        sub_old: [
+          { id: 'pay_old_next', status: 'PENDING', dueDate: '2099-01-15' },
+          { id: 'pay_old_paid', status: 'RECEIVED', dueDate: '2000-01-15' },
+        ],
+        sub_lite: [
+          {
+            id: 'pay_evolucao',
+            status: 'OVERDUE',
+            dueDate: '2026-10-28',
+            invoiceUrl: 'https://asaas/i/pay_evolucao',
+            bankSlipUrl: 'https://asaas/b/pay_evolucao',
+          },
+        ],
+        sub_contrato: [
+          {
+            id: 'pay_contrato',
+            status: 'OVERDUE',
+            dueDate: '2026-10-28',
+            invoiceUrl: 'https://asaas/i/pay_contrato',
+            bankSlipUrl: 'https://asaas/b/pay_contrato',
+          },
+        ],
+      };
+      paid = new Set();
+
+      // Como o banco: o filtro por id, por status e por "ainda não paga".
+      mockPrismaService.subscription.findFirst.mockImplementation(
+        ({ where }: any) => {
+          if (typeof where.id !== 'string') return Promise.resolve(null);
+          const sub = subscriptions[where.id];
+          if (!sub) return Promise.resolve(null);
+          if (where.status && where.status !== sub.status) {
+            return Promise.resolve(null);
+          }
+          if (where.payments && paid.has(where.id)) {
+            return Promise.resolve(null);
+          }
+          return Promise.resolve(sub);
+        },
+      );
+      mockPrismaService.subscriptionHistory.findMany.mockImplementation(
+        ({ where }: any) =>
+          Promise.resolve(
+            (histories[where.subscriptionId] ?? []).filter((h) =>
+              where.action.in.includes(h.action),
+            ),
+          ),
+      );
+      mockPrismaService.payment.findFirst.mockImplementation(
+        ({ where }: any) => {
+          if (where.asaasPaymentId) {
+            return Promise.resolve(localCharges[where.asaasPaymentId] ?? null);
+          }
+          if (where.subscriptionId && where.status?.in) {
+            return Promise.resolve(
+              paid.has(where.subscriptionId)
+                ? { asaasPaymentId: `pay_${where.subscriptionId}` }
+                : null,
+            );
+          }
+          return Promise.resolve(null);
+        },
+      );
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockImplementation(
+        (id: string) => Promise.resolve(asaasCharges[id] ?? []),
+      );
+    });
+
+    describe('evolução paga: a troca de plano', () => {
+      beforeEach(() => paid.add('sub-lite'));
+
+      it('o plano anterior deixa de cobrar no Asaas e sai; o novo entra', async () => {
+        expect(await service.activateIfContractPaid('sub-lite', ACTOR)).toBe(
+          'activated',
+        );
+
+        // No Asaas, só a renovação em aberto da anterior sai; a paga fica.
+        expect(
+          mockAsaasGatewayService.deleteAsaasPayment,
+        ).toHaveBeenCalledTimes(1);
+        expect(mockAsaasGatewayService.deleteAsaasPayment).toHaveBeenCalledWith(
+          'pay_old_next',
+        );
+        expect(
+          mockAsaasGatewayService.cancelAsaasSubscription,
+        ).toHaveBeenCalledWith('sub_old');
+        // E só depois, aqui.
+        expect(
+          mockAsaasGatewayService.cancelAsaasSubscription.mock
+            .invocationCallOrder[0],
+        ).toBeLessThan(tx.subscription.updateMany.mock.invocationCallOrder[0]);
+        expect(tx.subscription.updateMany).toHaveBeenCalledWith({
+          where: { id: 'sub-lite', status: 'INACTIVE' },
+          data: { status: 'ACTIVE' },
+        });
+        expect(tx.subscription.updateMany).toHaveBeenCalledWith({
+          where: { id: 'sub-start', status: 'ACTIVE' },
+          data: { status: 'CANCELED', endedReason: 'EVOLVED' },
+        });
+        expect(tx.payment.updateMany).toHaveBeenCalledWith({
+          where: {
+            subscriptionId: 'sub-start',
+            status: { in: ['PENDING', 'OVERDUE'] },
+          },
+          data: { status: 'CANCELED' },
+        });
+        expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            subscriptionId: 'sub-start',
+            action: 'EVOLVED',
+          }),
+        });
+        expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            subscriptionId: 'sub-lite',
+            action: 'ACTIVATED',
+            description: 'Evolução do Atrupe Start liberada com o pagamento',
+          }),
+        });
+      });
+
+      it('o plano que a evolução substitui não conta como "outro plano em vigor"', async () => {
+        await service.activateIfContractPaid('sub-lite');
+
+        expect(mockPrismaService.subscription.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              id: { notIn: ['sub-lite', 'sub-start'] },
+              status: 'ACTIVE',
+            }),
+          }),
+        );
+      });
+
+      it('com o Asaas fora, nada troca: a próxima conferência tenta de novo', async () => {
+        mockAsaasGatewayService.cancelAsaasSubscription.mockRejectedValue(
+          new Error('Asaas fora'),
+        );
+
+        expect(await service.activateIfContractPaid('sub-lite')).toBe(
+          'awaiting_payment',
+        );
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('contratação nunca paga, vencida há 7 dias', () => {
+      // 04/11, 03:00 local: a cobrança de 28/10 está vencida há 7 dias.
+      const NOW = new Date(2026, 10, 4, 3, 0, 0);
+      const candidate = (id: string, overrides: Record<string, any> = {}) => ({
+        id,
+        status: subscriptions[id].status,
+        companyId: subscriptions[id].companyId,
+        previousSubscriptionId: subscriptions[id].previousSubscriptionId,
+        couponId: null,
+        asaasSubscriptionId: subscriptions[id].asaasSubscriptionId,
+        asaasInstallmentId: null,
+        billingMode: null,
+        Company: { blockLevel: 'NONE', blockReason: null },
+        ...overrides,
+      });
+
+      it('desfaz a contratação: encerra no Asaas, cancela aqui e devolve o cupom', async () => {
+        mockPrismaService.subscription.findMany.mockResolvedValue([
+          candidate('sub-contrato', { couponId: 'coupon-1' }),
+        ]);
+
+        expect(await service.cancelUnpaidContracts(NOW)).toEqual([
+          'sub-contrato',
+        ]);
+
+        // Só quem tem cobrança aberta vencida até 28/10 e nenhuma paga.
+        expect(mockPrismaService.subscription.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              status: { in: ['ACTIVE', 'INACTIVE'] },
+              contractedAt: { not: null },
+              endedReason: null,
+              payments: {
+                none: { status: { in: ['CONFIRMED', 'RECEIVED'] } },
+                some: {
+                  status: { in: ['PENDING', 'OVERDUE'] },
+                  dueDate: { lte: new Date('2026-10-28T00:00:00.000Z') },
+                },
+              },
+            }),
+          }),
+        );
+        expect(mockAsaasGatewayService.deleteAsaasPayment).toHaveBeenCalledWith(
+          'pay_contrato',
+        );
+        expect(
+          mockAsaasGatewayService.cancelAsaasSubscription,
+        ).toHaveBeenCalledWith('sub_contrato');
+        expect(tx.subscription.update).toHaveBeenCalledWith({
+          where: { id: 'sub-contrato' },
+          data: { status: 'CANCELED', endedReason: 'UNPAID' },
+        });
+        expect(tx.payment.updateMany).toHaveBeenCalledWith({
+          where: {
+            subscriptionId: 'sub-contrato',
+            status: { in: ['PENDING', 'OVERDUE'] },
+          },
+          data: { status: 'CANCELED' },
+        });
+        expect(tx.coupon.update).toHaveBeenCalledWith({
+          where: { id: 'coupon-1' },
+          data: { currentUses: { decrement: 1 } },
+        });
+        expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            subscriptionId: 'sub-contrato',
+            action: 'CANCELED',
+            metadata: expect.objectContaining({ reason: 'UNPAID' }),
+          }),
+        });
+        // A empresa não estava bloqueada.
+        expect(mockPrismaService.company.update).not.toHaveBeenCalled();
+      });
+
+      it('paga na conferência final: é liberada, não desfeita', async () => {
+        mockPrismaService.subscription.findMany.mockResolvedValue([
+          candidate('sub-contrato'),
+        ]);
+        asaasCharges.sub_contrato[0].status = 'RECEIVED';
+        mockPrismaService.payment.update.mockImplementation(() => {
+          paid.add('sub-contrato');
+          return Promise.resolve({});
+        });
+
+        expect(await service.cancelUnpaidContracts(NOW)).toEqual([]);
+        expect(tx.subscription.updateMany).toHaveBeenCalledWith({
+          where: { id: 'sub-contrato', status: 'INACTIVE' },
+          data: { status: 'ACTIVE' },
+        });
+        expect(
+          mockAsaasGatewayService.cancelAsaasSubscription,
+        ).not.toHaveBeenCalled();
+        expect(tx.subscription.update).not.toHaveBeenCalled();
+      });
+
+      it('evolução nunca paga: só ela é desfeita; o plano em curso segue', async () => {
+        mockPrismaService.subscription.findMany.mockResolvedValue([
+          candidate('sub-lite'),
+        ]);
+
+        expect(await service.cancelUnpaidContracts(NOW)).toEqual(['sub-lite']);
+        expect(
+          mockAsaasGatewayService.cancelAsaasSubscription,
+        ).toHaveBeenCalledTimes(1);
+        expect(
+          mockAsaasGatewayService.cancelAsaasSubscription,
+        ).toHaveBeenCalledWith('sub_lite');
+        expect(tx.subscription.update).toHaveBeenCalledTimes(1);
+        expect(tx.subscription.update).toHaveBeenCalledWith({
+          where: { id: 'sub-lite' },
+          data: { status: 'CANCELED', endedReason: 'UNPAID' },
+        });
+      });
+
+      it('da regra antiga, ativa e nunca paga, bloqueada pela dívida: desfeita e desbloqueada', async () => {
+        subscriptions['sub-contrato'].status = 'ACTIVE';
+        mockPrismaService.subscription.findMany.mockResolvedValue([
+          candidate('sub-contrato', {
+            status: 'ACTIVE',
+            Company: {
+              blockLevel: 'FULL',
+              blockReason:
+                'Assinatura com 33 dias de atraso (verificado no Asaas)',
+            },
+          }),
+        ]);
+
+        expect(await service.cancelUnpaidContracts(NOW)).toEqual([
+          'sub-contrato',
+        ]);
+        expect(mockPrismaService.company.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'company-2' },
+            data: expect.objectContaining({ blockLevel: 'NONE' }),
+          }),
+        );
+        expect(mockPrismaService.companyHistory.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            companyId: 'company-2',
+            action: 'UNBLOCKED',
+          }),
+        });
+      });
+
+      it.each([
+        [
+          'bloqueada à mão',
+          {
+            status: 'ACTIVE',
+            Company: {
+              blockLevel: 'FULL',
+              blockReason: 'Inativação manual por Ana',
+            },
+          },
+        ],
+        [
+          'vinda de transferência',
+          { status: 'ACTIVE', previousSubscriptionId: 'sub-anterior' },
+        ],
+      ])('da regra antiga %s: fica como está', async (_caso, overrides) => {
+        subscriptions['sub-contrato'].status = 'ACTIVE';
+        mockPrismaService.subscription.findMany.mockResolvedValue([
+          candidate('sub-contrato', overrides),
+        ]);
+
+        expect(await service.cancelUnpaidContracts(NOW)).toEqual([]);
+        expect(
+          mockAsaasGatewayService.cancelAsaasSubscription,
+        ).not.toHaveBeenCalled();
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('retida pelo superadmin: fica como está', async () => {
+        histories['sub-contrato'].push({
+          action: 'STATUS_CHANGE',
+          metadata: { newStatus: 'INACTIVE' },
+        });
+        mockPrismaService.subscription.findMany.mockResolvedValue([
+          candidate('sub-contrato'),
+        ]);
+
+        expect(await service.cancelUnpaidContracts(NOW)).toEqual([]);
+        expect(
+          mockAsaasGatewayService.cancelAsaasSubscription,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('o Asaas fora numa não desfaz nada nela, e as demais seguem', async () => {
+        mockPrismaService.subscription.findMany.mockResolvedValue([
+          candidate('sub-lite'),
+          candidate('sub-contrato'),
+        ]);
+        mockAsaasGatewayService.cancelAsaasSubscription.mockImplementation(
+          (id: string) =>
+            id === 'sub_lite'
+              ? Promise.reject(new Error('Asaas fora'))
+              : Promise.resolve(),
+        );
+
+        expect(await service.cancelUnpaidContracts(NOW)).toEqual([
+          'sub-contrato',
+        ]);
+        expect(tx.subscription.update).toHaveBeenCalledTimes(1);
+        expect(tx.subscription.update).toHaveBeenCalledWith({
+          where: { id: 'sub-contrato' },
+          data: { status: 'CANCELED', endedReason: 'UNPAID' },
+        });
+      });
     });
   });
 });

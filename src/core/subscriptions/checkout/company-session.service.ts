@@ -28,9 +28,14 @@ export interface BillingSituation {
   /**
    * O plano contratado espera esse pagamento para ser liberado (contratação
    * a partir de 20/10). Falso quando a contratação já liberou o acesso — as
-   * de antes de 20/10 e a evolução.
+   * de antes de 20/10.
    */
   activationPending: boolean;
+  /**
+   * Evolução registrada que espera o pagamento: o plano em curso segue
+   * valendo, e o novo é liberado quando a cobrança da evolução for paga.
+   */
+  evolutionPending: boolean;
   chargeInFocus: ChargeInFocus | null;
 }
 
@@ -152,7 +157,8 @@ export class CompanySessionService {
         this.logger.warn(
           `Plano da empresa ${companyId} indisponível: ${error.message}`,
         );
-        return null;
+        // Indisponível não é "sem plano": a sessão não leva a pessoa embora.
+        return undefined;
       }),
       this.prisma.company.findUnique({
         where: { id: companyId },
@@ -168,14 +174,18 @@ export class CompanySessionService {
       | 'NONE'
       | 'PARTIAL'
       | 'FULL';
+    // Sem nenhuma assinatura ativa, nem teste, vale o fim do último teste —
+    // e o app leva à tela de assinatura, como faz com o teste vencido.
+    const trialEndsAt =
+      planInfo === null
+        ? await this.lastTrialEnd(companyId)
+        : (planInfo?.trialEndsAt ?? null);
 
     return {
       plan: {
         name: planInfo?.planType ?? 'TRIAL',
         active: !!planInfo && planInfo.planType !== 'TRIAL',
-        trialEndsAt: planInfo?.trialEndsAt
-          ? new Date(planInfo.trialEndsAt).toISOString()
-          : null,
+        trialEndsAt: trialEndsAt ? new Date(trialEndsAt).toISOString() : null,
         features,
         limits: planInfo?.limits ?? {},
       },
@@ -183,6 +193,26 @@ export class CompanySessionService {
       billing: this.billingSituation(ctx, blockLevel, now),
       isOwner: !!userId && company?.ownerUserId === userId,
     };
+  }
+
+  /**
+   * Quando acabou o último teste gratuito da empresa — para a que ficou sem
+   * nenhuma assinatura ativa: a contratação foi cancelada (pela pessoa, por
+   * falta de pagamento, ou removida no Asaas) e o teste já não vale. Antes,
+   * essa conta ia para a sessão sem data de fim e entrava no sistema, só que
+   * sem os recursos do plano. Teste encerrado antes do prazo (por uma
+   * contratação) acabou quando foi encerrado. Sem teste nenhum, nulo.
+   */
+  private async lastTrialEnd(companyId: string): Promise<Date | null> {
+    const trial = await this.prisma.subscription.findFirst({
+      where: { companyId, plan: { planType: 'TRIAL' } },
+      orderBy: { createdAt: 'desc' },
+      select: { nextDueDate: true, updatedAt: true },
+    });
+    if (!trial) return null;
+    return trial.updatedAt && trial.updatedAt < trial.nextDueDate
+      ? trial.updatedAt
+      : trial.nextDueDate;
   }
 
   private billingSituation(
@@ -200,10 +230,20 @@ export class CompanySessionService {
     const overdue = open.find(
       (p) => p.status === 'OVERDUE' || this.localDay(p.dueDate) < today,
     );
-    const paymentPending = ctx.firstChargePending || ctx.awaitingActivation;
-    // Em foco: a vencida mais antiga; sem vencida, a primeira cobrança de uma
-    // contratação que ainda não foi paga. Renovação futura não é pendência.
-    const focus = overdue ?? (paymentPending ? (open[0] ?? null) : null);
+    const contractPending = ctx.firstChargePending || ctx.awaitingActivation;
+    const evolutionOpen = (ctx.pendingEvolution?.payments ?? [])
+      .filter((p) => p.status === 'OVERDUE' || p.status === 'PENDING')
+      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+    // Em foco: a vencida mais antiga do plano em curso; sem vencida, a
+    // primeira cobrança de uma contratação que ainda não foi paga, ou a da
+    // evolução que espera o pagamento. Renovação futura não é pendência.
+    const focus =
+      overdue ??
+      (contractPending
+        ? (open[0] ?? null)
+        : ctx.evolutionPending
+          ? (evolutionOpen[0] ?? null)
+          : null);
 
     const daysOverdue = overdue
       ? Math.max(
@@ -227,8 +267,9 @@ export class CompanySessionService {
     return {
       situation,
       daysOverdue,
-      paymentPending,
+      paymentPending: contractPending || ctx.evolutionPending,
       activationPending: ctx.awaitingActivation,
+      evolutionPending: ctx.evolutionPending,
       chargeInFocus: focus
         ? {
             asaasPaymentId: focus.asaasPaymentId,

@@ -89,6 +89,23 @@ export class SubscriptionQuoteService {
           include,
         });
 
+    // Evolução registrada que espera o pagamento: o plano em curso segue
+    // valendo até ela ser paga (regra de 20/10).
+    const pendingEvolution = active
+      ? await this.prisma.subscription.findFirst({
+          where: {
+            companyId,
+            status: 'INACTIVE',
+            previousSubscriptionId: active.id,
+            contractedAt: { not: null },
+            endedReason: null,
+            payments: { some: { status: { in: ['PENDING', 'OVERDUE'] } } },
+          },
+          orderBy: { createdAt: 'desc' },
+          include,
+        })
+      : null;
+
     const found = active ?? pendingCheckout;
     const current = found?.previousSubscriptionId
       ? { ...found, payments: await this.withTransferredPayments(found) }
@@ -116,7 +133,10 @@ export class SubscriptionQuoteService {
     // A contratação registrada que espera o pagamento para liberar o plano.
     const awaitingActivation =
       !!pendingCheckout?.contractedAt && !confirmedPayment;
-    const hasOpenCharge = !!pendingCheckout || hasOverdue || firstChargePending;
+    // Evolução em aberto também: até ser paga (ou desfeita), não há outra.
+    const evolutionPending = !!pendingEvolution;
+    const hasOpenCharge =
+      !!pendingCheckout || hasOverdue || firstChargePending || evolutionPending;
 
     const intent: ContractingIntent = !current
       ? 'NEW'
@@ -130,6 +150,8 @@ export class SubscriptionQuoteService {
       hasOverdue,
       firstChargePending,
       awaitingActivation,
+      evolutionPending,
+      pendingEvolution,
       confirmedPayment,
       intent,
     };
