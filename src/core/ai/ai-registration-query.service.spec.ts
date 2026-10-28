@@ -27,7 +27,16 @@ describe('AiRegistrationQueryService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
       },
     };
-    const abacService = { hasPermission };
+    // Como no AbacService: hasAnyPermission pergunta a hasPermission
+    const abacService = {
+      hasPermission,
+      hasAnyPermission: jest.fn(async (user, permissions) => {
+        for (const { action, resource } of permissions) {
+          if (await hasPermission(user, action, resource)) return true;
+        }
+        return false;
+      }),
+    };
 
     return {
       service: new AiRegistrationQueryService(
@@ -94,7 +103,34 @@ describe('AiRegistrationQueryService', () => {
         where: { companyId: 'company-1', isActive: true },
       }),
     );
-    expect(hasPermission).not.toHaveBeenCalled();
+    expect(hasPermission).toHaveBeenCalledWith(
+      user,
+      'view',
+      'product_settings:products',
+    );
+  });
+
+  it('produtos: basta poder orçar, sem ver o cadastro de produtos', async () => {
+    const hasPermission = jest.fn(
+      async (_user, action, resource) =>
+        action === 'create' && resource === 'sale:quotation',
+    );
+    const { service, prisma } = makeService(hasPermission);
+
+    await service.search({ entity: 'products', filters: {} }, user);
+
+    expect(prisma.product.findMany).toHaveBeenCalled();
+  });
+
+  it('produtos: sem o cadastro de produtos e sem orçar, nega', async () => {
+    const { service, prisma } = makeService(jest.fn().mockResolvedValue(false));
+
+    await expect(
+      service.search({ entity: 'products', filters: {} }, user),
+    ).rejects.toThrow(
+      'Seu perfil nao possui permissao para realizar essa consulta.',
+    );
+    expect(prisma.product.findMany).not.toHaveBeenCalled();
   });
 
   it('busca clientes incompletos sem revelar documento ou endereco bruto', async () => {

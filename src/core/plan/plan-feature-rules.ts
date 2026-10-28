@@ -55,6 +55,10 @@ export const PLAN_FEATURE_KEYS = [
   // 24/10/2026: o terceirizado avulso já no START (T-5): a linha avulsa
   // dentro do item e o serviço terceirizado como item, sem a composição.
   'outsourced_item',
+  // 28/10/2026: o assistente de IA por plano, do START em diante (agente do
+  // START e do LITE). O interruptor global (system_settings) continua como
+  // emergência: desligado, ninguém usa; ligado, vale o plano.
+  'ai_assistant',
 ] as const;
 
 export type PlanFeatureKey = (typeof PLAN_FEATURE_KEYS)[number];
@@ -285,6 +289,11 @@ export const FEATURE_ENFORCEMENT: Record<
     level: 'api',
     detail:
       'Terceirizado avulso: a linha avulsa (LOOSE) dentro do item (POST :id/item/:itemId/line e a prévia), o serviço terceirizado como item (POST :id/add-outsourced e a prévia) e o acréscimo sobre o custo (PUT /sale/settings). A composição (product_composition) também libera os três.',
+  },
+  ai_assistant: {
+    level: 'api',
+    detail:
+      'Assistente de IA (/ai): o chat, as conversas e as propostas. Cada ferramenta confere também o recurso da consulta (contas a receber, a pagar, nota fiscal…). A cota do mês é o limite ai_messages_month.',
   },
 };
 

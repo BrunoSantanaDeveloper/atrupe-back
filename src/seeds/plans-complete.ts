@@ -14,6 +14,8 @@ const startFeatures = [
   'can_bill_on_delivery_and_checkout',
   // Terceirizado avulso dentro do item (T-5, 24/10/2026)
   'outsourced_item',
+  // Assistente de IA, com a cota ai_messages_month (28/10/2026)
+  'ai_assistant',
 ];
 
 const liteFeatures = [
@@ -85,6 +87,8 @@ export const PLAN_CONFIGURATIONS = {
     limits: {
       max_users: 3,
       max_companies: 1,
+      // Cota de partida do assistente de IA (IA-6, 28/10/2026)
+      ai_messages_month: 300,
       trial_days: 7, // 7 dias de teste trial
     },
   },
@@ -172,6 +176,8 @@ export const PLAN_CONFIGURATIONS = {
     limits: {
       max_users: 3,
       max_companies: 1,
+      // Cota de partida do assistente de IA (IA-6, 28/10/2026)
+      ai_messages_month: 300,
       trial_days: 0,
     },
   },
@@ -307,6 +313,8 @@ export const PLAN_CONFIGURATIONS = {
     limits: {
       max_users: 3,
       max_companies: 1,
+      // Cota de partida do assistente de IA (IA-6, 28/10/2026)
+      ai_messages_month: 1000,
       trial_days: 0,
     },
   },
@@ -358,6 +366,8 @@ export const PLAN_CONFIGURATIONS = {
     limits: {
       max_users: 3,
       max_companies: 1,
+      // Cota de partida do assistente de IA (IA-6, 28/10/2026)
+      ai_messages_month: 1000,
       trial_days: 0,
     },
   },
@@ -419,6 +429,8 @@ export const PLAN_CONFIGURATIONS = {
     limits: {
       max_users: 3,
       max_companies: 1,
+      // Cota de partida do assistente de IA (IA-6, 28/10/2026)
+      ai_messages_month: 1000,
       trial_days: 0,
     },
   },
@@ -468,6 +480,8 @@ export const PLAN_CONFIGURATIONS = {
     limits: {
       max_users: 3,
       max_companies: -1, // ilimitado
+      // Cota de partida do assistente de IA (IA-6, 28/10/2026)
+      ai_messages_month: 1000,
       trial_days: 0,
     },
   },

@@ -14,6 +14,14 @@ export const BASE_LIMITS = [
     isActive: true,
   },
   {
+    key: 'ai_messages_month',
+    name: 'Mensagens do assistente de IA por mês',
+    description:
+      'Mensagens enviadas ao assistente de IA no mês, somadas por empresa',
+    unit: 'messages',
+    isActive: true,
+  },
+  {
     key: 'trial_days',
     name: 'Dias de Trial',
     description: 'Número de dias de trial gratuito',

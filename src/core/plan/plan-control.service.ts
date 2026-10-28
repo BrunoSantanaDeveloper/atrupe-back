@@ -4,6 +4,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
+import { aiUsageMonth } from '../ai/ai-usage-month';
 
 export interface CompanyLimits {
   [key: string]: number; // Sistema dinâmico - qualquer limite
@@ -495,6 +496,15 @@ export class PlanControlService {
     });
   }
 
+  /** Mensagens ao assistente de IA no mês, no fuso de São Paulo. */
+  async getCurrentAiMessagesMonthCount(companyId: string): Promise<number> {
+    const row = await this.prisma.aiUsage.findUnique({
+      where: { companyId_month: { companyId, month: aiUsageMonth() } },
+      select: { messages: true },
+    });
+    return row?.messages ?? 0;
+  }
+
   /**
    * Obter uso atual de qualquer recurso pelo limit key (SISTEMA DINÂMICO)
    */
@@ -512,6 +522,8 @@ export class PlanControlService {
         return this.getCurrentClientCount(companyId);
       case 'max_suppliers':
         return this.getCurrentSupplierCount(companyId);
+      case 'ai_messages_month':
+        return this.getCurrentAiMessagesMonthCount(companyId);
       default:
         // Limite sem contagem implementada — não bloquear
         return 0;

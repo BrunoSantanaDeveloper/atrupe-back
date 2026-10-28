@@ -36,6 +36,17 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  // Assistente de IA, do START em diante (agente do START e do LITE,
+  // 28/10/2026); a cota do mês é o limite ai_messages_month
+  {
+    key: 'ai_assistant',
+    name: 'Assistente de IA',
+    description:
+      'Assistente que consulta os dados da empresa e propõe orçamentos, descritivos e lançamentos para a pessoa confirmar',
+    category: 'configuration',
+    price: 0,
+    isActive: true,
+  },
   {
     key: 'quotation_quick_sale',
     name: 'Venda Rápida',

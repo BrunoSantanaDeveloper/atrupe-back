@@ -1,4 +1,7 @@
-import { AiToolRegistry } from './ai-tool-registry.service';
+import {
+  AI_PLAN_DENIED_REASON,
+  AiToolRegistry,
+} from './ai-tool-registry.service';
 
 describe('AiToolRegistry', () => {
   const companyId = 'company-1';
@@ -11,6 +14,8 @@ describe('AiToolRegistry', () => {
   };
 
   function makeRegistry(overrides?: {
+    /** As chaves do plano; o padrão é só o ai_assistant */
+    features?: string[];
     hasPermission?: jest.Mock;
     reportService?: Record<string, jest.Mock>;
     operationalQuery?: {
@@ -109,6 +114,15 @@ describe('AiToolRegistry', () => {
       ...(overrides?.registrationQuery || {}),
     };
 
+    const planControl = {
+      getCompanyPlanInfo: jest.fn().mockResolvedValue({
+        features: Object.fromEntries(
+          (overrides?.features ?? ['ai_assistant']).map((key) => [key, true]),
+        ),
+        limits: {},
+      }),
+    };
+
     return {
       registry: new AiToolRegistry(
         prisma as any,
@@ -118,7 +132,9 @@ describe('AiToolRegistry', () => {
         operationalQuery as any,
         helpContent as any,
         registrationQuery as any,
+        planControl as any,
       ),
+      planControl,
       prisma,
       reportService,
       operationalQuery,
@@ -286,6 +302,188 @@ describe('AiToolRegistry', () => {
       name: 'get_company_basic_context',
       status: 'success',
       content: context,
+    });
+  });
+
+  describe('plano da empresa', () => {
+    const entitySchema = () => ({
+      type: 'object',
+      properties: {
+        entity: {
+          type: 'string',
+          enum: [
+            'orders',
+            'quotations',
+            'receivables',
+            'payables',
+            'nfes',
+            'nfses',
+            'nfces',
+          ],
+        },
+      },
+    });
+
+    it('START sem contas a receber: a entidade nem aparece para o modelo', () => {
+      const { registry } = makeRegistry({
+        operationalQuery: {
+          getToolSchema: jest.fn(entitySchema),
+          getSearchToolSchema: jest.fn(entitySchema),
+          getDetailsToolSchema: jest.fn(entitySchema),
+        },
+      });
+
+      const tools = registry.getDefinitions(new Set(['ai_assistant']));
+      const metrics = tools.find(
+        (tool) => tool.function.name === 'query_operational_metrics',
+      );
+
+      expect(
+        (metrics.function.parameters as any).properties.entity.enum,
+      ).toEqual(['orders', 'quotations']);
+    });
+
+    it('LITE com nota fiscal: todas as entidades', () => {
+      const { registry } = makeRegistry({
+        operationalQuery: {
+          getToolSchema: jest.fn(entitySchema),
+          getSearchToolSchema: jest.fn(entitySchema),
+          getDetailsToolSchema: jest.fn(entitySchema),
+        },
+      });
+
+      const tools = registry.getDefinitions(
+        new Set([
+          'ai_assistant',
+          'accounts_receivable',
+          'accounts_payable',
+          'nota_fiscal',
+        ]),
+      );
+      const search = tools.find(
+        (tool) => tool.function.name === 'search_operational_records',
+      );
+
+      expect(
+        (search.function.parameters as any).properties.entity.enum,
+      ).toHaveLength(7);
+    });
+
+    it('START chama a consulta de contas a receber mesmo assim: negada pelo plano', async () => {
+      const { registry, operationalQuery } = makeRegistry();
+
+      const result = await registry.execute(
+        'search_operational_records',
+        { entity: 'receivables' },
+        { ...user, isAdmin: true },
+      );
+
+      expect(result).toEqual({
+        name: 'search_operational_records',
+        status: 'denied',
+        content: { reason: AI_PLAN_DENIED_REASON },
+      });
+      expect(operationalQuery.search).not.toHaveBeenCalled();
+    });
+
+    it('notas fiscais exigem o módulo de nota fiscal', async () => {
+      const { registry, operationalQuery } = makeRegistry({
+        features: ['ai_assistant', 'accounts_receivable'],
+      });
+
+      const result = await registry.execute(
+        'query_operational_metrics',
+        { entity: 'nfes', metric: 'count' },
+        user,
+      );
+
+      expect(result.status).toBe('denied');
+      expect(operationalQuery.query).not.toHaveBeenCalled();
+    });
+
+    it('sem o assistente no plano, nenhuma ferramenta roda', async () => {
+      const { registry, reportService } = makeRegistry({ features: [] });
+
+      const result = await registry.execute('get_report_menu', {}, user);
+
+      expect(result).toEqual({
+        name: 'get_report_menu',
+        status: 'denied',
+        content: { reason: AI_PLAN_DENIED_REASON },
+      });
+      expect(reportService.menu).not.toHaveBeenCalled();
+    });
+
+    it('usa o plano já lido na mensagem, sem consultar de novo', async () => {
+      const { registry, planControl } = makeRegistry();
+
+      await registry.execute(
+        'get_report_menu',
+        {},
+        user,
+        new Set(['ai_assistant']),
+      );
+
+      expect(planControl.getCompanyPlanInfo).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('valores nas vendas', () => {
+    const summary = {
+      approvedTotal: 150000,
+      approvedCount: 3,
+      averageTicket: 50000,
+      commission: 1500,
+      approvalTime: '2 dias',
+    };
+
+    it('sem values:values, o resumo sai só com as contagens', async () => {
+      const hasPermission = jest.fn(
+        async (_user, _action, resource) => resource !== 'values:values',
+      );
+      const { registry } = makeRegistry({
+        hasPermission,
+        reportService: {
+          getSalesReportSummary: jest.fn().mockResolvedValue(summary),
+        },
+      });
+
+      const result = await registry.execute('get_sales_summary', {}, user);
+
+      expect(result.content).toEqual({
+        approvedCount: 3,
+        approvalTime: '2 dias',
+      });
+    });
+
+    it('sem values:values, o ranking mantém os nomes e tira o valor', async () => {
+      const hasPermission = jest.fn(
+        async (_user, _action, resource) => resource !== 'values:values',
+      );
+      const { registry } = makeRegistry({
+        hasPermission,
+        reportService: {
+          getTopClients: jest
+            .fn()
+            .mockResolvedValue([{ name: 'Clínica Sorriso', value: 90000 }]),
+        },
+      });
+
+      const result = await registry.execute('get_sales_top_clients', {}, user);
+
+      expect(result.content).toEqual([{ name: 'Clínica Sorriso' }]);
+    });
+
+    it('com values:values, o resumo vem inteiro', async () => {
+      const { registry } = makeRegistry({
+        reportService: {
+          getSalesReportSummary: jest.fn().mockResolvedValue(summary),
+        },
+      });
+
+      const result = await registry.execute('get_sales_summary', {}, user);
+
+      expect(result.content).toEqual(summary);
     });
   });
 

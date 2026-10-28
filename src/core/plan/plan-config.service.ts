@@ -131,6 +131,13 @@ const LIMIT_RULES: Record<
     enforced: true,
     detail: 'Duração dos próximos testes gratuitos (vale para o plano Trial).',
   },
+  ai_messages_month: {
+    min: 0,
+    allowUnlimited: true,
+    enforced: true,
+    detail:
+      'Verificado a cada mensagem ao assistente de IA: soma as mensagens da empresa no mês (a barrada pela proteção não conta). A cota renova no dia 1º.',
+  },
 };
 
 /** Card do plano na trilha de contratação. */

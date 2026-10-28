@@ -9,10 +9,31 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'nestjs-prisma';
 import { AiChatRequestDto } from './dto/ai-chat.dto';
 import { AiSafetyService } from './ai-safety.service';
-import { AiToolRegistry } from './ai-tool-registry.service';
-import { AiMessage, AiRequestUser, AiToolExecutionResult } from './ai.types';
+import {
+  AiPlanFeatures,
+  AiToolRegistry,
+  enabledFeatures,
+} from './ai-tool-registry.service';
+import { AI_FEATURE, AiQuota, AiUsageService } from './ai-usage.service';
+import {
+  AiMessage,
+  AiProviderResponse,
+  AiRequestUser,
+  AiToolDefinition,
+  AiToolExecutionResult,
+} from './ai.types';
 import { AI_PROVIDER, AiProvider } from './providers/ai-provider.interface';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
+import { PlanControlService } from '../plan/plan-control.service';
+
+/** Por que o assistente está desligado para a empresa (access-status). */
+export type AiAccessReason = 'SYSTEM_OFF' | 'NOT_IN_PLAN' | 'QUOTA_EXCEEDED';
+
+/** O plano da empresa, lido uma vez por requisição. */
+interface AiAccess {
+  features: AiPlanFeatures;
+  limits: Record<string, number>;
+}
 
 @Injectable()
 export class AiService {
@@ -23,14 +44,43 @@ export class AiService {
     private readonly tools: AiToolRegistry,
     private readonly settings: SystemSettingsService,
     @Inject(AI_PROVIDER) private readonly provider: AiProvider,
+    private readonly planControl: PlanControlService,
+    private readonly usage: AiUsageService,
   ) {}
 
-  async chat(dto: AiChatRequestDto, user: AiRequestUser) {
-    await this.ensureAiAccessEnabled();
+  /**
+   * Para o widget: ligado é a chave global e o plano, com cota no mês. Cota
+   * estourada desliga o envio (QUOTA_EXCEEDED), mas as conversas continuam
+   * abertas para leitura.
+   */
+  async accessStatus(user: AiRequestUser): Promise<{
+    enabled: boolean;
+    reason?: AiAccessReason;
+    quota: AiQuota | null;
+  }> {
+    const systemEnabled = await this.settings.isAiAccessEnabled();
+    const plan = user.companyId
+      ? await this.planControl.getCompanyPlanInfo(user.companyId)
+      : null;
+    const quota = user.companyId
+      ? await this.usage.quota(user.companyId, plan?.limits)
+      : null;
+    const reason: AiAccessReason | undefined = !systemEnabled
+      ? 'SYSTEM_OFF'
+      : !plan?.features?.[AI_FEATURE]
+        ? 'NOT_IN_PLAN'
+        : quota && this.usage.isExceeded(quota)
+          ? 'QUOTA_EXCEEDED'
+          : undefined;
+    return { enabled: !reason, ...(reason ? { reason } : {}), quota };
+  }
 
-    if (!user.companyId) {
-      throw new ForbiddenException('Usuário sem empresa ativa.');
-    }
+  async chat(dto: AiChatRequestDto, user: AiRequestUser) {
+    const access = await this.ensureAccess(user);
+
+    // Cota estourada: nem grava a mensagem, nem chama o provedor
+    const quota = await this.usage.quota(user.companyId, access.limits);
+    if (this.usage.isExceeded(quota)) throw this.usage.quotaExceeded(quota);
 
     const conversation = await this.getOrCreateConversation(dto, user);
     const safetyResult = this.safety.inspectUserMessage(dto.message);
@@ -47,6 +97,7 @@ export class AiService {
       },
     });
 
+    // A mensagem barrada pela proteção não vai ao modelo e não conta na cota
     if (safetyResult.blocked) {
       const blockedMessage =
         safetyResult.reason ||
@@ -74,6 +125,8 @@ export class AiService {
       };
     }
 
+    await this.usage.reserveMessage(user.companyId, access.limits);
+
     const historyLimit = this.config.get<number>('ai.maxHistoryMessages') || 20;
     const maxToolCalls = this.config.get<number>('ai.maxToolCalls') || 5;
 
@@ -97,13 +150,17 @@ export class AiService {
         })),
     ];
 
+    const tools = this.tools.getDefinitions(access.features);
     const executedTools: AiToolExecutionResult[] = [];
     const suspiciousToolCalls: string[] = [];
-    let response = await this.provider.complete({
-      conversationId: conversation.id,
-      messages,
-      tools: this.tools.getDefinitions(),
-    });
+    let response: AiProviderResponse;
+    try {
+      response = await this.complete(conversation.id, messages, tools, user);
+    } catch (error) {
+      // Sem resposta do provedor, a mensagem não conta
+      await this.usage.releaseMessage(user.companyId);
+      throw error;
+    }
 
     for (let i = 0; response.toolCalls.length && i < maxToolCalls; i++) {
       messages.push({
@@ -117,6 +174,7 @@ export class AiService {
           toolCall.function.name,
           this.parseToolArguments(toolCall.function.arguments),
           user,
+          access.features,
         );
         executedTools.push(result);
         if (result.status === 'denied' || result.status === 'error') {
@@ -129,11 +187,7 @@ export class AiService {
         });
       }
 
-      response = await this.provider.complete({
-        conversationId: conversation.id,
-        messages,
-        tools: this.tools.getDefinitions(),
-      });
+      response = await this.complete(conversation.id, messages, tools, user);
     }
 
     const finalMessage =
@@ -172,8 +226,13 @@ export class AiService {
     };
   }
 
+  /** O consumo de cada empresa no mês (superadmin). */
+  usageByCompany(month: string) {
+    return this.usage.usageByCompany(month);
+  }
+
   async listConversations(user: AiRequestUser) {
-    await this.ensureAiAccessEnabled();
+    await this.ensureAccess(user);
 
     return this.prisma.aiConversation.findMany({
       where: {
@@ -192,7 +251,7 @@ export class AiService {
   }
 
   async listMessages(conversationId: string, user: AiRequestUser) {
-    await this.ensureAiAccessEnabled();
+    await this.ensureAccess(user);
 
     await this.ensureConversationAccess(conversationId, user);
     return this.prisma.aiMessage.findMany({
@@ -210,7 +269,7 @@ export class AiService {
   }
 
   async deleteConversation(conversationId: string, user: AiRequestUser) {
-    await this.ensureAiAccessEnabled();
+    await this.ensureAccess(user);
 
     await this.ensureConversationAccess(conversationId, user);
     await this.prisma.aiConversation.update({
@@ -218,6 +277,22 @@ export class AiService {
       data: { deletedAt: new Date() },
     });
     return { success: true };
+  }
+
+  /** Cada chamada ao provedor soma os tokens e o custo do mês. */
+  private async complete(
+    conversationId: string,
+    messages: AiMessage[],
+    tools: AiToolDefinition[],
+    user: AiRequestUser,
+  ) {
+    const response = await this.provider.complete({
+      conversationId,
+      messages,
+      tools,
+    });
+    await this.usage.recordTokens(user.companyId, response.usage);
+    return response;
   }
 
   private async getOrCreateConversation(
@@ -280,28 +355,32 @@ export class AiService {
     );
   }
 
-  private async ensureAiAccessEnabled() {
+  /**
+   * A chave global (interruptor de emergência: desligada, ninguém usa) e o
+   * plano da empresa (ai_assistant). Devolve o plano para a mensagem não
+   * ler de novo.
+   */
+  private async ensureAccess(user: AiRequestUser): Promise<AiAccess> {
     const enabled = await this.settings.isAiAccessEnabled();
     if (!enabled) {
       throw new ServiceUnavailableException(
         'O Assistente IA esta temporariamente indisponivel.',
       );
     }
-  }
 
-  private systemPrompt(currentPath?: string) {
-    return [
-      'Você é o assistente operacional da Atrupe.',
-      'Responda sempre em português do Brasil, com objetividade e clareza.',
-      'Use ferramentas quando a pergunta exigir dados reais da conta do usuário.',
-      'Nunca invente números, relatórios, permissões ou funcionalidades.',
-      'Se uma ferramenta retornar acesso negado, explique que o usuário não tem permissão para aquela consulta.',
-      'Você só pode consultar dados; não crie, edite, exclua, emita notas, baixe XMLs ou execute ações operacionais.',
-      'Nunca revele senhas, tokens, chaves, certificado digital, XML fiscal bruto ou segredos de integração.',
-      'Ao usar períodos relativos como hoje, mês atual ou últimos meses, mencione o período considerado.',
-      currentPath ? `Tela atual do usuário: ${currentPath}.` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
+    if (!user.companyId) {
+      throw new ForbiddenException('Usuário sem empresa ativa.');
+    }
+
+    const plan = await this.planControl.getCompanyPlanInfo(user.companyId);
+    if (!plan?.features?.[AI_FEATURE]) {
+      // O 403 do sistema: diz de qual plano em diante o recurso existe
+      await this.planControl.enforceFeature(user.companyId, AI_FEATURE);
+    }
+
+    return {
+      features: enabledFeatures(plan?.features),
+      limits: plan?.limits ?? {},
+    };
   }
 }

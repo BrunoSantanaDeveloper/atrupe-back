@@ -10,7 +10,8 @@ type ToolArgs = Record<string, unknown>;
 const PROJECT_TIMEZONE_OFFSET = '-03:00';
 
 interface RegistrationCatalogEntry {
-  permission?: string;
+  /** Basta uma: como nas rotas, a ação vem junto do recurso. */
+  permissions: { action: string; resource: string }[];
   statuses: string[];
   dateFields: string[];
   defaultDateField: string;
@@ -30,7 +31,7 @@ export class AiRegistrationQueryService {
     RegistrationCatalogEntry
   > = {
     clients: {
-      permission: 'register:client',
+      permissions: [{ action: 'view', resource: 'register:client' }],
       statuses: Object.values(ClientStatus),
       dateFields: ['createdAt', 'updatedAt'],
       defaultDateField: 'createdAt',
@@ -41,7 +42,7 @@ export class AiRegistrationQueryService {
       },
     },
     suppliers: {
-      permission: 'register:supplier',
+      permissions: [{ action: 'view', resource: 'register:supplier' }],
       statuses: Object.values(ClientStatus),
       dateFields: ['createdAt', 'updatedAt'],
       defaultDateField: 'createdAt',
@@ -51,7 +52,13 @@ export class AiRegistrationQueryService {
         INACTIVE: 'Inativos',
       },
     },
+    // Quem vê o cadastro de produtos ou quem orça: o vendedor precisa achar o
+    // produto para montar o orçamento (28/10/2026; antes, qualquer perfil)
     products: {
+      permissions: [
+        { action: 'view', resource: 'product_settings:products' },
+        { action: 'create', resource: 'sale:quotation' },
+      ],
       statuses: Object.values(ProductStatus),
       dateFields: [],
       defaultDateField: '',
@@ -441,18 +448,14 @@ export class AiRegistrationQueryService {
       throw new AiRegistrationQueryDeniedError('Usuario sem empresa ativa.');
     }
 
-    const permission = this.catalog[entity].permission;
-    if (permission) {
-      const allowed = await this.abacService.hasPermission(
-        user,
-        'view',
-        permission,
+    const allowed = await this.abacService.hasAnyPermission(
+      user,
+      this.catalog[entity].permissions,
+    );
+    if (!allowed) {
+      throw new AiRegistrationQueryDeniedError(
+        'Seu perfil nao possui permissao para realizar essa consulta.',
       );
-      if (!allowed) {
-        throw new AiRegistrationQueryDeniedError(
-          'Seu perfil nao possui permissao para realizar essa consulta.',
-        );
-      }
     }
     filters.companyId = user.companyId;
   }

@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from '../auth/abac/abac.service';
+import { DASHBOARD_SALES_MONEY_FIELDS } from '../auth/abac/money-fields';
+import { omitMoneyFields } from '../auth/abac/values-visibility.interceptor';
+import { PlanControlService } from '../plan/plan-control.service';
 import { ReportService } from '../../svc/report/report.service';
 import {
   AiOperationalQueryDeniedError,
@@ -12,6 +15,7 @@ import {
   AiRegistrationQueryService,
 } from './ai-registration-query.service';
 import { AiSafetyService } from './ai-safety.service';
+import { AI_FEATURE } from './ai-usage.service';
 import {
   AiRequestUser,
   AiToolDefinition,
@@ -19,6 +23,49 @@ import {
 } from './ai.types';
 
 type ToolArgs = Record<string, unknown>;
+
+/** Os recursos de plano ligados na empresa (chaves de `features`). */
+export type AiPlanFeatures = ReadonlySet<string>;
+
+/** As chaves ligadas do plano (`features` do getCompanyPlanInfo). */
+export const enabledFeatures = (
+  features: Record<string, boolean> | undefined,
+): AiPlanFeatures =>
+  new Set(
+    Object.entries(features ?? {})
+      .filter(([, enabled]) => enabled)
+      .map(([key]) => key),
+  );
+
+export const AI_PLAN_DENIED_REASON = 'Este recurso não faz parte do seu plano.';
+
+/**
+ * O recurso de plano de cada ferramenta, além do ai_assistant. Sem entrada,
+ * a ferramenta vale para todo plano com o assistente.
+ */
+const TOOL_FEATURES: Record<string, string[]> = {};
+
+/**
+ * As consultas operacionais conferem o recurso pela entidade: a mesma chave
+ * que fecha a tela fecha a pergunta pelo chat (contas a receber e a pagar no
+ * LITE, notas com o módulo de nota fiscal).
+ */
+const OPERATIONAL_ENTITY_FEATURES: Record<string, string> = {
+  receivables: 'accounts_receivable',
+  payables: 'accounts_payable',
+  nfes: 'nota_fiscal',
+  nfses: 'nota_fiscal',
+  nfces: 'nota_fiscal',
+};
+
+const OPERATIONAL_TOOLS = [
+  'query_operational_metrics',
+  'search_operational_records',
+  'get_operational_record_details',
+];
+
+/** O resumo e os rankings de vendas: o valor só para quem vê valores. */
+const SALES_MONEY_FIELDS = new Set(DASHBOARD_SALES_MONEY_FIELDS);
 
 @Injectable()
 export class AiToolRegistry {
@@ -30,9 +77,34 @@ export class AiToolRegistry {
     private readonly operationalQuery: AiOperationalQueryService,
     private readonly helpContent: AiHelpContentService,
     private readonly registrationQuery: AiRegistrationQueryService,
+    private readonly planControl: PlanControlService,
   ) {}
 
-  getDefinitions(): AiToolDefinition[] {
+  /** Os recursos de plano da empresa, lidos uma vez por mensagem. */
+  async planFeatures(companyId: string): Promise<AiPlanFeatures> {
+    const plan = await this.planControl.getCompanyPlanInfo(companyId);
+    return enabledFeatures(plan?.features);
+  }
+
+  /**
+   * As ferramentas do plano da empresa: o modelo não oferece o que a empresa
+   * não tem. Nas consultas operacionais, só as entidades do plano.
+   */
+  getDefinitions(features: AiPlanFeatures): AiToolDefinition[] {
+    return this.allDefinitions()
+      .filter((tool) =>
+        (TOOL_FEATURES[tool.function.name] ?? []).every((key) =>
+          features.has(key),
+        ),
+      )
+      .map((tool) =>
+        OPERATIONAL_TOOLS.includes(tool.function.name)
+          ? this.withEntities(tool, features)
+          : tool,
+      );
+  }
+
+  private allDefinitions(): AiToolDefinition[] {
     return [
       this.tool(
         'get_report_menu',
@@ -130,10 +202,18 @@ export class AiToolRegistry {
     name: string,
     args: ToolArgs,
     user: AiRequestUser,
+    features?: AiPlanFeatures,
   ): Promise<AiToolExecutionResult> {
     try {
       if (!user.companyId)
         return this.denied(name, 'Usuário sem empresa ativa.');
+
+      // O plano de novo, mesmo fora da lista: o modelo pode chamar o nome
+      // de uma ferramenta que não recebeu
+      const plan = features ?? (await this.planFeatures(user.companyId));
+      if (!this.allowedByPlan(name, args, plan)) {
+        return this.denied(name, AI_PLAN_DENIED_REASON);
+      }
 
       switch (name) {
         case 'get_report_menu':
@@ -199,9 +279,12 @@ export class AiToolRegistry {
         case 'get_sales_summary':
           return this.success(
             name,
-            await this.reportService.getSalesReportSummary(
-              user.companyId,
-              await this.salesFilters(user, args, name),
+            await this.salesValues(
+              user,
+              await this.reportService.getSalesReportSummary(
+                user.companyId,
+                await this.salesFilters(user, args, name),
+              ),
             ),
           );
         case 'query_operational_metrics':
@@ -237,17 +320,23 @@ export class AiToolRegistry {
         case 'get_sales_top_clients':
           return this.success(
             name,
-            await this.reportService.getTopClients(
-              user.companyId,
-              await this.salesFilters(user, args, name),
+            await this.salesValues(
+              user,
+              await this.reportService.getTopClients(
+                user.companyId,
+                await this.salesFilters(user, args, name),
+              ),
             ),
           );
         case 'get_sales_top_products':
           return this.success(
             name,
-            await this.reportService.getTopProducts(
-              user.companyId,
-              await this.salesFilters(user, args, name),
+            await this.salesValues(
+              user,
+              await this.reportService.getTopProducts(
+                user.companyId,
+                await this.salesFilters(user, args, name),
+              ),
             ),
           );
         case 'get_commission_summary':
@@ -304,6 +393,64 @@ export class AiToolRegistry {
         error?.message || 'Falha ao executar ferramenta.',
       );
     }
+  }
+
+  private allowedByPlan(name: string, args: ToolArgs, plan: AiPlanFeatures) {
+    if (!plan.has(AI_FEATURE)) return false;
+    if (!(TOOL_FEATURES[name] ?? []).every((key) => plan.has(key))) {
+      return false;
+    }
+    if (OPERATIONAL_TOOLS.includes(name)) {
+      const feature = OPERATIONAL_ENTITY_FEATURES[String(args?.entity ?? '')];
+      if (feature && !plan.has(feature)) return false;
+    }
+    return true;
+  }
+
+  /** O esquema da consulta operacional só com as entidades do plano. */
+  private withEntities(
+    tool: AiToolDefinition,
+    features: AiPlanFeatures,
+  ): AiToolDefinition {
+    const parameters = tool.function.parameters as {
+      properties?: Record<string, { enum?: string[] }>;
+    };
+    const entity = parameters.properties?.entity;
+    if (!entity?.enum) return tool;
+    const allowed = entity.enum.filter((value) => {
+      const feature = OPERATIONAL_ENTITY_FEATURES[value];
+      return !feature || features.has(feature);
+    });
+    return {
+      ...tool,
+      function: {
+        ...tool.function,
+        parameters: {
+          ...parameters,
+          properties: {
+            ...parameters.properties,
+            entity: { ...entity, enum: allowed },
+          },
+        },
+      },
+    };
+  }
+
+  /**
+   * Sem values:values, o resumo e os rankings de vendas saem só com as
+   * contagens e os nomes, como no painel inicial. Aqui vale sempre (não só
+   * com VALUES_VISIBILITY_ENFORCE): o que a ferramenta devolve vai ao
+   * provedor.
+   */
+  private async salesValues<T>(user: AiRequestUser, content: T): Promise<T> {
+    const canSeeValues = await this.abacService.hasPermission(
+      user,
+      'view',
+      'values:values',
+    );
+    return canSeeValues
+      ? content
+      : omitMoneyFields(content, SALES_MONEY_FIELDS);
   }
 
   private tool(

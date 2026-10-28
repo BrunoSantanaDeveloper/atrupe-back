@@ -25,9 +25,18 @@ export interface AiToolDefinition {
   };
 }
 
+/** O que o provedor informa do consumo de uma chamada. */
+export interface AiProviderUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  /** Em dólares, quando o provedor informa o custo. */
+  costUsd?: number;
+}
+
 export interface AiProviderResponse {
   content: string;
   toolCalls: AiToolCall[];
+  usage?: AiProviderUsage;
   model?: string;
   modelAttempts?: {
     model: string;

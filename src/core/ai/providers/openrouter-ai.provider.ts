@@ -6,7 +6,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { AiModelSelectionService } from '../ai-model-selection.service';
-import { AiMessage, AiProviderResponse, AiToolDefinition } from '../ai.types';
+import {
+  AiMessage,
+  AiProviderResponse,
+  AiProviderUsage,
+  AiToolDefinition,
+} from '../ai.types';
 import { AiProvider } from './ai-provider.interface';
 import { openRouterProviderPreferences } from './openrouter-data-policy';
 
@@ -15,6 +20,13 @@ interface OpenRouterChoice {
     content?: string | null;
     tool_calls?: AiProviderResponse['toolCalls'];
   };
+}
+
+interface OpenRouterUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  /** Em créditos da OpenRouter, que são dólares */
+  cost?: number;
 }
 
 interface ModelAttempt {
@@ -64,6 +76,8 @@ export class OpenRouterAiProvider implements AiProvider {
             stream: false,
             session_id: params.conversationId,
             provider: openRouterProviderPreferences(this.config),
+            // Tokens e custo na resposta, para a cota e o custo do mês
+            usage: { include: true },
           },
           {
             headers: {
@@ -87,6 +101,7 @@ export class OpenRouterAiProvider implements AiProvider {
         return {
           content: message.content || '',
           toolCalls: message.tool_calls || [],
+          usage: this.readUsage(response.data?.usage),
           model,
           modelAttempts: attempts,
         };
@@ -128,6 +143,15 @@ export class OpenRouterAiProvider implements AiProvider {
     throw new ServiceUnavailableException(
       'Assistente de IA indisponível no momento. Tente novamente em instantes.',
     );
+  }
+
+  private readUsage(usage?: OpenRouterUsage): AiProviderUsage | undefined {
+    if (!usage) return undefined;
+    return {
+      promptTokens: usage.prompt_tokens,
+      completionTokens: usage.completion_tokens,
+      costUsd: usage.cost,
+    };
   }
 
   private async getModelChain() {

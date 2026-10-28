@@ -103,6 +103,7 @@ model Company {
   cfopConfigs            CfopConfig[]
   operationNatures       OperationNature[]
   aiConversations        AiConversation[]
+  aiUsage                AiUsage[]
   contactSources         ContactSource[]
   hiddenContactSources   CompanyHiddenContactSource[]
   saleSettings           SaleSettings?
@@ -2857,6 +2858,31 @@ model AiMessage {
   @@index([conversationId])
   @@index([createdAt])
   @@map("ai_messages")
+}
+
+// O consumo do assistente de IA por empresa e mês (IA-6, 28/10/2026): as
+// mensagens que chegaram ao modelo (a barrada pela proteção não conta) são a
+// cota do plano (limite ai_messages_month); os tokens e o custo, quando o
+// provedor informa, dão o número real para fechar a cota de cada plano.
+model AiUsage {
+  id               String   @id @default(uuid())
+  companyId        String
+  // "2026-10", no fuso de São Paulo
+  month            String
+  messages         Int      @default(0)
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  // Custo em milionésimos de dólar, quando o provedor informa
+  costMicroUsd     Int      @default(0)
+  actionsProposed  Int      @default(0)
+  actionsApplied   Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, month])
+  @@index([month])
+  @@map("ai_usage")
 }
 
 enum OwnerType {

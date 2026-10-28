@@ -15,6 +15,7 @@ import { AiRegistrationQueryService } from './ai-registration-query.service';
 import { AiSafetyService } from './ai-safety.service';
 import { AiService } from './ai.service';
 import { AiToolRegistry } from './ai-tool-registry.service';
+import { AiUsageService } from './ai-usage.service';
 import { AI_PROVIDER } from './providers/ai-provider.interface';
 import { OpenRouterAiProvider } from './providers/openrouter-ai.provider';
 
@@ -38,6 +39,7 @@ import { OpenRouterAiProvider } from './providers/openrouter-ai.provider';
     AiRegistrationQueryService,
     AiSafetyService,
     AiToolRegistry,
+    AiUsageService,
     OpenRouterAiProvider,
     {
       provide: AI_PROVIDER,

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -6,6 +7,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -14,9 +16,9 @@ import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { AiModelSelectionService } from './ai-model-selection.service';
 import { AiService } from './ai.service';
+import { aiUsageMonth, isAiUsageMonth } from './ai-usage-month';
 import { AiChatRequestDto } from './dto/ai-chat.dto';
 import { UpdateAiModelConfigDto } from './dto/ai-model-config.dto';
-import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { AiChatThrottlerGuard } from './guards/ai-chat-throttler.guard';
 
 @Controller('ai')
@@ -25,12 +27,22 @@ export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly modelSelection: AiModelSelectionService,
-    private readonly settings: SystemSettingsService,
   ) {}
 
+  // A chave global, o plano (ai_assistant) e a cota do mês da empresa
   @Get('access-status')
-  async getAccessStatus() {
-    return { enabled: await this.settings.isAiAccessEnabled() };
+  getAccessStatus(@Req() req: Request) {
+    return this.aiService.accessStatus((req as any).user);
+  }
+
+  // O consumo do assistente por empresa no mês (padrão: o mês atual)
+  @Get('usage')
+  @UseGuards(SystemAdminGuard)
+  getUsage(@Query('month') month?: string) {
+    if (month !== undefined && !isAiUsageMonth(month)) {
+      throw new BadRequestException('Informe o mês no formato AAAA-MM.');
+    }
+    return this.aiService.usageByCompany(month ?? aiUsageMonth());
   }
 
   @Post('chat')
