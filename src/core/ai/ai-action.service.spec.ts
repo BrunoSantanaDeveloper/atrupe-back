@@ -51,6 +51,12 @@ describe('AiActionService', () => {
       withoutValues: jest.fn((p) => ({ ...p, total: undefined })),
       summaryLine: jest.fn().mockReturnValue('Orçamento: 1 item'),
     };
+    const proposals = {
+      applyItemDescription: jest.fn(),
+      applyFinancialCategory: jest.fn(),
+      applyNextContact: jest.fn().mockResolvedValue({ status: 'APPLIED' }),
+      summaryLine: jest.fn().mockReturnValue('Próximo contato'),
+    };
     const service = new AiActionService(
       prisma as any,
       abacService as any,
@@ -58,8 +64,9 @@ describe('AiActionService', () => {
       settings as any,
       usage as any,
       drafts as any,
+      proposals as any,
     );
-    return { service, prisma, drafts, usage, planControl };
+    return { service, prisma, drafts, usage, planControl, proposals };
   }
 
   const proposed = (overrides: Record<string, unknown> = {}) => ({

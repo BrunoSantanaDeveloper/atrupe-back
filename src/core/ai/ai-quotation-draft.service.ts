@@ -8,6 +8,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from '../auth/abac/abac.service';
 import { BASE_PRODUCT_WHERE } from '../product/product.service';
 import { isAtCashier } from '../sale/quick-sale/quick-sale.rules';
+import { QuickSaleService } from '../sale/quick-sale/quick-sale.service';
 import {
   AddItemDto,
   AddProductItemDto,
@@ -230,6 +231,7 @@ export class AiQuotationDraftService {
     private readonly prisma: PrismaService,
     private readonly abacService: AbacService,
     private readonly quotations: QuotationService,
+    private readonly quickSales: QuickSaleService,
   ) {}
 
   getToolSchema() {
@@ -613,7 +615,7 @@ export class AiQuotationDraftService {
    * responsável ("a Juliana"). Um claro, usa; vários, a pessoa escolhe;
    * nenhum, fica sem cliente. Nunca cria cliente.
    */
-  private async matchClient(
+  async matchClient(
     companyId: string,
     hint: string,
   ): Promise<QuotationDraftPayload['client']> {
@@ -1184,6 +1186,12 @@ export class AiQuotationDraftService {
     user: AiRequestUser,
   ) {
     await this.ensureCanCreate(user);
+    if (payload.quickSale) {
+      // A venda rápida nasce com os padrões da configuração (cliente,
+      // série e vendedor da sessão), como o botão da tela (LITE)
+      const sale = await this.quickSales.create(user);
+      return sale.id;
+    }
     const clientId =
       edits?.clientId !== undefined ? edits.clientId : payload.client.id;
     if (clientId) {

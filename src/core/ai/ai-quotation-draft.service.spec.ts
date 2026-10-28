@@ -154,12 +154,16 @@ describe('AiQuotationDraftService', () => {
       create: jest.fn().mockResolvedValue({ id: ids.quotation }),
       addProductToQuotation: jest.fn().mockResolvedValue({}),
     };
+    const quickSales = {
+      create: jest.fn().mockResolvedValue({ id: 'venda-rapida-1' }),
+    };
     const service = new AiQuotationDraftService(
       prisma as any,
       abacService as any,
       quotations as any,
+      quickSales as any,
     );
-    return { service, prisma, abacService, quotations };
+    return { service, prisma, abacService, quotations, quickSales };
   }
 
   const placas = {
@@ -515,6 +519,31 @@ describe('AiQuotationDraftService', () => {
         service.apply(payloadSemCliente, undefined, user, START),
       ).rejects.toBeInstanceOf(UnprocessableEntityException);
       expect(quotations.create).not.toHaveBeenCalled();
+    });
+
+    it('venda rápida: cria pelo padrão da configuração, sem pedir cliente', async () => {
+      const made = makeService();
+      const payload = await made.service.build(
+        { items: placas.items },
+        user,
+        LITE,
+        { quickSale: true },
+      );
+
+      expect(payload.quickSale).toBe(true);
+      expect(payload.warnings).not.toContain(
+        'Escolha o cliente antes de aplicar.',
+      );
+
+      const result = await made.service.apply(payload, undefined, user, LITE);
+
+      expect(made.quickSales.create).toHaveBeenCalledWith(user);
+      expect(made.quotations.create).not.toHaveBeenCalled();
+      expect(made.quotations.addProductToQuotation).toHaveBeenCalledWith(
+        'venda-rapida-1',
+        expect.objectContaining({ productId: ids.pvc3 }),
+      );
+      expect(result.quotationId).toBe('venda-rapida-1');
     });
   });
 });

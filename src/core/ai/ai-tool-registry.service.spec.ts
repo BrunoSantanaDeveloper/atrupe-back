@@ -127,6 +127,22 @@ describe('AiToolRegistry', () => {
         summary: 'Orçamento: 1 item',
       }),
     };
+    const proposals = {
+      descriptionToolSchema: jest.fn().mockReturnValue({ type: 'object' }),
+      categoryToolSchema: jest.fn().mockReturnValue({ type: 'object' }),
+      nextContactToolSchema: jest.fn().mockReturnValue({ type: 'object' }),
+      buildItemDescription: jest.fn(),
+      buildFinancialCategory: jest.fn(),
+      buildNextContact: jest.fn().mockResolvedValue({ quotationId: 'q-1' }),
+      summaryForModel: jest.fn((type, actionId) => ({ type, actionId })),
+    };
+    const lite = {
+      followUpToday: jest.fn().mockResolvedValue({ due: { count: 0 } }),
+      lostReasons: jest.fn(),
+      cashStatus: jest.fn(),
+      cashFrontQueue: jest.fn().mockResolvedValue({ waiting: 0 }),
+      clientCredit: jest.fn(),
+    };
     const planControl = {
       getCompanyPlanInfo: jest.fn().mockResolvedValue({
         features: Object.fromEntries(
@@ -148,7 +164,11 @@ describe('AiToolRegistry', () => {
         planControl as any,
         drafts as any,
         actions as any,
+        proposals as any,
+        lite as any,
       ),
+      proposals,
+      lite,
       planControl,
       drafts,
       actions,
@@ -501,6 +521,135 @@ describe('AiToolRegistry', () => {
       const result = await registry.execute('get_sales_summary', {}, user);
 
       expect(result.content).toEqual(summary);
+    });
+  });
+
+  describe('ferramentas do LITE', () => {
+    it('no START, as consultas e propostas do LITE nem aparecem', () => {
+      const { registry } = makeRegistry();
+
+      const names = registry
+        .getDefinitions(new Set(['ai_assistant']))
+        .map((tool) => tool.function.name);
+
+      expect(names).toEqual(
+        expect.arrayContaining([
+          'propose_quotation_draft',
+          'propose_item_description',
+          'propose_financial_category',
+          'list_registration_issues',
+        ]),
+      );
+      for (const lite of [
+        'propose_quick_sale',
+        'propose_next_contact',
+        'get_follow_up_today',
+        'get_lost_reasons_summary',
+        'get_cash_status',
+        'get_cash_front_queue',
+        'get_client_credit',
+      ]) {
+        expect(names).not.toContain(lite);
+      }
+    });
+
+    it('chamada mesmo assim no START: denied, sem consultar', async () => {
+      const { registry, lite } = makeRegistry();
+
+      const result = await registry.execute('get_cash_front_queue', {}, user);
+
+      expect(result.status).toBe('denied');
+      expect(lite.cashFrontQueue).not.toHaveBeenCalled();
+    });
+
+    it('no LITE, a fila da frente de caixa responde', async () => {
+      const { registry, lite } = makeRegistry({
+        features: ['ai_assistant', 'pdv_screen'],
+      });
+
+      const result = await registry.execute('get_cash_front_queue', {}, user);
+
+      expect(result).toEqual({
+        name: 'get_cash_front_queue',
+        status: 'success',
+        content: { waiting: 0 },
+      });
+      expect(lite.cashFrontQueue).toHaveBeenCalledWith(user);
+    });
+
+    it('próximo contato: o orçamento da tela vai como contexto e vira proposta', async () => {
+      const { registry, proposals, actions } = makeRegistry({
+        features: ['ai_assistant', 'quotation_status_column'],
+      });
+
+      const result = await registry.execute(
+        'propose_next_contact',
+        { date: '2026-10-29' },
+        user,
+        undefined,
+        {
+          conversationId: 'c-1',
+          currentPath:
+            '/vendas/orcamentos/0b9f6a0e-5c1d-4e8a-9a3b-2f1c4d5e6f70',
+        },
+      );
+
+      expect(proposals.buildNextContact).toHaveBeenCalledWith(
+        { date: '2026-10-29' },
+        user,
+        expect.objectContaining({
+          quotationId: '0b9f6a0e-5c1d-4e8a-9a3b-2f1c4d5e6f70',
+        }),
+      );
+      expect(actions.propose).toHaveBeenCalledWith(
+        user,
+        'NEXT_CONTACT',
+        { quotationId: 'q-1' },
+        'c-1',
+      );
+      expect(result.action).toBeDefined();
+    });
+
+    it('descritivo recusado (item sem liberação): denied, não erro 500', async () => {
+      const { registry, proposals, actions } = makeRegistry();
+      proposals.buildItemDescription.mockRejectedValue(
+        new AiProposalDeniedError(
+          'Este produto não permite editar o descritivo no orçamento.',
+        ),
+      );
+
+      const result = await registry.execute(
+        'propose_item_description',
+        { text: 'Lona 440 g' },
+        user,
+      );
+
+      expect(result).toEqual({
+        name: 'propose_item_description',
+        status: 'denied',
+        content: {
+          reason: 'Este produto não permite editar o descritivo no orçamento.',
+        },
+      });
+      expect(actions.propose).not.toHaveBeenCalled();
+    });
+
+    it('categoria sem histórico: responde o aviso, sem criar proposta', async () => {
+      const { registry, proposals, actions } = makeRegistry();
+      proposals.buildFinancialCategory.mockResolvedValue({
+        suggestion: null,
+        warnings: ['Não há lançamentos parecidos'],
+      });
+
+      const result = await registry.execute(
+        'propose_financial_category',
+        { description: 'manutenção' },
+        user,
+      );
+
+      expect(result.status).toBe('success');
+      expect(result.action).toBeUndefined();
+      expect(actions.propose).not.toHaveBeenCalled();
     });
   });
 

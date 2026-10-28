@@ -190,6 +190,10 @@ export class AiService {
           {
             conversationId: conversation.id,
             currentPath: dto.context?.currentPath,
+            quotationId: dto.context?.quotationId,
+            quotationItemId: dto.context?.quotationItemId,
+            productId: dto.context?.productId,
+            payableId: dto.context?.payableId,
           },
         );
         executedTools.push(result);

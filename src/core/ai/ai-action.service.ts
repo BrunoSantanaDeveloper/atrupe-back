@@ -18,6 +18,12 @@ import {
   QuotationDraftPayload,
 } from './ai-quotation-draft.service';
 import { AI_PLAN_DENIED_REASON, enabledFeatures } from './ai-plan';
+import {
+  AiProposalsService,
+  FinancialCategoryPayload,
+  ItemDescriptionPayload,
+  NextContactPayload,
+} from './ai-proposals.service';
 import { AI_FEATURE, AiUsageService } from './ai-usage.service';
 import { AiRequestUser } from './ai.types';
 
@@ -64,6 +70,7 @@ export class AiActionService {
     private readonly settings: SystemSettingsService,
     private readonly usage: AiUsageService,
     private readonly drafts: AiQuotationDraftService,
+    private readonly proposals: AiProposalsService,
   ) {}
 
   async propose(
@@ -205,6 +212,24 @@ export class AiActionService {
           user,
           features,
         );
+      case 'ITEM_DESCRIPTION':
+        return this.proposals.applyItemDescription(
+          payload as ItemDescriptionPayload,
+          edited as { text?: unknown } | undefined,
+          user,
+        );
+      case 'FINANCIAL_CATEGORY':
+        return this.proposals.applyFinancialCategory(
+          payload as FinancialCategoryPayload,
+          edited as Record<string, unknown> | undefined,
+          user,
+        );
+      case 'NEXT_CONTACT':
+        return this.proposals.applyNextContact(
+          payload as NextContactPayload,
+          edited as Record<string, unknown> | undefined,
+          user,
+        );
       default:
         throw new ConflictException('Tipo de proposta sem aplicação.');
     }
@@ -297,7 +322,7 @@ export class AiActionService {
       case 'QUICK_SALE_DRAFT':
         return this.drafts.summaryLine(payload as QuotationDraftPayload);
       default:
-        return 'Proposta do assistente';
+        return this.proposals.summaryLine(type, payload);
     }
   }
 }

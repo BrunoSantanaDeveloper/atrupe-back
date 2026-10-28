@@ -24,6 +24,8 @@ import {
   AiProposalDeniedError,
   AiQuotationDraftService,
 } from './ai-quotation-draft.service';
+import { AiLiteQueryService } from './ai-lite-query.service';
+import { AiProposalsService } from './ai-proposals.service';
 import { AiSafetyService } from './ai-safety.service';
 import { AI_FEATURE } from './ai-usage.service';
 import {
@@ -39,8 +41,11 @@ export interface AiToolContext {
   conversationId?: string;
   /** A tela atual: o orçamento aberto é o alvo do CURRENT */
   currentPath?: string;
-  /** O orçamento do botão "Montar com IA" */
+  /** O orçamento do botão "Montar com IA" ou o aberto na tela */
   quotationId?: string;
+  quotationItemId?: string;
+  productId?: string;
+  payableId?: string;
 }
 
 const QUOTATION_PATH = /\/vendas\/orcamentos\/([0-9a-f-]{36})(?:[/?#]|$)/i;
@@ -52,7 +57,17 @@ export type { AiPlanFeatures };
  * O recurso de plano de cada ferramenta, além do ai_assistant. Sem entrada,
  * a ferramenta vale para todo plano com o assistente.
  */
-const TOOL_FEATURES: Record<string, string[]> = {};
+const TOOL_FEATURES: Record<string, string[]> = {
+  // A venda rápida existe a partir do LITE
+  propose_quick_sale: ['quotation_quick_sale'],
+  // As consultas e propostas do LITE (seção 5.2): a mesma chave da tela
+  get_follow_up_today: ['quotation_status_column'],
+  propose_next_contact: ['quotation_status_column'],
+  get_lost_reasons_summary: ['quotation_rejection_reasons'],
+  get_cash_status: ['cash_control'],
+  get_cash_front_queue: ['pdv_screen'],
+  get_client_credit: ['credit_limit_configuration'],
+};
 
 /**
  * As consultas operacionais conferem o recurso pela entidade: a mesma chave
@@ -89,6 +104,8 @@ export class AiToolRegistry {
     private readonly planControl: PlanControlService,
     private readonly drafts: AiQuotationDraftService,
     private readonly actions: AiActionService,
+    private readonly proposals: AiProposalsService,
+    private readonly lite: AiLiteQueryService,
   ) {}
 
   /** Os recursos de plano da empresa, lidos uma vez por mensagem. */
@@ -205,6 +222,70 @@ export class AiToolRegistry {
       this.tool(
         'get_company_basic_context',
         'Nome e situação da conta (ativa, nível de bloqueio) da empresa logada.',
+      ),
+      this.tool(
+        'propose_quick_sale',
+        'Monta a proposta de uma venda rápida (balcão) a partir do pedido: produtos, medidas e quantidades. O cliente é o da configuração da venda rápida. Não grava nada: a pessoa confere o cartão e clica em Aplicar. Nunca mande preço.',
+        this.drafts.getToolSchema(),
+      ),
+      this.tool(
+        'propose_item_description',
+        'Propõe o descritivo técnico de um item do orçamento ou de um produto (material, medidas, acabamento, aplicação), a partir do nome, da unidade, das medidas e do pedido. Não grava: a pessoa aplica no cartão.',
+        this.proposals.descriptionToolSchema(),
+      ),
+      this.tool(
+        'propose_financial_category',
+        'Sugere a categoria do plano de contas (natureza e subcategoria) e o fornecedor de um lançamento a pagar, pelo histórico da própria empresa. Não grava: a pessoa aplica no cartão.',
+        this.proposals.categoryToolSchema(),
+      ),
+      this.tool(
+        'propose_next_contact',
+        'Propõe a data e o lembrete do próximo contato de um orçamento, pelo que o vendedor escreveu ("liga pra ela na quinta"). Não grava: a pessoa aplica no cartão.',
+        this.proposals.nextContactToolSchema(),
+      ),
+      this.tool(
+        'get_follow_up_today',
+        'Acompanhamento do dia: orçamentos com próximo contato hoje ou vencido, aguardando sem contato combinado e propostas que vencem em 2 dias.',
+      ),
+      this.tool(
+        'get_lost_reasons_summary',
+        'Orçamentos rejeitados e vendas canceladas por motivo, no período.',
+        {
+          type: 'object',
+          properties: {
+            startDate: { type: 'string', description: 'YYYY-MM-DD' },
+            endDate: { type: 'string', description: 'YYYY-MM-DD' },
+          },
+        },
+      ),
+      this.tool(
+        'get_cash_status',
+        'Caixas do dia por conta: abertos e fechados, caixa esquecido aberto, saldo de abertura e diferença do fechamento. Sem o detalhe das movimentações.',
+      ),
+      this.tool(
+        'get_cash_front_queue',
+        'Vendas esperando na frente de caixa e o total a receber.',
+      ),
+      this.tool(
+        'get_client_credit',
+        'Limite de crédito de um cliente: limite, usado, disponível e se está bloqueado.',
+        {
+          type: 'object',
+          properties: {
+            clientHint: {
+              type: 'string',
+              description: 'O nome do cliente como a pessoa escreveu.',
+            },
+            clientId: {
+              type: 'string',
+              description: 'O id do cliente retornado por uma busca.',
+            },
+          },
+        },
+      ),
+      this.tool(
+        'list_registration_issues',
+        'Lista os cadastros para revisar: clientes sem os dados da nota fiscal, clientes duplicados e produtos sem unidade, sem preço ou com o setor desativado. Só consulta; não grava nada.',
       ),
       this.tool(
         'propose_quotation_draft',
@@ -394,6 +475,41 @@ export class AiToolRegistry {
             name,
             await this.getCompanyContext(user.companyId),
           );
+        case 'propose_quick_sale': {
+          const payload = await this.drafts.build(args, user, plan, {
+            quickSale: true,
+            currentQuotationId:
+              context.quotationId ?? this.quotationOnScreen(context),
+          });
+          const action = await this.actions.propose(
+            user,
+            'QUICK_SALE_DRAFT',
+            payload,
+            context.conversationId,
+          );
+          return this.proposal(
+            name,
+            this.drafts.summaryForModel(action.id, payload),
+            action,
+          );
+        }
+        case 'propose_item_description':
+        case 'propose_financial_category':
+        case 'propose_next_contact':
+          // Com await: a recusa (denied) cai no catch, não vira erro 500
+          return await this.otherProposal(name, args, user, context);
+        case 'get_follow_up_today':
+          return this.success(name, await this.lite.followUpToday(user));
+        case 'get_lost_reasons_summary':
+          return this.success(name, await this.lite.lostReasons(args, user));
+        case 'get_cash_status':
+          return this.success(name, await this.lite.cashStatus(user));
+        case 'get_cash_front_queue':
+          return this.success(name, await this.lite.cashFrontQueue(user));
+        case 'get_client_credit':
+          return this.success(name, await this.lite.clientCredit(args, user));
+        case 'list_registration_issues':
+          return this.success(name, await this.registrationQuery.issues(user));
         case 'propose_quotation_draft': {
           const payload = await this.drafts.build(args, user, plan, {
             currentQuotationId:
@@ -630,6 +746,54 @@ export class AiToolRegistry {
     action: AiActionSummary,
   ): AiToolExecutionResult {
     return { name, status: 'success', content, action };
+  }
+
+  /** Descritivo, categoria e próximo contato: as propostas das fases 3 e 4. */
+  private async otherProposal(
+    name: string,
+    args: ToolArgs,
+    user: AiRequestUser,
+    context: AiToolContext,
+  ): Promise<AiToolExecutionResult> {
+    const screen = {
+      quotationId: context.quotationId ?? this.quotationOnScreen(context),
+      quotationItemId: context.quotationItemId,
+      productId: context.productId,
+      payableId: context.payableId,
+    };
+    const type =
+      name === 'propose_item_description'
+        ? 'ITEM_DESCRIPTION'
+        : name === 'propose_financial_category'
+          ? 'FINANCIAL_CATEGORY'
+          : 'NEXT_CONTACT';
+    const payload =
+      type === 'ITEM_DESCRIPTION'
+        ? await this.proposals.buildItemDescription(args, user, screen)
+        : type === 'FINANCIAL_CATEGORY'
+          ? await this.proposals.buildFinancialCategory(args, user, screen)
+          : await this.proposals.buildNextContact(args, user, screen);
+    // Sem histórico parecido não há categoria a propor: só o aviso
+    if (
+      type === 'FINANCIAL_CATEGORY' &&
+      !('suggestion' in payload && payload.suggestion)
+    ) {
+      return this.success(
+        name,
+        this.proposals.summaryForModel(type, null, payload),
+      );
+    }
+    const action = await this.actions.propose(
+      user,
+      type,
+      payload,
+      context.conversationId,
+    );
+    return this.proposal(
+      name,
+      this.proposals.summaryForModel(type, action.id, payload),
+      action,
+    );
   }
 
   private quotationOnScreen(context: AiToolContext) {

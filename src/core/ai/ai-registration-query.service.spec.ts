@@ -253,4 +253,115 @@ describe('AiRegistrationQueryService', () => {
     ).rejects.toThrow('Status cadastral nao permitido.');
     expect(prisma.client.findMany).not.toHaveBeenCalled();
   });
+
+  describe('cadastros para revisar', () => {
+    const client = (name, overrides = {}) => ({
+      id: name,
+      name,
+      status: 'ACTIVE',
+      type: 'COMPANY',
+      cpf: null,
+      cnpj: '12345678000190',
+      stateRegistration: null,
+      indicadorIE: 9,
+      address: [
+        {
+          street: 'Rua A',
+          number: '10',
+          neighborhood: 'Centro',
+          city: 'Curitiba',
+          state: 'PR',
+          zipcode: '80000000',
+        },
+      ],
+      ...overrides,
+    });
+
+    it('clientes sem dados da nota e duplicados, sem documento na resposta', async () => {
+      const { service, prisma } = makeService();
+      prisma.client.findMany.mockResolvedValue([
+        client('Clínica Sorriso'),
+        client('Clinica Sorriso Ltda', { cnpj: '12.345.678/0001-90' }),
+        client('João da Silva', { cnpj: null, cpf: null, address: [] }),
+        client('Joao da Silva', { cnpj: null, cpf: null, address: [] }),
+      ]);
+
+      const result: any = await service.issues(user);
+
+      expect(result.clients.incompleteForInvoice.count).toBe(2);
+      expect(result.clients.incompleteForInvoice.examples[0]).toEqual({
+        name: 'João da Silva',
+        missingFields: expect.arrayContaining(['CPF ou CNPJ']),
+      });
+      expect(result.clients.duplicates.examples).toEqual([
+        {
+          reason: 'mesmo CPF/CNPJ',
+          names: ['Clínica Sorriso', 'Clinica Sorriso Ltda'],
+        },
+        { reason: 'mesmo nome', names: ['João da Silva', 'Joao da Silva'] },
+      ]);
+      expect(JSON.stringify(result)).not.toMatch(/12345678|80000000|Rua A/);
+    });
+
+    it('produtos sem unidade, sem preço ou com setor desativado; o Produto base fica fora', async () => {
+      const { service, prisma } = makeService();
+      prisma.client.findMany.mockResolvedValue([]);
+      prisma.product.findMany.mockResolvedValue([
+        {
+          name: 'Banner',
+          code: 'BAN',
+          sector: { name: 'Impressão', isActive: true },
+          items: [{ unitKind: 'AREA', unitCost: 0.01 }],
+          variations: [],
+        },
+        {
+          name: 'Camiseta',
+          code: 'CAM',
+          sector: { name: 'Têxtil', isActive: false },
+          items: [{ unitKind: 'UNITY', unitCost: 0 }],
+          variations: [{ unitPrice: 3500 }],
+        },
+        {
+          name: 'Serviço sem cálculo',
+          code: null,
+          sector: { name: 'Impressão', isActive: true },
+          items: [],
+          variations: [],
+        },
+      ]);
+
+      const result: any = await service.issues(user);
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            NOT: { name: { startsWith: 'Produto base – ' } },
+          }),
+        }),
+      );
+      expect(result.products.withoutUnit.examples).toEqual([
+        { name: 'Serviço sem cálculo', code: null },
+      ]);
+      expect(result.products.withoutPrice.examples).toEqual([
+        { name: 'Serviço sem cálculo', code: null },
+      ]);
+      expect(result.products.inactiveSector.examples).toEqual([
+        { name: 'Camiseta', code: 'CAM' },
+      ]);
+    });
+
+    it('sem ver clientes, a revisão traz só os produtos', async () => {
+      const hasPermission = jest.fn(
+        async (_user, _action, resource) => resource !== 'register:client',
+      );
+      const { service, prisma } = makeService(hasPermission);
+      prisma.product.findMany.mockResolvedValue([]);
+
+      const result: any = await service.issues(user);
+
+      expect(result.clients).toBeUndefined();
+      expect(prisma.client.findMany).not.toHaveBeenCalled();
+      expect(result.products).toBeDefined();
+    });
+  });
 });

@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { ClientStatus, ProductStatus } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from '../auth/abac/abac.service';
+import { BASE_PRODUCT_WHERE } from '../product/product.service';
+import { normalizeText } from './ai-text-match';
 import { AiRequestUser } from './ai.types';
+
+/** Quantos cadastros a revisão lê, e quantos exemplos devolve por grupo. */
+const ISSUES_SCAN_LIMIT = 3000;
+const ISSUES_EXAMPLES = 10;
 
 type RegistrationEntity = 'clients' | 'suppliers' | 'products';
 type RegistrationMetric = 'count';
@@ -195,6 +201,136 @@ export class AiRegistrationQueryService {
       },
       limit,
       records: formatted,
+    };
+  }
+
+  /**
+   * Os cadastros para revisar (agente, fase 3; IA-3 sem a parte de custo):
+   * clientes sem os dados da nota, clientes duplicados (mesmo CPF/CNPJ ou
+   * mesmo nome) e produtos ativos sem unidade, sem preço ou com o setor
+   * desativado. Só leitura. Vão nomes e o que falta; nunca o documento nem
+   * o endereço. O Produto base fica fora do "sem preço": ele é R$ 0,00 de
+   * propósito.
+   */
+  async issues(user: AiRequestUser) {
+    if (!user.companyId) {
+      throw new AiRegistrationQueryDeniedError('Usuario sem empresa ativa.');
+    }
+    const [canClients, canProducts] = await Promise.all([
+      this.abacService.hasAnyPermission(user, this.catalog.clients.permissions),
+      this.abacService.hasAnyPermission(
+        user,
+        this.catalog.products.permissions,
+      ),
+    ]);
+    if (!canClients && !canProducts) {
+      throw new AiRegistrationQueryDeniedError(
+        'Seu perfil nao possui permissao para realizar essa consulta.',
+      );
+    }
+
+    return {
+      ...(canClients
+        ? { clients: await this.clientIssues(user.companyId) }
+        : {}),
+      ...(canProducts
+        ? { products: await this.productIssues(user.companyId) }
+        : {}),
+    };
+  }
+
+  private async clientIssues(companyId: string) {
+    const clients = await this.prisma.client.findMany({
+      where: { companyId, status: { not: ClientStatus.INACTIVE } },
+      select: this.registrationSelect('clients') as any,
+      orderBy: { name: 'asc' },
+      take: ISSUES_SCAN_LIMIT,
+    });
+
+    const incomplete = clients
+      .map((client: any) => ({
+        name: client.name,
+        ...this.assessParty(client),
+      }))
+      .filter((client) => client.fiscalReadiness === 'INCOMPLETE');
+
+    // Mesmo CPF/CNPJ, ou mesmo nome sem documento para desempatar
+    const groups = new Map<string, { reason: string; names: string[] }>();
+    for (const client of clients as any[]) {
+      const document = String(client.cpf || client.cnpj || '').replace(
+        /[^0-9]/g,
+        '',
+      );
+      const key = document
+        ? `doc:${document}`
+        : `nome:${normalizeText(client.name || '')}`;
+      if (key === 'nome:') continue;
+      const group = groups.get(key) ?? {
+        reason: document ? 'mesmo CPF/CNPJ' : 'mesmo nome',
+        names: [],
+      };
+      group.names.push(client.name);
+      groups.set(key, group);
+    }
+    const duplicates = [...groups.values()].filter(
+      (group) => group.names.length > 1,
+    );
+
+    return {
+      scanned: clients.length,
+      truncated: clients.length === ISSUES_SCAN_LIMIT,
+      incompleteForInvoice: {
+        count: incomplete.length,
+        examples: incomplete
+          .slice(0, ISSUES_EXAMPLES)
+          .map(({ name, missingFields }) => ({ name, missingFields })),
+      },
+      duplicates: {
+        count: duplicates.length,
+        examples: duplicates.slice(0, ISSUES_EXAMPLES),
+      },
+    };
+  }
+
+  private async productIssues(companyId: string) {
+    const products = await this.prisma.product.findMany({
+      where: { companyId, isActive: true, NOT: BASE_PRODUCT_WHERE },
+      select: {
+        name: true,
+        code: true,
+        sector: { select: { name: true, isActive: true } },
+        items: { select: { unitKind: true, unitCost: true } },
+        variations: { select: { unitPrice: true } },
+      },
+      orderBy: { name: 'asc' },
+      take: ISSUES_SCAN_LIMIT,
+    });
+
+    const group = (filter: (product: (typeof products)[number]) => boolean) => {
+      const found = products.filter(filter);
+      return {
+        count: found.length,
+        examples: found
+          .slice(0, ISSUES_EXAMPLES)
+          .map((product) => ({ name: product.name, code: product.code })),
+      };
+    };
+
+    return {
+      scanned: products.length,
+      truncated: products.length === ISSUES_SCAN_LIMIT,
+      withoutUnit: group(
+        (product) =>
+          !product.items.length ||
+          product.items.every((item) => !item.unitKind),
+      ),
+      // Sem preço na linha e sem variação com preço
+      withoutPrice: group(
+        (product) =>
+          product.items.every((item) => !item.unitCost) &&
+          !product.variations.some((variation) => variation.unitPrice),
+      ),
+      inactiveSector: group((product) => product.sector?.isActive === false),
     };
   }
 
