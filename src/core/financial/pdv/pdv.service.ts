@@ -14,6 +14,7 @@ import {
   brDay,
   dayRange,
   dayOf,
+  findPostingRegister,
   postMovement,
   toReais,
   workdayEndOf,
@@ -29,6 +30,7 @@ import {
 } from '../cash-control/sale-receipt';
 import { QuickSaleService } from '../../sale/quick-sale/quick-sale.service';
 import { PlanControlService } from '../../plan/plan-control.service';
+import { CashDayService } from '../cash-control/cash-day.service';
 import { QuotationFinancialService } from '../../sale/quotation/quotation-financial.service';
 import { CreditCheckService } from '../../sale/quotation/credit-check.service';
 import { saleReference } from '../../sale/quick-sale/quick-sale.rules';
@@ -129,6 +131,7 @@ export class PdvService {
     private readonly financial: QuotationFinancialService,
     private readonly credit: CreditCheckService,
     private readonly planControl: PlanControlService,
+    private readonly cashDay?: CashDayService,
   ) {}
 
   actorOf(user: { userId?: string; companyId: string }) {
@@ -462,6 +465,29 @@ export class PdvService {
     return session;
   }
 
+  /**
+   * Abre o caixa do dia da conta com controle que não tem nenhum aberto
+   * (CX-0): é o sistema que lança, então não recusa. Se a abertura não for
+   * possível (o dia já fechou), o lançamento entra direto na conta.
+   */
+  private async ensureCashDay(
+    companyId: string,
+    bankAccountId: string,
+    date: Date,
+  ) {
+    const account = await this.prisma.bankAccount.findUnique({
+      where: { id: bankAccountId },
+      select: { cashControl: true, kind: true },
+    });
+    if (!account?.cashControl || account.kind === 'CARD' || !this.cashDay) {
+      return;
+    }
+    if (await findPostingRegister(this.prisma, bankAccountId, date)) return;
+    await this.cashDay
+      .open(companyId, { bankAccountId }, { id: null, name: 'Sistema' })
+      .catch(() => undefined);
+  }
+
   /** FC-14: o caixa de um dia anterior ainda aberto não lança; fecha antes. */
   private assertCurrent(session: { openedAt: Date }) {
     const day = staleDay(session);
@@ -596,48 +622,94 @@ export class PdvService {
         net: number;
       }
     >();
-    // A taxa da operadora de cada forma de cartão, à vista (FC-10): só
-    // previsão; a taxa de verdade é a da liquidação
-    const cardConditions = [
-      ...new Set(
-        session.movements.flatMap((movement) =>
-          partsOf(movement.parts)
-            .filter((part) => part.method === 'CARD')
-            .map((part) => part.paymentConditionId),
-        ),
-      ),
-    ];
+    const received = session.movements
+      .filter(
+        (movement) => movement.kind === 'SALE' || movement.kind === 'REVERSAL',
+      )
+      .flatMap((movement) =>
+        partsOf(movement.parts).map((part) => ({ part, kind: movement.kind })),
+      );
+    // A taxa da operadora de cada forma de cartão, na linha das parcelas da
+    // venda (FC-10, 4.1.4); sem a linha, a de 1x. Só previsão: a taxa de
+    // verdade é a da liquidação
+    const cardParts = received
+      .map(({ part }) => part)
+      .filter((part) => part.method === 'CARD');
     const rates = new Map(
       (
         await this.prisma.installment.findMany({
           where: {
-            paymentConditionId: { in: cardConditions },
-            installment: 1,
+            paymentConditionId: {
+              in: [
+                ...new Set(cardParts.map((part) => part.paymentConditionId)),
+              ],
+            },
+            installment: {
+              in: [
+                ...new Set([
+                  1,
+                  ...cardParts.map((part) => part.installments ?? 1),
+                ]),
+              ],
+            },
           },
-          select: { paymentConditionId: true, operatorFeeRate: true },
+          select: {
+            paymentConditionId: true,
+            installment: true,
+            operatorFeeRate: true,
+          },
         })
-      ).map((row) => [row.paymentConditionId, row.operatorFeeRate]),
+      ).map((row) => [
+        `${row.paymentConditionId}:${row.installment}`,
+        row.operatorFeeRate,
+      ]),
     );
-    for (const movement of session.movements) {
-      if (movement.kind !== 'SALE' && movement.kind !== 'REVERSAL') continue;
-      for (const part of partsOf(movement.parts)) {
-        if (part.method === 'CASH' || !part.bankAccountId) continue;
-        const key = `${part.method}:${part.bankAccountId}`;
-        const row = byAccount.get(key) ?? {
-          method: part.method,
-          bankAccountId: part.bankAccountId,
-          amount: 0,
-          net: 0,
-        };
-        row.amount += part.amount * SIGN[movement.kind];
-        const rate =
-          part.method === 'CARD'
-            ? (rates.get(part.paymentConditionId) ?? 0)
-            : 0;
-        row.net +=
-          Math.round(part.amount * (1 - rate / 100)) * SIGN[movement.kind];
-        byAccount.set(key, row);
+    const rateOf = (part: ReceiptPart) =>
+      rates.get(`${part.paymentConditionId}:${part.installments ?? 1}`) ??
+      rates.get(`${part.paymentConditionId}:1`) ??
+      0;
+    // PIX e cartão gravados sem conta: a conta da forma, como no
+    // recebimento (CX-2 revista, 4.1.2); sem nenhuma, o fechamento diz qual
+    // forma falta, em vez de o valor sumir
+    const fallbackAccount = new Map<string, string | null>();
+    for (const { part } of received) {
+      if (part.method === 'CASH' || part.bankAccountId) continue;
+      const method = `${part.method}:${part.paymentConditionId}`;
+      if (!fallbackAccount.has(method)) {
+        fallbackAccount.set(
+          method,
+          await accountForMethod(
+            this.prisma,
+            user.companyId,
+            part.paymentConditionId,
+            part.method,
+          ),
+        );
       }
+      if (!fallbackAccount.get(method)) {
+        bad(
+          `Nenhuma conta ativa recebe ${METHOD_LABEL[part.method]}: cadastre-a em Contas bancárias para fechar o caixa`,
+        );
+      }
+    }
+    for (const { part, kind } of received) {
+      if (part.method === 'CASH') continue;
+      const bankAccountId =
+        part.bankAccountId ??
+        (fallbackAccount.get(
+          `${part.method}:${part.paymentConditionId}`,
+        ) as string);
+      const key = `${part.method}:${bankAccountId}`;
+      const row = byAccount.get(key) ?? {
+        method: part.method,
+        bankAccountId,
+        amount: 0,
+        net: 0,
+      };
+      row.amount += part.amount * SIGN[kind];
+      const rate = part.method === 'CARD' ? rateOf(part) : 0;
+      row.net += Math.round(part.amount * (1 - rate / 100)) * SIGN[kind];
+      byAccount.set(key, row);
     }
     const cashOut = dto.countedCash - keep;
     const cashTransfer = posted ? cashOut - difference : cashOut;
@@ -661,6 +733,16 @@ export class PdvService {
       net?: number;
     }[] = [];
     const date = new Date();
+    // O dia das contas que recebem o fechamento (CX-0, 4.1.1): o que o
+    // sistema faz sozinho não trava ninguém. Sem caixa aberto, o sistema abre
+    // o do dia; se nem isso der, o lançamento entra direto na conta
+    const targets = new Set(
+      [...byAccount.values()].map((row) => row.bankAccountId),
+    );
+    if (drawer && (cashTransfer !== 0 || posted)) targets.add(drawer.id);
+    for (const bankAccountId of targets) {
+      await this.ensureCashDay(user.companyId, bankAccountId, date);
+    }
     try {
       await this.prisma.$transaction(
         async (tx) => {
@@ -677,6 +759,7 @@ export class PdvService {
               description,
               date,
               responsible: actor,
+              withoutRegisterFallback: true,
               ...extra,
             });
           if (drawer && cashTransfer !== 0) {
@@ -703,6 +786,7 @@ export class PdvService {
               description: `Diferença da contagem · FC nº ${session.number}`,
               date,
               reason: note,
+              withoutRegisterFallback: true,
               // A quebra fica no nome de quem operava
               responsible: {
                 id: session.operatorId,

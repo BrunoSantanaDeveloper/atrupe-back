@@ -243,6 +243,11 @@ export type PostInput = {
   reason?: string | null;
   awaitingApproval?: boolean;
   responsible?: { id: string | null; name: string } | null;
+  /**
+   * Lançamento que o sistema faz sozinho (CX-0): sem caixa aberto na conta,
+   * entra direto na conta, sem caixa, em vez de recusar
+   */
+  withoutRegisterFallback?: boolean;
   natureId?: string | null;
   subCategoryId?: string | null;
   linkedId?: string | null;
@@ -272,7 +277,9 @@ export async function postMovement(tx: Tx, input: PostInput) {
   const target = controlled
     ? await findPostingRegister(tx, account.id, input.date)
     : null;
-  if (controlled && !target) throw new MissingCashDay(account.name);
+  if (controlled && !target && !input.withoutRegisterFallback) {
+    throw new MissingCashDay(account.name);
+  }
 
   const data: Prisma.TransactionUncheckedCreateInput = {
     type: input.type,

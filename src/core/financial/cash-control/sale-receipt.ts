@@ -13,6 +13,8 @@ export type ReceiptPart = {
   paymentConditionId: string;
   bankAccountId?: string | null;
   amount: number;
+  /** Cartão: em quantas parcelas (a linha da taxa da operadora) */
+  installments?: number;
 };
 
 /**

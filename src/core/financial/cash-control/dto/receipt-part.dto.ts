@@ -7,6 +7,7 @@ import {
   IsInt,
   IsOptional,
   IsUUID,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -36,6 +37,19 @@ export class ReceiptPartDto {
   @IsInt()
   @Min(1, { message: 'Cada parte do pagamento precisa de valor' })
   amount: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Cartão: em quantas parcelas a operadora cobrou (padrão 1); a taxa prevista no fechamento é a dessa linha da forma',
+    minimum: 1,
+    maximum: 24,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(24)
+  installments?: number;
 }
 
 /** As partes e o arredondamento no balcão (FC-18), em centavos. */
