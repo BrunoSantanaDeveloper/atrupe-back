@@ -487,4 +487,58 @@ describe('ReportService', () => {
       expect(result.products[0].value).toBe(400);
     });
   });
+
+  describe('vendas por vendedor', () => {
+    const getPrisma = () =>
+      (
+        service as unknown as {
+          prisma: { order: { findMany: jest.Mock } };
+        }
+      ).prisma;
+
+    const sale = (sellerId: string, name: string, totalValue: number) => ({
+      quotation: {
+        sellerId,
+        seller: { name },
+        totalValue,
+        deliveryInfo: null,
+        quotationPayment: null,
+      },
+    });
+
+    it('sem filtro de vendedor, não compara sellerId com null (campo obrigatório: o Prisma recusa)', async () => {
+      getPrisma().order.findMany.mockResolvedValue([]);
+
+      await service.getSalesBySeller('company-1', {});
+
+      const { where } = getPrisma().order.findMany.mock.calls[0][0];
+      expect(where.quotation).not.toHaveProperty('NOT');
+      expect(JSON.stringify(where)).not.toContain('null');
+      expect(where.quotation.companyId).toBe('company-1');
+    });
+
+    it('com filtro de vendedor, filtra por ele', async () => {
+      getPrisma().order.findMany.mockResolvedValue([]);
+
+      await service.getSalesBySeller('company-1', { sellerId: 'seller-1' });
+
+      const { where } = getPrisma().order.findMany.mock.calls[0][0];
+      expect(where.quotation.sellerId).toBe('seller-1');
+    });
+
+    it('soma por vendedor e ordena pelo valor', async () => {
+      getPrisma().order.findMany.mockResolvedValue([
+        sale('seller-1', 'Ana', 100),
+        sale('seller-2', 'Bruno', 500),
+        sale('seller-1', 'Ana', 300),
+      ]);
+
+      const result = await service.getSalesBySeller('company-1', {});
+
+      expect(result).toEqual([
+        { name: 'Bruno', value: 500, count: 1 },
+        { name: 'Ana', value: 400, count: 2 },
+      ]);
+    });
+  });
 });
