@@ -32,8 +32,12 @@ async function bootstrap() {
 
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // Swagger: only in non-production
-  if (appEnv !== 'production') {
+  // Swagger fechado por padrão (segurança de outubro de 2026): o homolog roda
+  // com APP_ENV=development e deixava /doc aberto sem login. Só abre com
+  // SWAGGER_ENABLED=true, e nunca em produção
+  const swaggerEnabled =
+    appEnv !== 'production' && config.get<string>('SWAGGER_ENABLED') === 'true';
+  if (swaggerEnabled) {
     const doc = new DocumentBuilder()
       .setTitle('Atrupe - API Documentação')
       .setDescription('Documentação da API para o projeto Atrupe')
