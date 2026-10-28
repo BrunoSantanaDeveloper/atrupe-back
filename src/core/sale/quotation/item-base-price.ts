@@ -22,7 +22,7 @@ import { PlanControlService } from '../../plan/plan-control.service';
  */
 
 /** Centavos por unidade comercial → por unidade bruta (mm², mm, s…). */
-const RAW_UNITS: Record<string, number> = {
+export const RAW_UNITS: Record<string, number> = {
   AREA: 1_000_000,
   LENGTH: 1000,
   CAPACITY: 1000,
@@ -34,7 +34,7 @@ const RAW_UNITS: Record<string, number> = {
 const toRaw = (unitKind: string, cents: number) =>
   cents / (RAW_UNITS[unitKind] ?? 1);
 
-type Row = {
+export type Row = {
   unitKind?: string | null;
   quantity?: number | null;
   width?: number | null;
@@ -48,7 +48,7 @@ type Row = {
 };
 
 /** A medida bruta da linha pela unidade (mm², mm, ml, mg, m, s). */
-function rawMeasure(row: Row, unitKind: string) {
+export function rawMeasure(row: Row, unitKind: string) {
   switch (unitKind) {
     case 'AREA':
       return (row.width ?? 0) * (row.height ?? 0);

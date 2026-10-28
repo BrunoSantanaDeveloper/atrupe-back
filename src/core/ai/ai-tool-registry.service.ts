@@ -14,6 +14,16 @@ import {
   AiRegistrationQueryDeniedError,
   AiRegistrationQueryService,
 } from './ai-registration-query.service';
+import { AiActionService, AiActionSummary } from './ai-action.service';
+import {
+  AI_PLAN_DENIED_REASON,
+  AiPlanFeatures,
+  enabledFeatures,
+} from './ai-plan';
+import {
+  AiProposalDeniedError,
+  AiQuotationDraftService,
+} from './ai-quotation-draft.service';
 import { AiSafetyService } from './ai-safety.service';
 import { AI_FEATURE } from './ai-usage.service';
 import {
@@ -24,20 +34,19 @@ import {
 
 type ToolArgs = Record<string, unknown>;
 
-/** Os recursos de plano ligados na empresa (chaves de `features`). */
-export type AiPlanFeatures = ReadonlySet<string>;
+/** O que a ferramenta sabe da mensagem além dos argumentos do modelo. */
+export interface AiToolContext {
+  conversationId?: string;
+  /** A tela atual: o orçamento aberto é o alvo do CURRENT */
+  currentPath?: string;
+  /** O orçamento do botão "Montar com IA" */
+  quotationId?: string;
+}
 
-/** As chaves ligadas do plano (`features` do getCompanyPlanInfo). */
-export const enabledFeatures = (
-  features: Record<string, boolean> | undefined,
-): AiPlanFeatures =>
-  new Set(
-    Object.entries(features ?? {})
-      .filter(([, enabled]) => enabled)
-      .map(([key]) => key),
-  );
+const QUOTATION_PATH = /\/vendas\/orcamentos\/([0-9a-f-]{36})(?:[/?#]|$)/i;
 
-export const AI_PLAN_DENIED_REASON = 'Este recurso não faz parte do seu plano.';
+export { AI_PLAN_DENIED_REASON, enabledFeatures };
+export type { AiPlanFeatures };
 
 /**
  * O recurso de plano de cada ferramenta, além do ai_assistant. Sem entrada,
@@ -78,6 +87,8 @@ export class AiToolRegistry {
     private readonly helpContent: AiHelpContentService,
     private readonly registrationQuery: AiRegistrationQueryService,
     private readonly planControl: PlanControlService,
+    private readonly drafts: AiQuotationDraftService,
+    private readonly actions: AiActionService,
   ) {}
 
   /** Os recursos de plano da empresa, lidos uma vez por mensagem. */
@@ -195,6 +206,11 @@ export class AiToolRegistry {
         'get_company_basic_context',
         'Nome e situação da conta (ativa, nível de bloqueio) da empresa logada.',
       ),
+      this.tool(
+        'propose_quotation_draft',
+        'Monta a proposta de um orçamento a partir do pedido do cliente: cliente, produtos, medidas, quantidades e entrega. Não grava nada: a pessoa confere o cartão e clica em Aplicar. Nunca mande preço; o servidor calcula.',
+        this.drafts.getToolSchema(),
+      ),
     ];
   }
 
@@ -203,6 +219,7 @@ export class AiToolRegistry {
     args: ToolArgs,
     user: AiRequestUser,
     features?: AiPlanFeatures,
+    context: AiToolContext = {},
   ): Promise<AiToolExecutionResult> {
     try {
       if (!user.companyId)
@@ -377,6 +394,23 @@ export class AiToolRegistry {
             name,
             await this.getCompanyContext(user.companyId),
           );
+        case 'propose_quotation_draft': {
+          const payload = await this.drafts.build(args, user, plan, {
+            currentQuotationId:
+              context.quotationId ?? this.quotationOnScreen(context),
+          });
+          const action = await this.actions.propose(
+            user,
+            'QUOTATION_DRAFT',
+            payload,
+            context.conversationId,
+          );
+          return this.proposal(
+            name,
+            this.drafts.summaryForModel(action.id, payload),
+            action,
+          );
+        }
         default:
           return this.error(name, `Ferramenta desconhecida: ${name}`);
       }
@@ -385,6 +419,9 @@ export class AiToolRegistry {
         return this.denied(name, error.reason);
       }
       if (error instanceof AiRegistrationQueryDeniedError) {
+        return this.denied(name, error.reason);
+      }
+      if (error instanceof AiProposalDeniedError) {
         return this.denied(name, error.reason);
       }
       if (error?.status === 'denied') return error.result;
@@ -584,6 +621,19 @@ export class AiToolRegistry {
 
   private success(name: string, content: unknown): AiToolExecutionResult {
     return { name, status: 'success', content };
+  }
+
+  /** A proposta: o resumo vai ao modelo; o cartão, à resposta do chat. */
+  private proposal(
+    name: string,
+    content: unknown,
+    action: AiActionSummary,
+  ): AiToolExecutionResult {
+    return { name, status: 'success', content, action };
+  }
+
+  private quotationOnScreen(context: AiToolContext) {
+    return QUOTATION_PATH.exec(context.currentPath ?? '')?.[1];
   }
 
   private denied(name: string, reason: string): AiToolExecutionResult {

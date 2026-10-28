@@ -50,6 +50,8 @@ export interface AiToolExecutionResult {
   name: string;
   status: 'success' | 'denied' | 'error';
   content: unknown;
+  /** A proposta criada pela ferramenta (propose_*) */
+  action?: { id: string; type: string; summary: string };
 }
 
 export interface AiRequestUser {

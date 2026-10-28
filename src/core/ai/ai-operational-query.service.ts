@@ -365,6 +365,27 @@ export class AiOperationalQueryService {
       id,
     };
     const record = await this.findRecord(entity, where);
+    if (!record && catalogEntry.domain === 'sales' && filters.sellerId) {
+      // Quem só vê as próprias vendas e pede a de outro vendedor: a recusa
+      // diz o motivo (agente, 28/10/2026), sem mostrar nada do registro
+      const unscoped = { ...filters };
+      delete unscoped.sellerId;
+      const exists = await this.findRecord(entity, {
+        ...this.buildWhere(
+          entity,
+          unscoped,
+          undefined,
+          catalogEntry.defaultDateField,
+          true,
+        ),
+        id,
+      });
+      if (exists) {
+        throw new AiOperationalQueryDeniedError(
+          'Seu perfil so ve as proprias vendas: esse registro e de outro vendedor.',
+        );
+      }
+    }
 
     return {
       entity,

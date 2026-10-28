@@ -1,13 +1,19 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'nestjs-prisma';
 import { AiChatRequestDto } from './dto/ai-chat.dto';
+import { AiQuotationDraftRequestDto } from './dto/ai-action.dto';
+import { AiActionService, AiActionSummary } from './ai-action.service';
 import { AiSafetyService } from './ai-safety.service';
 import {
   AiPlanFeatures,
@@ -26,6 +32,8 @@ import { AI_PROVIDER, AiProvider } from './providers/ai-provider.interface';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { PlanControlService } from '../plan/plan-control.service';
 
+const DRAFT_TOOL = 'propose_quotation_draft';
+
 /** Por que o assistente está desligado para a empresa (access-status). */
 export type AiAccessReason = 'SYSTEM_OFF' | 'NOT_IN_PLAN' | 'QUOTA_EXCEEDED';
 
@@ -37,6 +45,8 @@ interface AiAccess {
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -46,6 +56,7 @@ export class AiService {
     @Inject(AI_PROVIDER) private readonly provider: AiProvider,
     private readonly planControl: PlanControlService,
     private readonly usage: AiUsageService,
+    private readonly actions: AiActionService,
   ) {}
 
   /**
@@ -122,6 +133,7 @@ export class AiService {
         message: blockedMessage,
         sources: [],
         toolCalls: [],
+        actions: [],
       };
     }
 
@@ -175,6 +187,10 @@ export class AiService {
           this.parseToolArguments(toolCall.function.arguments),
           user,
           access.features,
+          {
+            conversationId: conversation.id,
+            currentPath: dto.context?.currentPath,
+          },
         );
         executedTools.push(result);
         if (result.status === 'denied' || result.status === 'error') {
@@ -194,7 +210,8 @@ export class AiService {
       response.content ||
       'Não consegui concluir a resposta com segurança. Tente reformular a pergunta.';
 
-    await this.prisma.aiMessage.create({
+    const actions = this.actionsOf(executedTools);
+    const assistantMessage = await this.prisma.aiMessage.create({
       data: {
         conversationId: conversation.id,
         role: 'assistant',
@@ -202,6 +219,7 @@ export class AiService {
         toolCalls: executedTools.map((tool) => ({
           name: tool.name,
           status: tool.status,
+          ...(tool.action ? { actionId: tool.action.id } : {}),
         })) as any,
         metadata: {
           provider: this.config.get<string>('ai.provider'),
@@ -215,6 +233,11 @@ export class AiService {
       },
     });
 
+    await this.actions.attachMessage(
+      actions.map((action) => action.id),
+      assistantMessage.id,
+    );
+
     return {
       conversationId: conversation.id,
       message: finalMessage,
@@ -223,7 +246,89 @@ export class AiService {
         name: tool.name,
         status: tool.status,
       })),
+      actions,
     };
+  }
+
+  /**
+   * O atalho "Montar com IA" do orçamento (sem chat): o vendedor cola o
+   * texto do cliente e recebe a proposta. Conta uma mensagem na cota.
+   */
+  async quotationDraft(dto: AiQuotationDraftRequestDto, user: AiRequestUser) {
+    const access = await this.ensureAccess(user);
+    const quota = await this.usage.quota(user.companyId, access.limits);
+    if (this.usage.isExceeded(quota)) throw this.usage.quotaExceeded(quota);
+
+    const safetyResult = this.safety.inspectDraftText(dto.text);
+    if (safetyResult.blocked)
+      throw new BadRequestException(safetyResult.reason);
+
+    await this.usage.reserveMessage(user.companyId, access.limits);
+    const tool = this.tools
+      .getDefinitions(access.features)
+      .find((definition) => definition.function.name === DRAFT_TOOL);
+    let response: AiProviderResponse;
+    try {
+      response = await this.provider.complete({
+        conversationId: `quotation-draft:${randomUUID()}`,
+        messages: [
+          { role: 'system', content: this.safety.buildDraftPrompt() },
+          { role: 'user', content: dto.text },
+        ],
+        tools: tool ? [tool] : [],
+        toolChoice: { type: 'function', function: { name: DRAFT_TOOL } },
+      });
+    } catch (error) {
+      await this.usage.releaseMessage(user.companyId);
+      throw error;
+    }
+    await this.usage.recordTokens(user.companyId, response.usage);
+
+    const call = response.toolCalls.find(
+      (toolCall) => toolCall.function.name === DRAFT_TOOL,
+    );
+    if (!call) {
+      throw new UnprocessableEntityException(
+        'Não encontrei produtos e quantidades no texto. Confira o pedido e tente de novo.',
+      );
+    }
+    const result = await this.tools.execute(
+      DRAFT_TOOL,
+      this.parseToolArguments(call.function.arguments),
+      user,
+      access.features,
+      { quotationId: dto.quotationId },
+    );
+    if (!result.action) {
+      const content = result.content as { reason?: string; message?: string };
+      if (result.status === 'denied') {
+        throw new ForbiddenException(content?.reason);
+      }
+      // O erro interno fica no log; a tela recebe o aviso
+      this.logger.error(`Montar com IA falhou: ${content?.message}`);
+      throw new UnprocessableEntityException(
+        'Não consegui montar a proposta. Tente de novo em instantes.',
+      );
+    }
+    return this.actions.get(result.action.id, user);
+  }
+
+  getAction(id: string, user: AiRequestUser) {
+    return this.actions.get(id, user);
+  }
+
+  async applyAction(id: string, user: AiRequestUser, edited?: unknown) {
+    return this.actions.apply(id, user, edited);
+  }
+
+  discardAction(id: string, user: AiRequestUser) {
+    return this.actions.discard(id, user);
+  }
+
+  private actionsOf(tools: AiToolExecutionResult[]): AiActionSummary[] {
+    return tools
+      .map((tool) => tool.action)
+      .filter((action): action is AiActionSummary => !!action);
   }
 
   /** O consumo de cada empresa no mês (superadmin). */

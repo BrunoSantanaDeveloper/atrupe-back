@@ -561,4 +561,38 @@ describe('AiOperationalQueryService', () => {
     ).rejects.toBeInstanceOf(AiOperationalQueryDeniedError);
     expect(prisma.nfse.groupBy).not.toHaveBeenCalled();
   });
+
+  describe('vendedor que só vê as próprias vendas', () => {
+    const seller = { ...user, employeeId: 'employee-1' };
+    const onlyOwn = jest.fn(
+      async (_user, _action, resource) =>
+        resource !== 'sale:other_quotation' &&
+        resource !== 'sale:other_sellers',
+    );
+
+    it('pede o orçamento de outro vendedor: denied, sem os dados', async () => {
+      const { service, prisma } = makeService(onlyOwn);
+      prisma.quotation.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'quotation-9' });
+
+      await expect(
+        service.details({ entity: 'quotations', id: 'quotation-9' }, seller),
+      ).rejects.toThrow('esse registro e de outro vendedor');
+      expect(prisma.quotation.findFirst).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          where: expect.objectContaining({ sellerId: 'employee-1' }),
+        }),
+      );
+    });
+
+    it('id que não existe: segue sem registro', async () => {
+      const { service } = makeService(onlyOwn);
+
+      await expect(
+        service.details({ entity: 'quotations', id: 'quotation-x' }, seller),
+      ).resolves.toEqual({ entity: 'quotations', record: null });
+    });
+  });
 });

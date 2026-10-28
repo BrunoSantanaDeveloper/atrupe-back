@@ -7,7 +7,10 @@ import { AcademyModule } from '../academy/academy.module';
 import { FiscalOnboardingModule } from '../fiscal/onboarding/fiscal-onboarding.module';
 import { PlanControlModule } from '../plan/plan-control.module';
 import { ReportModule } from '../../svc/report/report.module';
+import { QuotationModule } from '../sale/quotation/quotation.module';
 import { AiController } from './ai.controller';
+import { AiActionService } from './ai-action.service';
+import { AiQuotationDraftService } from './ai-quotation-draft.service';
 import { AiHelpContentService } from './ai-help-content.service';
 import { AiModelSelectionService } from './ai-model-selection.service';
 import { AiOperationalQueryService } from './ai-operational-query.service';
@@ -29,10 +32,14 @@ import { OpenRouterAiProvider } from './providers/openrouter-ai.provider';
     FiscalOnboardingModule,
     PlanControlModule,
     ReportModule,
+    // O "Aplicar" do rascunho grava pelos serviços do orçamento
+    QuotationModule,
   ],
   controllers: [AiController],
   providers: [
     AiService,
+    AiActionService,
+    AiQuotationDraftService,
     AiModelSelectionService,
     AiHelpContentService,
     AiOperationalQueryService,

@@ -12,7 +12,7 @@ import {
   AiProviderUsage,
   AiToolDefinition,
 } from '../ai.types';
-import { AiProvider } from './ai-provider.interface';
+import { AiProvider, AiToolChoice } from './ai-provider.interface';
 import { openRouterProviderPreferences } from './openrouter-data-policy';
 
 interface OpenRouterChoice {
@@ -49,6 +49,7 @@ export class OpenRouterAiProvider implements AiProvider {
     conversationId: string;
     messages: AiMessage[];
     tools: AiToolDefinition[];
+    toolChoice?: AiToolChoice;
   }): Promise<AiProviderResponse> {
     const apiKey = this.config.get<string>('ai.apiKey');
 
@@ -72,7 +73,7 @@ export class OpenRouterAiProvider implements AiProvider {
             model,
             messages: params.messages,
             tools: params.tools,
-            tool_choice: 'auto',
+            tool_choice: params.toolChoice ?? 'auto',
             stream: false,
             session_id: params.conversationId,
             provider: openRouterProviderPreferences(this.config),

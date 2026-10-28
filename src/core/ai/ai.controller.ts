@@ -13,11 +13,19 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import {
+  BlockLevelGuard,
+  RequireUnblocked,
+} from '../auth/guards/block-level.guard';
 import { SystemAdminGuard } from '../auth/guards/system-admin.guard';
 import { AiModelSelectionService } from './ai-model-selection.service';
 import { AiService } from './ai.service';
 import { aiUsageMonth, isAiUsageMonth } from './ai-usage-month';
 import { AiChatRequestDto } from './dto/ai-chat.dto';
+import {
+  AiQuotationDraftRequestDto,
+  ApplyAiActionDto,
+} from './dto/ai-action.dto';
 import { UpdateAiModelConfigDto } from './dto/ai-model-config.dto';
 import { AiChatThrottlerGuard } from './guards/ai-chat-throttler.guard';
 
@@ -49,6 +57,36 @@ export class AiController {
   @UseGuards(AiChatThrottlerGuard)
   chat(@Body() dto: AiChatRequestDto, @Req() req: Request) {
     return this.aiService.chat(dto, (req as any).user);
+  }
+
+  // A proposta completa, para o cartão (sem valores para quem não os vê)
+  @Get('actions/:id')
+  getAction(@Param('id') id: string, @Req() req: Request) {
+    return this.aiService.getAction(id, (req as any).user);
+  }
+
+  // Aplicar grava pelos serviços das telas: com a empresa bloqueada, não
+  @Post('actions/:id/apply')
+  @UseGuards(BlockLevelGuard)
+  @RequireUnblocked()
+  applyAction(
+    @Param('id') id: string,
+    @Body() dto: ApplyAiActionDto,
+    @Req() req: Request,
+  ) {
+    return this.aiService.applyAction(id, (req as any).user, dto.edited);
+  }
+
+  @Post('actions/:id/discard')
+  discardAction(@Param('id') id: string, @Req() req: Request) {
+    return this.aiService.discardAction(id, (req as any).user);
+  }
+
+  // O botão "Montar com IA" do orçamento: o texto do cliente vira proposta
+  @Post('quotation-draft')
+  @UseGuards(AiChatThrottlerGuard)
+  quotationDraft(@Body() dto: AiQuotationDraftRequestDto, @Req() req: Request) {
+    return this.aiService.quotationDraft(dto, (req as any).user);
   }
 
   @Get('conversations')

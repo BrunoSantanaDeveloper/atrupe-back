@@ -69,6 +69,10 @@ describe('AiService access control', () => {
       }),
     };
     const usage = new AiUsageService(prisma as any);
+    const actions = {
+      attachMessage: jest.fn().mockResolvedValue(undefined),
+      get: jest.fn().mockResolvedValue({ id: 'action-1' }),
+    };
     const service = new AiService(
       prisma as any,
       { get: jest.fn() } as any,
@@ -78,9 +82,10 @@ describe('AiService access control', () => {
       provider as any,
       planControl as any,
       usage,
+      actions as any,
     );
 
-    return { service, prisma, settings, planControl, tools, provider };
+    return { service, prisma, settings, planControl, tools, provider, actions };
   }
 
   it('bloqueia listagem de conversas quando acesso global esta inativo', async () => {

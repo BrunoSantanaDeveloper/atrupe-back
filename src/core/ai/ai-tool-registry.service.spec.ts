@@ -2,6 +2,7 @@ import {
   AI_PLAN_DENIED_REASON,
   AiToolRegistry,
 } from './ai-tool-registry.service';
+import { AiProposalDeniedError } from './ai-quotation-draft.service';
 
 describe('AiToolRegistry', () => {
   const companyId = 'company-1';
@@ -114,6 +115,18 @@ describe('AiToolRegistry', () => {
       ...(overrides?.registrationQuery || {}),
     };
 
+    const drafts = {
+      getToolSchema: jest.fn().mockReturnValue({ type: 'object' }),
+      build: jest.fn().mockResolvedValue({ items: [] }),
+      summaryForModel: jest.fn((actionId) => ({ actionId })),
+    };
+    const actions = {
+      propose: jest.fn().mockResolvedValue({
+        id: 'action-1',
+        type: 'QUOTATION_DRAFT',
+        summary: 'Orçamento: 1 item',
+      }),
+    };
     const planControl = {
       getCompanyPlanInfo: jest.fn().mockResolvedValue({
         features: Object.fromEntries(
@@ -133,8 +146,12 @@ describe('AiToolRegistry', () => {
         helpContent as any,
         registrationQuery as any,
         planControl as any,
+        drafts as any,
+        actions as any,
       ),
       planControl,
+      drafts,
+      actions,
       prisma,
       reportService,
       operationalQuery,
@@ -484,6 +501,69 @@ describe('AiToolRegistry', () => {
       const result = await registry.execute('get_sales_summary', {}, user);
 
       expect(result.content).toEqual(summary);
+    });
+  });
+
+  describe('propose_quotation_draft', () => {
+    it('monta a proposta, devolve ao modelo só o resumo e a ação ao chat', async () => {
+      const { registry, drafts, actions } = makeRegistry();
+
+      const result = await registry.execute(
+        'propose_quotation_draft',
+        {
+          items: [{ text: '200 placas', productHint: 'placa', quantity: 200 }],
+        },
+        user,
+        undefined,
+        {
+          conversationId: 'conversation-1',
+          currentPath:
+            '/vendas/orcamentos/0b9f6a0e-5c1d-4e8a-9a3b-2f1c4d5e6f70?tab=itens',
+        },
+      );
+
+      expect(drafts.build).toHaveBeenCalledWith(
+        expect.any(Object),
+        user,
+        expect.any(Set),
+        { currentQuotationId: '0b9f6a0e-5c1d-4e8a-9a3b-2f1c4d5e6f70' },
+      );
+      expect(actions.propose).toHaveBeenCalledWith(
+        user,
+        'QUOTATION_DRAFT',
+        { items: [] },
+        'conversation-1',
+      );
+      expect(result).toEqual({
+        name: 'propose_quotation_draft',
+        status: 'success',
+        content: { actionId: 'action-1' },
+        action: {
+          id: 'action-1',
+          type: 'QUOTATION_DRAFT',
+          summary: 'Orçamento: 1 item',
+        },
+      });
+    });
+
+    it('sem permissão de orçar: denied, sem proposta', async () => {
+      const { registry, drafts, actions } = makeRegistry();
+      drafts.build.mockRejectedValue(
+        new AiProposalDeniedError('Seu perfil não pode criar orçamentos.'),
+      );
+
+      const result = await registry.execute(
+        'propose_quotation_draft',
+        { items: [] },
+        user,
+      );
+
+      expect(result).toEqual({
+        name: 'propose_quotation_draft',
+        status: 'denied',
+        content: { reason: 'Seu perfil não pode criar orçamentos.' },
+      });
+      expect(actions.propose).not.toHaveBeenCalled();
     });
   });
 

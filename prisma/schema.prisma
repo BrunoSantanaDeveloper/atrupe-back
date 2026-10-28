@@ -104,6 +104,7 @@ model Company {
   operationNatures       OperationNature[]
   aiConversations        AiConversation[]
   aiUsage                AiUsage[]
+  aiActions              AiAction[]
   contactSources         ContactSource[]
   hiddenContactSources   CompanyHiddenContactSource[]
   saleSettings           SaleSettings?
@@ -567,6 +568,7 @@ model User {
   importLogs           ImportLog[]
   migrationRuns        MigrationRun[]         @relation("MigrationRunStartedBy")
   aiConversations      AiConversation[]
+  aiActions            AiAction[]
   customer             Customer?              @relation(fields: [customerId], references: [id])
 
   @@index([email])
@@ -2883,6 +2885,39 @@ model AiUsage {
   @@unique([companyId, month])
   @@index([month])
   @@map("ai_usage")
+}
+
+// A proposta do assistente (agente, fase 2, 28/10/2026): a IA propõe, a
+// pessoa confirma. Nada é gravado no orçamento, no lançamento ou no cadastro
+// antes do "Aplicar"; quem grava é o servidor, pelos serviços das telas. A
+// proposta vence em 24 horas e só quem a recebeu aplica.
+model AiAction {
+  id             String    @id @default(uuid())
+  companyId      String
+  userId         String
+  conversationId String?
+  // A resposta do assistente que trouxe a proposta
+  messageId      String?
+  // QUOTATION_DRAFT | QUICK_SALE_DRAFT | ITEM_DESCRIPTION | FINANCIAL_CATEGORY
+  // | NEXT_CONTACT
+  type           String
+  // PROPOSED | APPLYING | APPLIED | DISCARDED | EXPIRED | FAILED
+  status         String    @default("PROPOSED")
+  // A proposta, já casada e calculada pelo servidor (valores em centavos)
+  payload        Json
+  // O que a pessoa mudou antes de aplicar
+  edited         Json?
+  // Os ids do que foi criado, ou o erro
+  result         Json?
+  expiresAt      DateTime
+  appliedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, userId, status])
+  @@map("ai_actions")
 }
 
 enum OwnerType {

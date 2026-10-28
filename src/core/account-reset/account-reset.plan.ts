@@ -590,6 +590,7 @@ export const KEPT_MODELS = [
   'UserActivityEvent',
   'AiConversation',
   'AiUsage',
+  'AiAction',
   'MigrationRun',
   'ImportLog',
   'InvoicyConfig',
