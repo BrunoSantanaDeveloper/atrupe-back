@@ -1,8 +1,8 @@
 import { ApiProperty } from '@nestjsx/crud/lib/crud';
 import { IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
-import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
+import { InstallmentListFilterDto } from '../../utils/installment-list-filter';
 
-export class PayableFilterDto extends BaseFilterDTO {
+export class PayableFilterDto extends InstallmentListFilterDto {
   @IsOptional()
   @IsDateString()
   dueDate?: Date;

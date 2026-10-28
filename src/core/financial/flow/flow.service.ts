@@ -213,6 +213,10 @@ export class FlowService {
     if (andReceivables.length) filtersReceivables.AND = andReceivables;
     if (andPayables.length) filtersPayables.AND = andPayables;
 
+    // Só um lado: o outro não traz nenhuma parcela
+    if (filter.type === 'receivable') filtersPayables.id = { in: [] };
+    if (filter.type === 'payable') filtersReceivables.id = { in: [] };
+
     return { filtersReceivables, filtersPayables };
   }
 

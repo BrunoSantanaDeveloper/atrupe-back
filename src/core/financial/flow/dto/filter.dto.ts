@@ -1,4 +1,4 @@
-import { IsDate, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDate, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
 import { ApiProperty } from '@nestjs/swagger';
@@ -128,4 +128,15 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
     required: false,
   })
   period?: string;
+
+  // Só um lado do fluxo: Contas a receber e Contas a pagar usam os totais e
+  // a exportação do fluxo com o tipo delas (28/10/2026, LITE part3 item 2)
+  @IsOptional()
+  @IsIn(['receivable', 'payable'])
+  @ApiProperty({
+    description: 'Só receitas ("receivable") ou só despesas ("payable")',
+    example: 'receivable',
+    required: false,
+  })
+  type?: 'receivable' | 'payable';
 }

@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { installmentListWhere } from '../utils/installment-list-filter';
 import { PrismaService } from 'nestjs-prisma';
 import {
   CompensateDto,
@@ -263,15 +264,21 @@ export class ReceivableService {
       paymentConditionId,
     } = paginationDto;
 
+    // Período, conta e ordem, como no Fluxo financeiro (28/10/2026)
+    const listFilter = installmentListWhere(paginationDto);
+    const field = listFilter.field;
+
     const filters: Prisma.ReceivableInstallmentWhereInput = {
       receivable: {
         companyId: paginationDto.companyId,
       } as Prisma.ReceivableWhereInput,
     };
+    Object.assign(filters, listFilter.where);
 
     // Filtro de data baseado em dueDate
     if (dueDate) {
       filters.dueDate = {
+        ...((filters.dueDate as object) || {}),
         gt: new Date(dueDate),
       };
     }
@@ -319,9 +326,9 @@ export class ReceivableService {
 
     // 1. Agrupamento no banco de dados com somatório e paginação
     const grouped = await this.prisma.receivableInstallment.groupBy({
-      by: ['dueDate'],
+      by: [field] as any,
       where: filters,
-      orderBy: { dueDate: 'desc' },
+      orderBy: { [field]: listFilter.sort } as any,
       skip: (+page - 1) * +limit,
       take: +limit,
       _sum: {
@@ -331,20 +338,27 @@ export class ReceivableService {
       _count: true,
     });
 
-    const totalInstallments = await this.prisma.receivableInstallment.count();
+    // O total é o de grupos (datas) da empresa com os filtros: antes contava
+    // as parcelas de todas as empresas, e a última página saía errada
+    const totalInstallments = (
+      await this.prisma.receivableInstallment.groupBy({
+        by: [field] as any,
+        where: filters,
+      })
+    ).length;
 
     const total = totalInstallments;
     const lastPage = Math.ceil(total / +limit);
 
     // 3. Buscar os detalhes das parcelas apenas para os grupos retornados
-    const dueDates = grouped.map((g) => g.dueDate);
+    const dueDates = grouped.map((g: any) => g[field]);
 
     const installments = await this.prisma.receivableInstallment.findMany({
       where: {
-        dueDate: { in: dueDates },
+        [field]: { in: dueDates },
         ...filters,
       },
-      orderBy: { dueDate: 'desc' },
+      orderBy: { [field]: listFilter.sort } as any,
       select: {
         id: true,
         status: true,
@@ -391,7 +405,8 @@ export class ReceivableService {
       const expectedRevenue = installments
         .filter(
           (inst) =>
-            inst.dueDate.toISOString() === group.dueDate.toISOString() &&
+            (inst as any)[field]?.toISOString() ===
+              (group as any)[field]?.toISOString() &&
             inst.receivable?.status !== 'CANCELED',
         )
         .reduce(
@@ -401,7 +416,9 @@ export class ReceivableService {
 
       const receivables = installments
         .filter(
-          (inst) => inst.dueDate.toISOString() === group.dueDate.toISOString(),
+          (inst) =>
+            (inst as any)[field]?.toISOString() ===
+            (group as any)[field]?.toISOString(),
         )
         .map((inst) => {
           return {
@@ -463,7 +480,7 @@ export class ReceivableService {
         });
 
       return {
-        date: group.dueDate || null,
+        date: (group as any)[field] || null,
         expectedRevenue,
         transactions: receivables,
       };

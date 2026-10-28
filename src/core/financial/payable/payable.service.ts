@@ -14,6 +14,7 @@ import {
   UpdatePayableDto,
   UndoCancelPayableDto,
 } from './dto/update-payable.dto';
+import { installmentListWhere } from '../utils/installment-list-filter';
 import { PrismaService } from 'nestjs-prisma';
 import { PaymentStatus, Prisma, TransactionType } from '@prisma/client';
 import { PayableFilterDto } from './dto/payable-filter.dto';
@@ -282,15 +283,21 @@ export class PayableService {
         paymentConditionId,
       } = paginationDto;
 
+      // Período, conta e ordem, como no Fluxo financeiro (28/10/2026)
+      const listFilter = installmentListWhere(paginationDto);
+      const field = listFilter.field;
+
       const filters: Prisma.PayableInstallmentWhereInput = {
         payable: {
           companyId: paginationDto.companyId,
         } as Prisma.PayableWhereInput,
       };
+      Object.assign(filters, listFilter.where);
 
       // Filtro de data baseado em dueDate
       if (dueDate) {
         filters.dueDate = {
+          ...((filters.dueDate as object) || {}),
           gt: new Date(dueDate),
         };
       }
@@ -342,9 +349,9 @@ export class PayableService {
 
       // 1. Agrupamento no banco de dados com somatório e paginação
       const grouped = await this.prisma.payableInstallment.groupBy({
-        by: ['dueDate'],
+        by: [field] as any,
         where: filters,
-        orderBy: { dueDate: 'desc' },
+        orderBy: { [field]: listFilter.sort } as any,
         skip: (+page - 1) * +limit,
         take: +limit,
         _sum: {
@@ -354,20 +361,27 @@ export class PayableService {
         _count: true,
       });
 
-      const totalInstallments = await this.prisma.payableInstallment.count();
+      // O total é o de grupos (datas) da empresa com os filtros: antes contava
+      // as parcelas de todas as empresas, e a última página saía errada
+      const totalInstallments = (
+        await this.prisma.payableInstallment.groupBy({
+          by: [field] as any,
+          where: filters,
+        })
+      ).length;
 
       const total = totalInstallments;
       const lastPage = Math.ceil(total / +limit);
 
       // 3. Buscar os detalhes das parcelas apenas para os grupos retornados
-      const dueDates = grouped.map((g) => g.dueDate);
+      const dueDates = grouped.map((g: any) => g[field]);
 
       const installments = await this.prisma.payableInstallment.findMany({
         where: {
-          dueDate: { in: dueDates },
+          [field]: { in: dueDates },
           ...filters,
         },
-        orderBy: { dueDate: 'desc' },
+        orderBy: { [field]: listFilter.sort } as any,
         select: {
           id: true,
           status: true,
@@ -418,7 +432,8 @@ export class PayableService {
         const expectedRevenue = installments
           .filter(
             (inst) =>
-              inst.dueDate.toISOString() === group.dueDate.toISOString() &&
+              (inst as any)[field]?.toISOString() ===
+                (group as any)[field]?.toISOString() &&
               inst.payable?.status !== 'CANCELED', // Filtro por status
           )
           .reduce(
@@ -428,7 +443,8 @@ export class PayableService {
         const payableList = installments
           .filter(
             (inst) =>
-              inst.dueDate.toISOString() === group.dueDate.toISOString(),
+              (inst as any)[field]?.toISOString() ===
+              (group as any)[field]?.toISOString(),
           )
           .map((inst) => {
             return {
@@ -493,7 +509,7 @@ export class PayableService {
           });
 
         return {
-          date: group.dueDate || null,
+          date: (group as any)[field] || null,
           expectedRevenue,
           transactions: payableList,
         };
