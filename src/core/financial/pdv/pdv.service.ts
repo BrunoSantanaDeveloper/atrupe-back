@@ -28,6 +28,7 @@ import {
   roundingOf,
 } from '../cash-control/sale-receipt';
 import { QuickSaleService } from '../../sale/quick-sale/quick-sale.service';
+import { PlanControlService } from '../../plan/plan-control.service';
 import { QuotationFinancialService } from '../../sale/quotation/quotation-financial.service';
 import { CreditCheckService } from '../../sale/quotation/credit-check.service';
 import { saleReference } from '../../sale/quick-sale/quick-sale.rules';
@@ -127,6 +128,7 @@ export class PdvService {
     private readonly quickSale: QuickSaleService,
     private readonly financial: QuotationFinancialService,
     private readonly credit: CreditCheckService,
+    private readonly planControl: PlanControlService,
   ) {}
 
   actorOf(user: { userId?: string; companyId: string }) {
@@ -1078,9 +1080,35 @@ export class PdvService {
     if (!sale.goesToCash) {
       bad('Esta venda já foi faturada para o cliente: cancele pelo Fluxo');
     }
+    // O motivo segue a regra da rejeição do orçamento: o cadastro de motivos
+    // é recurso de plano (LITE); com ele e algum motivo de rejeição
+    // cadastrado, é obrigatório. Só vale motivo de rejeição
+    const hasReasons = await this.planControl.hasFeature(
+      user.companyId,
+      'quotation_rejection_reasons',
+    );
+    if (dto.reasonId && !hasReasons) {
+      await this.planControl.enforceFeature(
+        user.companyId,
+        'quotation_rejection_reasons',
+      );
+    }
+    if (
+      hasReasons &&
+      !dto.reasonId &&
+      (await this.prisma.reasons.count({
+        where: { companyId: user.companyId, type: 'REJECTION' },
+      })) > 0
+    ) {
+      bad('Informe o motivo da rejeição');
+    }
     const reason = dto.reasonId
       ? await this.prisma.reasons.findFirst({
-          where: { id: dto.reasonId, companyId: user.companyId },
+          where: {
+            id: dto.reasonId,
+            companyId: user.companyId,
+            type: 'REJECTION',
+          },
           select: { id: true, reason: true },
         })
       : null;
