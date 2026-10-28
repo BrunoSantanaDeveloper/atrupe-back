@@ -179,7 +179,20 @@ describe('QuotationItemsService', () => {
       );
     });
 
-    it('o produto com variações exige uma, e ela é dele (PV-6)', async () => {
+    it('o produto de vários itens entra sem variação (LITE part3, item 5)', async () => {
+      // O produto padrão do teste tem dois itens
+      prisma.productVariation.findMany.mockResolvedValue([{ id: 'v-1' }]);
+      await add();
+      expect(prisma.quotationProduct.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ variationId: null }),
+      });
+    });
+
+    it('o produto de um item com variações exige uma, e ela é dele (PV-6)', async () => {
+      prisma.product.findFirst.mockResolvedValue({
+        ...mockProduct,
+        items: [mockProduct.productItem[0]],
+      });
       prisma.productVariation.findMany.mockResolvedValue([{ id: 'v-1' }]);
       await expect(add()).rejects.toThrow('Escolha a variação do produto');
       await expect(add({ variationId: 'v-9' })).rejects.toThrow(

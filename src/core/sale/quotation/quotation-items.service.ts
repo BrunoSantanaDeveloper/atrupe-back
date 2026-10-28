@@ -66,7 +66,7 @@ export class QuotationItemsService {
 
   /**
    * A variação do item (PV-3, PV-6): precisa ser do produto. Na inclusão,
-   * o produto com variações exige uma.
+   * o produto de um item com variações exige uma.
    */
   private async variationFor(
     productId: string,
@@ -318,10 +318,14 @@ export class QuotationItemsService {
       if (!product.isActive) {
         throw new BadRequestException('Produto inativo não entra no orçamento');
       }
+      // A variação vale para o produto de um item só, como a tela e o
+      // cadastro tratam. O produto que tinha variação e ganhou mais itens
+      // ficava sem como entrar no orçamento: a tela não oferece a escolha e
+      // aqui ela era exigida (LITE part3, item 5, 28/10/2026)
       const variationId = await this.variationFor(
         product.id,
         data.variationId,
-        true,
+        (product.items?.length ?? 0) <= 1,
       );
       const composed = await this.compositionFor(
         product.companyId ?? quotation.companyId,
