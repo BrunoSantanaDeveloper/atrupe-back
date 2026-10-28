@@ -8,6 +8,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { ProductFilterDTO } from './dto/filter.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
+import { Prisma } from '@prisma/client';
 import { JsonArray } from '@prisma/client/runtime/library';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
@@ -16,6 +17,15 @@ import { buildProductListWhere } from './product-list-where.util';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 const EXPORT_LIMIT = '10000';
+
+/**
+ * O Produto base do setor (ALT-8, pacote de 26/10/2026) vem antes dos outros
+ * na lista. Não pelo nome: a collation do banco (en_US) ignora a pontuação ao
+ * ordenar, e um "#" na frente sairia também no orçamento e na nota.
+ */
+export const BASE_PRODUCT_WHERE: Prisma.ProductWhereInput = {
+  name: { startsWith: 'Produto base – ' },
+};
 
 @Injectable()
 export class ProductService {
@@ -222,65 +232,86 @@ export class ProductService {
       // mesmo conjunto que esta listagem mostra.
       const where = buildProductListWhere(filter);
 
-      const [total, products] = await Promise.all([
+      const list = (
+        part: Prisma.ProductWhereInput,
+        skip: number,
+        take: number,
+      ) =>
+        take > 0
+          ? this.prisma.product.findMany({
+              where: part,
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                isActive: true,
+                isOutsourced: true,
+                category: {
+                  select: {
+                    id: true,
+                    name: true,
+                    kind: true,
+                  },
+                },
+                sector: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+                items: {
+                  select: {
+                    unitCost: true,
+                    salePrice: true,
+                    unitKind: true,
+                  },
+                },
+                fiscalData: {
+                  select: {
+                    ncm: true,
+                    cest: true,
+                    cfopInState: true,
+                    cfopOutState: true,
+                    icmsCst: true,
+                    pisCst: true,
+                    cofinsCst: true,
+                    codigoServico: true,
+                    aliquotaIss: true,
+                    discriminacao: true,
+                  },
+                },
+                // A marca da composição na lista (CP-17)
+                assemblies: {
+                  where: { variationKey: '' },
+                  select: {
+                    status: true,
+                    _count: { select: { blocks: true } },
+                  },
+                },
+                _count: { select: { variations: true } },
+              },
+              take,
+              skip,
+              orderBy: { name: 'asc' },
+            })
+          : Promise.resolve([]);
+
+      // A página começa pelos Produtos base que couberem nela; o resto é a
+      // lista em ordem de nome, sem eles
+      const bases = { AND: [where, BASE_PRODUCT_WHERE] };
+      const others = { AND: [where, { NOT: BASE_PRODUCT_WHERE }] };
+      const limit = +filter.limit;
+      const skip = (+filter.page - 1) * limit;
+      const [total, baseTotal] = await Promise.all([
         this.prisma.product.count({ where }),
-        this.prisma.product.findMany({
-          where: where,
-          select: {
-            id: true,
-            name: true,
-            code: true,
-            isActive: true,
-            isOutsourced: true,
-            category: {
-              select: {
-                id: true,
-                name: true,
-                kind: true,
-              },
-            },
-            sector: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            items: {
-              select: {
-                unitCost: true,
-                salePrice: true,
-                unitKind: true,
-              },
-            },
-            fiscalData: {
-              select: {
-                ncm: true,
-                cest: true,
-                cfopInState: true,
-                cfopOutState: true,
-                icmsCst: true,
-                pisCst: true,
-                cofinsCst: true,
-                codigoServico: true,
-                aliquotaIss: true,
-                discriminacao: true,
-              },
-            },
-            // A marca da composição na lista (CP-17)
-            assemblies: {
-              where: { variationKey: '' },
-              select: {
-                status: true,
-                _count: { select: { blocks: true } },
-              },
-            },
-            _count: { select: { variations: true } },
-          },
-          take: +filter.limit,
-          skip: (+filter.page - 1) * +filter.limit,
-          orderBy: { name: 'asc' },
-        }),
+        this.prisma.product.count({ where: bases }),
       ]);
+      const baseTake = Math.max(0, Math.min(limit, baseTotal - skip));
+      const [baseRows, otherRows] = await Promise.all([
+        list(bases, skip, baseTake),
+        list(others, Math.max(0, skip - baseTotal), limit - baseTake),
+      ]);
+      const products = [...baseRows, ...otherRows];
 
       // Mapear os produtos para calcular os totais de unitCost e salePrice
       const data = products.map((product) => {
