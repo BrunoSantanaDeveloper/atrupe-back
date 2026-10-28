@@ -66,6 +66,17 @@ export function expiringWhere(now = new Date()): Prisma.QuotationWhereInput {
   };
 }
 
+/** O texto do cadastro entra no HTML do e-mail como texto, não como marcação. */
+export function escapeHtml(value: string | null | undefined) {
+  return (value ?? '').replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        char
+      ],
+  );
+}
+
 export function noContactWhere(): Prisma.QuotationWhereInput {
   return { isActive: true, status: 'DONE', nextContactAt: null };
 }
@@ -417,17 +428,18 @@ export class FollowUpService {
             : q.dueDate
               ? `vence ${q.dueDate.toLocaleDateString('pt-BR')}`
               : '';
-          const value = (q.totalValue ?? 0).toLocaleString('pt-BR', {
+          // O valor do orçamento é em centavos
+          const value = ((q.totalValue ?? 0) / 100).toLocaleString('pt-BR', {
             style: 'currency',
             currency: 'BRL',
           });
-          return `<li><strong>${ref}</strong> · ${q.client?.name ?? 'Cliente não informado'} · ${value} · ${when}${q.nextContactNote ? ` — ${q.nextContactNote}` : ''}</li>`;
+          return `<li><strong>${escapeHtml(ref)}</strong> · ${escapeHtml(q.client?.name ?? 'Cliente não informado')} · ${value} · ${when}${q.nextContactNote ? ` — ${escapeHtml(q.nextContactNote)}` : ''}</li>`;
         })
         .join('');
       await this.mailer.sendMail({
         to: email,
         subject: `Acompanhamento de hoje: ${list.length} ${list.length === 1 ? 'orçamento' : 'orçamentos'} para retomar`,
-        html: `<p>Olá, ${list[0].seller.name ?? list[0].seller.user?.name ?? ''}!</p><p>Estes orçamentos pedem contato hoje${company?.name ? ` (${company.name})` : ''}:</p><ul>${lines}</ul><p>Abra a aba Aguardando em Vendas › Orçamentos para registrar os contatos.</p>`,
+        html: `<p>Olá, ${escapeHtml(list[0].seller.name ?? list[0].seller.user?.name)}!</p><p>Estes orçamentos pedem contato hoje${company?.name ? ` (${escapeHtml(company.name)})` : ''}:</p><ul>${lines}</ul><p>Abra a aba Aguardando em Vendas › Orçamentos para registrar os contatos.</p>`,
       });
     }
   }

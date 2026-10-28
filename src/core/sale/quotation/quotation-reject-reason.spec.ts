@@ -45,6 +45,8 @@ describe('POST /sale/quotation/:id/reject — motivo', () => {
       {} as any,
       {} as any,
       {} as any,
+      // Acompanhamento comercial (CRM fase 2)
+      {} as any,
     );
     return { controller, service };
   }
