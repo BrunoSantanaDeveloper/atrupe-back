@@ -58,7 +58,23 @@ export interface ChargeSyncCounts {
   created: number;
   updated: number;
   canceled: number;
+  /** Contratações liberadas porque a cobrança delas apareceu paga. */
+  activated: number;
 }
+
+/**
+ * O que a conferência fez com uma contratação que espera o pagamento: liberou
+ * o plano, ou ela segue esperando. `held` quando o pagamento não a libera —
+ * desativada à mão pelo superadmin, já liberada uma vez, ou com outro plano em
+ * vigor na empresa. `not_applicable` para qualquer outra assinatura.
+ */
+export type ContractActivation =
+  | 'activated'
+  | 'awaiting_payment'
+  | 'held'
+  | 'not_applicable';
+
+const PAID_STATUSES: AsaasPaymentStatus[] = ['CONFIRMED', 'RECEIVED'];
 
 /**
  * Uma cobrança em que o banco e o Asaas discordam, como o superadmin a vê
@@ -286,6 +302,170 @@ export class SubscriptionBlockService {
   /** Vencimento gravado à meia-noite UTC do dia: lido em UTC, sem trocar de dia. */
   private formatDay(date: Date): string {
     return date.toISOString().slice(0, 10).split('-').reverse().join('/');
+  }
+
+  /**
+   * Libera o plano de uma contratação assim que uma cobrança dela aparece
+   * paga.
+   *
+   * Desde 20/10 a contratação não libera o acesso: a assinatura fica INACTIVE
+   * até o pagamento. Antes, quem contratava e não pagava usava o sistema até
+   * o bloqueio. Quem fica sabendo do pagamento é o alinhamento com o Asaas (a
+   * sessão do cliente, a volta da fatura, a rotina das 03:00, o "Sincronizar"
+   * do superadmin), e é de lá que esta liberação é chamada. O webhook, quando
+   * chegar à API, ativa pelo caminho dele.
+   *
+   * Liberar é trocar de lugar com o teste gratuito: a assinatura vira ACTIVE e
+   * o teste, se ainda estiver ativo, é encerrado. A troca é condicional, para
+   * duas conferências simultâneas não liberarem duas vezes.
+   */
+  async activateIfContractPaid(
+    subscriptionId: string,
+    actor: SyncActor = SYSTEM_ACTOR,
+  ): Promise<ContractActivation> {
+    const contract = await this.contractAwaitingPayment(subscriptionId);
+    if (!contract) return 'not_applicable';
+    if (contract.held) return 'held';
+
+    const paid = await this.prisma.payment.findFirst({
+      where: { subscriptionId, status: { in: PAID_STATUSES } },
+      orderBy: { dueDate: 'asc' },
+      select: { asaasPaymentId: true },
+    });
+    if (!paid) return 'awaiting_payment';
+
+    const activated = await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.subscription.updateMany({
+        where: { id: subscriptionId, status: 'INACTIVE' },
+        data: { status: 'ACTIVE' },
+      });
+      // Outra conferência liberou primeiro.
+      if (count === 0) return false;
+
+      const trials = await tx.subscription.findMany({
+        where: {
+          companyId: contract.companyId,
+          status: 'ACTIVE',
+          plan: { planType: 'TRIAL' },
+        },
+        select: { id: true },
+      });
+      for (const trial of trials) {
+        await tx.subscription.update({
+          where: { id: trial.id },
+          data: { status: 'INACTIVE' },
+        });
+        await tx.subscriptionHistory.create({
+          data: {
+            subscriptionId: trial.id,
+            action: 'DEACTIVATED',
+            description:
+              'Teste encerrado: o plano contratado foi liberado com o pagamento',
+            changes: {
+              before: { status: 'ACTIVE' },
+              after: { status: 'INACTIVE' },
+            },
+            metadata: { newSubscriptionId: subscriptionId },
+            createdBy: actor.id,
+            createdByName: actor.name,
+          },
+        });
+      }
+
+      await tx.subscriptionHistory.create({
+        data: {
+          subscriptionId,
+          action: 'ACTIVATED',
+          description: 'Plano liberado com o pagamento da contratação',
+          changes: {
+            before: { status: 'INACTIVE' },
+            after: { status: 'ACTIVE' },
+          },
+          metadata: { paymentId: paid.asaasPaymentId },
+          createdBy: actor.id,
+          createdByName: actor.name,
+        },
+      });
+      return true;
+    });
+    if (!activated) return 'not_applicable';
+
+    this.logger.log(
+      `Contratação ${subscriptionId} liberada: cobrança ${paid.asaasPaymentId} paga (${actor.name})`,
+    );
+    return 'activated';
+  }
+
+  /**
+   * A contratação que espera o pagamento (a marca `accessAfterPayment` no
+   * histórico) e ainda está INACTIVE; nula para qualquer outra assinatura.
+   * A marca vem no registro da contratação, a partir de 20/10, ou num registro
+   * à parte (ACCESS_AFTER_PAYMENT) quando uma contratação da regra antiga
+   * passou a esperar o pagamento. `held` quando o pagamento não a libera:
+   * desativada à mão pelo superadmin — decisão de quem administra —, já
+   * liberada uma vez desde a marca, ou numa empresa que já tem outro plano em
+   * vigor.
+   */
+  private async contractAwaitingPayment(
+    subscriptionId: string,
+  ): Promise<{ companyId: string; held: boolean } | null> {
+    const subscription = await this.prisma.subscription.findFirst({
+      where: {
+        id: subscriptionId,
+        status: 'INACTIVE',
+        companyId: { not: null },
+        contractedAt: { not: null },
+        endedReason: null,
+        plan: { planType: { not: 'TRIAL' } },
+      },
+      select: { companyId: true },
+    });
+    if (!subscription?.companyId) return null;
+    const { companyId } = subscription;
+
+    const history = await this.prisma.subscriptionHistory.findMany({
+      where: {
+        subscriptionId,
+        action: {
+          in: [
+            'CONTRACTED',
+            'ACCESS_AFTER_PAYMENT',
+            'ACTIVATED',
+            'STATUS_CHANGE',
+          ],
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { action: true, metadata: true },
+    });
+    const metadata = (entry: { metadata: Prisma.JsonValue }) =>
+      (entry.metadata ?? {}) as Record<string, unknown>;
+    const marker = history
+      .map((h) => metadata(h).accessAfterPayment === true)
+      .lastIndexOf(true);
+    if (marker < 0) return null;
+
+    // Vale o que aconteceu depois da marca.
+    const since = history.slice(marker + 1);
+    const lastStatusChange = since
+      .filter((h) => h.action === 'STATUS_CHANGE')
+      .pop();
+    const held =
+      since.some((h) => h.action === 'ACTIVATED') ||
+      (!!lastStatusChange &&
+        metadata(lastStatusChange).newStatus === 'INACTIVE');
+    if (held) return { companyId, held };
+
+    const otherPlan = await this.prisma.subscription.findFirst({
+      where: {
+        companyId,
+        id: { not: subscriptionId },
+        status: 'ACTIVE',
+        plan: { planType: { not: 'TRIAL' } },
+      },
+      select: { id: true },
+    });
+    return { companyId, held: !!otherPlan };
   }
 
   /**
@@ -722,35 +902,46 @@ export class SubscriptionBlockService {
           `Empresa ${company.name} (${company.id}) não tem mais inadimplência no Asaas. Desbloqueando...`,
         );
 
-        // Sincronizar payments faltantes do Asaas para o DB local
+        // Sincronizar payments faltantes do Asaas para o DB local — o que
+        // também libera a contratação que esperava o pagamento, se paga.
         await this.syncMissingPayments(
           subscription.id,
           subscription.asaasSubscriptionId,
           asaasPayments,
         );
 
-        // Atualizar nextDueDate com o próximo pagamento PENDING. No anual
-        // parcelado, a próxima parcela não é o próximo vencimento: ele é a
-        // renovação, que já está na assinatura.
-        const nextPending = isInstallmentBilling(subscription)
-          ? null
-          : asaasPayments.find(
-              (p) => p.status === 'PENDING' && p.dueDate >= todayStr,
-            );
-        if (nextPending) {
-          await this.prisma.subscription.update({
-            where: { id: subscription.id },
-            data: {
-              status: 'ACTIVE',
-              nextDueDate: new Date(nextPending.dueDate),
-            },
-          });
-        } else {
-          // Se não tem pending futuro, ao menos ativar
-          await this.prisma.subscription.update({
-            where: { id: subscription.id },
-            data: { status: 'ACTIVE' },
-          });
+        // Sem cobrança vencida não quer dizer paga: a contratação da regra de
+        // 20/10 que segue INACTIVE — à espera do pagamento, ou retida pelo
+        // superadmin — não é ativada aqui. A empresa é desbloqueada mesmo
+        // assim: não deve nada.
+        const pendingContract = await this.contractAwaitingPayment(
+          subscription.id,
+        );
+
+        if (!pendingContract) {
+          // Atualizar nextDueDate com o próximo pagamento PENDING. No anual
+          // parcelado, a próxima parcela não é o próximo vencimento: ele é a
+          // renovação, que já está na assinatura.
+          const nextPending = isInstallmentBilling(subscription)
+            ? null
+            : asaasPayments.find(
+                (p) => p.status === 'PENDING' && p.dueDate >= todayStr,
+              );
+          if (nextPending) {
+            await this.prisma.subscription.update({
+              where: { id: subscription.id },
+              data: {
+                status: 'ACTIVE',
+                nextDueDate: new Date(nextPending.dueDate),
+              },
+            });
+          } else {
+            // Se não tem pending futuro, ao menos ativar
+            await this.prisma.subscription.update({
+              where: { id: subscription.id },
+              data: { status: 'ACTIVE' },
+            });
+          }
         }
 
         // Desbloquear empresa
@@ -881,7 +1072,12 @@ export class SubscriptionBlockService {
     companyId: string,
     actor: SyncActor = SYSTEM_ACTOR,
   ): Promise<ChargeSyncCounts> {
-    const total: ChargeSyncCounts = { created: 0, updated: 0, canceled: 0 };
+    const total: ChargeSyncCounts = {
+      created: 0,
+      updated: 0,
+      canceled: 0,
+      activated: 0,
+    };
 
     for (const sub of await this.syncableSubscriptionsOf(companyId)) {
       const listed = await this.asaasGateway.getChargesOf(sub);
@@ -894,6 +1090,7 @@ export class SubscriptionBlockService {
       total.created += counts.created;
       total.updated += counts.updated;
       total.canceled += counts.canceled;
+      total.activated += counts.activated;
     }
 
     return total;
@@ -901,7 +1098,8 @@ export class SubscriptionBlockService {
 
   /**
    * Alinha as cobranças locais da assinatura ao Asaas: cria as que faltam,
-   * atualiza status e links, e baixa as que foram removidas lá.
+   * atualiza status e links, e baixa as que foram removidas lá. A contratação
+   * que esperava o pagamento e aparece paga é liberada em seguida.
    */
   private async syncMissingPayments(
     localSubscriptionId: string,
@@ -910,7 +1108,25 @@ export class SubscriptionBlockService {
     actor: SyncActor = SYSTEM_ACTOR,
   ): Promise<ChargeSyncCounts> {
     const plan = await this.planChargeSync(localSubscriptionId, asaasPayments);
-    return this.applyChargeSyncPlan(localSubscriptionId, plan, actor);
+    const counts = await this.applyChargeSyncPlan(
+      localSubscriptionId,
+      plan,
+      actor,
+    );
+
+    // As cobranças já ficaram alinhadas: uma falha aqui não as desfaz, e a
+    // próxima conferência tenta liberar de novo.
+    const activation = await this.activateIfContractPaid(
+      localSubscriptionId,
+      actor,
+    ).catch((error) => {
+      this.logger.error(
+        `Contratação ${localSubscriptionId} não liberada após o alinhamento: ${error.message}`,
+      );
+      return 'not_applicable' as const;
+    });
+
+    return { ...counts, activated: activation === 'activated' ? 1 : 0 };
   }
 
   /**
@@ -977,7 +1193,7 @@ export class SubscriptionBlockService {
     localSubscriptionId: string,
     plan: ChargeSyncPlan,
     actor: SyncActor,
-  ): Promise<ChargeSyncCounts> {
+  ): Promise<Omit<ChargeSyncCounts, 'activated'>> {
     const validBillingTypes = [
       'CREDIT_CARD',
       'BOLETO',

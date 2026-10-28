@@ -36,7 +36,11 @@ describe('SubscriptionsService', () => {
       delete: jest.fn(),
       deleteMany: jest.fn(),
     },
-    subscriptionHistory: { create: jest.fn(), deleteMany: jest.fn() },
+    subscriptionHistory: {
+      create: jest.fn(),
+      deleteMany: jest.fn(),
+      findFirst: jest.fn(),
+    },
     company: {
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -64,6 +68,7 @@ describe('SubscriptionsService', () => {
     unblockCompany: jest.fn(),
     previewCompanyCharges: jest.fn(),
     syncCompanyCharges: jest.fn(),
+    activateIfContractPaid: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -812,6 +817,128 @@ describe('SubscriptionsService', () => {
         await service.checkAndSyncSubscriptionStatus('company-1');
 
       expect(result.status).toBe('already_active');
+    });
+
+    describe('contratação que espera o pagamento (regra de 20/10)', () => {
+      const awaitingSubscription = {
+        ...activeSubscription,
+        status: 'INACTIVE',
+        contractedAt: new Date('2026-10-20T12:00:00Z'),
+        payments: [{ id: 'renovacao', status: 'PENDING' }],
+      };
+
+      it('liberada pelo alinhamento: sai como ativada, não "já estava ativa"', async () => {
+        mockSubscriptionBlockService.syncCompanyCharges.mockResolvedValue({
+          created: 0,
+          updated: 1,
+          canceled: 0,
+          activated: 1,
+        });
+        mockPrismaService.company.findUnique.mockResolvedValue({
+          blockLevel: 'NONE',
+        });
+
+        const result: any =
+          await service.checkAndSyncSubscriptionStatus('company-1');
+
+        expect(result.status).toBe('activated');
+      });
+
+      it('ainda sem pagamento: segue pendente, sem a regra antiga mexer em cobrança', async () => {
+        mockPrismaService.subscription.findFirst.mockResolvedValue(
+          awaitingSubscription,
+        );
+        mockSubscriptionBlockService.syncCompanyCharges.mockResolvedValue({
+          created: 0,
+          updated: 0,
+          canceled: 0,
+          activated: 0,
+        });
+        mockSubscriptionBlockService.activateIfContractPaid.mockResolvedValue(
+          'awaiting_payment',
+        );
+
+        const result: any =
+          await service.checkAndSyncSubscriptionStatus('company-1');
+
+        expect(result.status).toBe('payment_pending');
+        expect(
+          mockSubscriptionBlockService.activateIfContractPaid,
+        ).toHaveBeenCalledWith('sub-1');
+        // A regra antiga consultaria o Asaas e marcaria a cobrança local mais
+        // recente (aqui, a renovação) como paga.
+        expect(mockAsaasGatewayService.getChargesOf).not.toHaveBeenCalled();
+        expect(mockPrismaService.subscription.update).not.toHaveBeenCalled();
+      });
+
+      it('Asaas fora do ar no alinhamento: a reavaliação libera pelo que o banco já sabe', async () => {
+        mockPrismaService.subscription.findFirst.mockResolvedValue(
+          awaitingSubscription,
+        );
+        mockSubscriptionBlockService.syncCompanyCharges.mockRejectedValue(
+          new Error('timeout'),
+        );
+        mockSubscriptionBlockService.activateIfContractPaid.mockResolvedValue(
+          'activated',
+        );
+
+        const result: any =
+          await service.checkAndSyncSubscriptionStatus('company-1');
+
+        expect(result.status).toBe('activated');
+        expect(result.subscription.status).toBe('ACTIVE');
+      });
+
+      it('retida pelo superadmin, mesmo com outro registro depois: a regra antiga não a reativa', async () => {
+        mockPrismaService.subscription.findFirst.mockResolvedValue(
+          awaitingSubscription,
+        );
+        mockSubscriptionBlockService.syncCompanyCharges.mockResolvedValue({
+          created: 0,
+          updated: 0,
+          canceled: 1,
+          activated: 0,
+        });
+        // O último registro é a baixa de uma cobrança, não a desativação.
+        mockPrismaService.subscriptionHistory.findFirst.mockResolvedValue({
+          action: 'PAYMENT_CANCELED',
+          metadata: { reason: 'GATEWAY_REMOVED' },
+        });
+        mockSubscriptionBlockService.activateIfContractPaid.mockResolvedValue(
+          'held',
+        );
+
+        const result: any =
+          await service.checkAndSyncSubscriptionStatus('company-1');
+
+        expect(result.status).toBe('manually_deactivated');
+        expect(mockAsaasGatewayService.getChargesOf).not.toHaveBeenCalled();
+        expect(mockPrismaService.subscription.update).not.toHaveBeenCalled();
+      });
+
+      it('desativada à mão pelo superadmin: o pagamento não a libera', async () => {
+        mockPrismaService.subscription.findFirst.mockResolvedValue(
+          awaitingSubscription,
+        );
+        mockSubscriptionBlockService.syncCompanyCharges.mockResolvedValue({
+          created: 0,
+          updated: 0,
+          canceled: 0,
+          activated: 0,
+        });
+        mockPrismaService.subscriptionHistory.findFirst.mockResolvedValue({
+          action: 'STATUS_CHANGE',
+          metadata: { newStatus: 'INACTIVE' },
+        });
+
+        const result: any =
+          await service.checkAndSyncSubscriptionStatus('company-1');
+
+        expect(result.status).toBe('manually_deactivated');
+        expect(
+          mockSubscriptionBlockService.activateIfContractPaid,
+        ).not.toHaveBeenCalled();
+      });
     });
 
     it('sem empresa, não consulta o Asaas', async () => {

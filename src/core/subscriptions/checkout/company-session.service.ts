@@ -23,8 +23,14 @@ export interface ChargeInFocus {
 export interface BillingSituation {
   situation: BillingSituationKind;
   daysOverdue: number;
-  /** Contratação registrada, com acesso liberado, e a primeira cobrança ainda não paga. */
+  /** Contratação registrada e a primeira cobrança ainda não paga. */
   paymentPending: boolean;
+  /**
+   * O plano contratado espera esse pagamento para ser liberado (contratação
+   * a partir de 20/10). Falso quando a contratação já liberou o acesso — as
+   * de antes de 20/10 e a evolução.
+   */
+  activationPending: boolean;
   chargeInFocus: ChargeInFocus | null;
 }
 
@@ -82,7 +88,9 @@ export class CompanySessionService {
    * API, ou pela rotina das 03:00. Quem contratava e pagava na hora seguia
    * vendo "Pagamento da contratação pendente" até o dia seguinte (Zip Ideias,
    * 19/10). Com cobrança em foco — a primeira ainda não paga, ou uma vencida —,
-   * as cobranças da empresa são alinhadas ao Asaas antes de responder.
+   * as cobranças da empresa são alinhadas ao Asaas antes de responder; a
+   * contratação que esperava o pagamento, se paga, é liberada nesse
+   * alinhamento.
    *
    * No máximo uma conferência por empresa a cada minuto. A resposta não espera
    * mais que o tempo-limite: passado ele, sai o que o banco diz, e o
@@ -102,7 +110,8 @@ export class CompanySessionService {
     const sync = this.subscriptionBlock
       .syncCompanyCharges(companyId)
       .then(
-        ({ created, updated, canceled }) => created + updated + canceled > 0,
+        ({ created, updated, canceled, activated }) =>
+          created + updated + canceled + activated > 0,
       )
       .catch((error) => {
         this.logger.warn(
@@ -191,10 +200,10 @@ export class CompanySessionService {
     const overdue = open.find(
       (p) => p.status === 'OVERDUE' || this.localDay(p.dueDate) < today,
     );
+    const paymentPending = ctx.firstChargePending || ctx.awaitingActivation;
     // Em foco: a vencida mais antiga; sem vencida, a primeira cobrança de uma
     // contratação que ainda não foi paga. Renovação futura não é pendência.
-    const focus =
-      overdue ?? (ctx.firstChargePending ? (open[0] ?? null) : null);
+    const focus = overdue ?? (paymentPending ? (open[0] ?? null) : null);
 
     const daysOverdue = overdue
       ? Math.max(
@@ -218,7 +227,8 @@ export class CompanySessionService {
     return {
       situation,
       daysOverdue,
-      paymentPending: ctx.firstChargePending,
+      paymentPending,
+      activationPending: ctx.awaitingActivation,
       chargeInFocus: focus
         ? {
             asaasPaymentId: focus.asaasPaymentId,

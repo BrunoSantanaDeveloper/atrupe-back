@@ -29,7 +29,7 @@ describe('SubscriptionBlockService', () => {
       findMany: jest.fn(),
       update: jest.fn(),
     },
-    subscriptionHistory: { create: jest.fn() },
+    subscriptionHistory: { create: jest.fn(), findMany: jest.fn() },
     $transaction: jest.fn(),
   };
 
@@ -77,6 +77,9 @@ describe('SubscriptionBlockService', () => {
     });
     // Nenhuma cobrança local em aberto fora da listagem, salvo quando o teste diz.
     mockPrismaService.payment.findMany.mockResolvedValue([]);
+    // Nenhuma contratação esperando o pagamento, salvo quando o teste diz.
+    mockPrismaService.subscription.findFirst.mockResolvedValue(null);
+    mockPrismaService.subscriptionHistory.findMany.mockResolvedValue([]);
   });
 
   it('should be defined', () => {
@@ -889,7 +892,12 @@ describe('SubscriptionBlockService', () => {
           listed,
         );
 
-        expect(counts).toEqual({ created: 0, updated: 0, canceled: 1 });
+        expect(counts).toEqual({
+          created: 0,
+          updated: 0,
+          canceled: 1,
+          activated: 0,
+        });
 
         expect(mockPrismaService.payment.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -1077,7 +1085,12 @@ describe('SubscriptionBlockService', () => {
         });
 
         // Atualizadas: outubro (status) e novembro (link).
-        expect(counts).toEqual({ created: 1, updated: 2, canceled: 1 });
+        expect(counts).toEqual({
+          created: 1,
+          updated: 2,
+          canceled: 1,
+          activated: 0,
+        });
         expect(mockPrismaService.payment.update).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { id: 'local-pay_outubro' },
@@ -1117,6 +1130,299 @@ describe('SubscriptionBlockService', () => {
         expect(mockPrismaService.payment.update).not.toHaveBeenCalled();
         expect(tx.payment.update).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('contratação que espera o pagamento (regra de 20/10)', () => {
+    const tx = {
+      subscription: {
+        updateMany: jest.fn(),
+        findMany: jest.fn(),
+        update: jest.fn(),
+      },
+      subscriptionHistory: { create: jest.fn() },
+    };
+    const CONTRACTED = {
+      action: 'CONTRACTED',
+      metadata: { accessAfterPayment: true, paymentId: 'pay_contrato' },
+    };
+    const ACTOR = { id: 'admin-1', name: 'Ana (Sincronizar com Asaas)' };
+    const PAID_IN_ASAAS = [
+      {
+        id: 'pay_contrato',
+        status: 'RECEIVED',
+        dueDate: '2026-10-22',
+        value: 147,
+        customer: 'cus_1',
+      },
+    ];
+
+    /** A contratação INACTIVE; `otherPlan`, um plano pago já em vigor. */
+    const contract = (otherPlan: { id: string } | null = null) =>
+      mockPrismaService.subscription.findFirst.mockImplementation(
+        ({ where }: any) =>
+          Promise.resolve(
+            where.id === 'sub-contrato'
+              ? { id: 'sub-contrato', companyId: 'company-1' }
+              : otherPlan,
+          ),
+      );
+
+    /** A cobrança da contratação aqui, no status dado, e se há uma paga. */
+    const contractCharge = (localStatus: string, paid: boolean) =>
+      mockPrismaService.payment.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.asaasPaymentId
+            ? {
+                id: 'local-contrato',
+                subscriptionId: 'sub-contrato',
+                asaasPaymentId: 'pay_contrato',
+                status: localStatus,
+                invoiceUrl: 'https://asaas/i/contrato',
+                bankSlipUrl: 'https://asaas/b/contrato',
+                confirmedDate: null,
+                paymentDate: null,
+              }
+            : paid
+              ? { asaasPaymentId: 'pay_contrato' }
+              : null,
+        ),
+      );
+
+    beforeEach(() => {
+      tx.subscription.updateMany.mockReset();
+      tx.subscription.findMany.mockReset();
+      tx.subscription.update.mockReset();
+      tx.subscriptionHistory.create.mockReset();
+      tx.subscription.updateMany.mockResolvedValue({ count: 1 });
+      tx.subscription.findMany.mockResolvedValue([{ id: 'sub-teste' }]);
+      mockPrismaService.$transaction.mockImplementation((fn: any) => fn(tx));
+      contract();
+      mockPrismaService.subscriptionHistory.findMany.mockResolvedValue([
+        CONTRACTED,
+      ]);
+      mockPrismaService.payment.findFirst.mockResolvedValue({
+        asaasPaymentId: 'pay_contrato',
+      });
+    });
+
+    it('paga: libera o plano e encerra o teste gratuito', async () => {
+      expect(await service.activateIfContractPaid('sub-contrato', ACTOR)).toBe(
+        'activated',
+      );
+
+      // Condicional: só troca se ainda estiver INACTIVE.
+      expect(tx.subscription.updateMany).toHaveBeenCalledWith({
+        where: { id: 'sub-contrato', status: 'INACTIVE' },
+        data: { status: 'ACTIVE' },
+      });
+      expect(tx.subscription.update).toHaveBeenCalledWith({
+        where: { id: 'sub-teste' },
+        data: { status: 'INACTIVE' },
+      });
+      expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          subscriptionId: 'sub-teste',
+          action: 'DEACTIVATED',
+        }),
+      });
+      expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          subscriptionId: 'sub-contrato',
+          action: 'ACTIVATED',
+          metadata: { paymentId: 'pay_contrato' },
+          createdBy: 'admin-1',
+          createdByName: 'Ana (Sincronizar com Asaas)',
+        }),
+      });
+    });
+
+    it('sem cobrança paga: segue esperando, e nada muda', async () => {
+      mockPrismaService.payment.findFirst.mockResolvedValue(null);
+
+      expect(await service.activateIfContractPaid('sub-contrato')).toBe(
+        'awaiting_payment',
+      );
+      expect(mockPrismaService.payment.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            subscriptionId: 'sub-contrato',
+            status: { in: ['CONFIRMED', 'RECEIVED'] },
+          },
+        }),
+      );
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'contratada antes da regra (sem a marca)',
+        [{ action: 'CONTRACTED', metadata: { paymentId: 'pay_contrato' } }],
+        'not_applicable',
+      ],
+      [
+        'já liberada uma vez',
+        [CONTRACTED, { action: 'ACTIVATED', metadata: null }],
+        'held',
+      ],
+      [
+        'desativada à mão pelo superadmin',
+        [
+          CONTRACTED,
+          { action: 'STATUS_CHANGE', metadata: { newStatus: 'INACTIVE' } },
+        ],
+        'held',
+      ],
+    ])('%s: o pagamento não a libera', async (_caso, history, expected) => {
+      mockPrismaService.subscriptionHistory.findMany.mockResolvedValue(history);
+
+      expect(await service.activateIfContractPaid('sub-contrato')).toBe(
+        expected,
+      );
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'da regra antiga que passou a esperar o pagamento',
+        [
+          { action: 'CONTRACTED', metadata: { paymentId: 'pay_contrato' } },
+          {
+            action: 'ACCESS_AFTER_PAYMENT',
+            metadata: { accessAfterPayment: true },
+          },
+        ],
+      ],
+      [
+        'ativada antes da marca (só vale o que veio depois dela)',
+        [
+          { action: 'ACTIVATED', metadata: null },
+          {
+            action: 'ACCESS_AFTER_PAYMENT',
+            metadata: { accessAfterPayment: true },
+          },
+        ],
+      ],
+    ])('contratação %s: paga, é liberada', async (_caso, history) => {
+      mockPrismaService.subscriptionHistory.findMany.mockResolvedValue(history);
+
+      expect(await service.activateIfContractPaid('sub-contrato')).toBe(
+        'activated',
+      );
+    });
+
+    it('com outro plano pago em vigor na empresa, não libera', async () => {
+      contract({ id: 'sub-manual' });
+
+      expect(await service.activateIfContractPaid('sub-contrato')).toBe('held');
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('duas conferências ao mesmo tempo: só uma libera', async () => {
+      tx.subscription.updateMany.mockResolvedValue({ count: 0 });
+
+      expect(await service.activateIfContractPaid('sub-contrato')).toBe(
+        'not_applicable',
+      );
+      expect(tx.subscription.update).not.toHaveBeenCalled();
+      expect(tx.subscriptionHistory.create).not.toHaveBeenCalled();
+    });
+
+    it('o alinhamento libera a contratação que acabou de ser paga', async () => {
+      // Paga no Asaas, pendente aqui.
+      contractCharge('PENDING', true);
+
+      const counts = await (service as any).syncMissingPayments(
+        'sub-contrato',
+        'sub_asaas',
+        PAID_IN_ASAAS,
+        ACTOR,
+      );
+
+      expect(counts).toEqual({
+        created: 0,
+        updated: 1,
+        canceled: 0,
+        activated: 1,
+      });
+      expect(mockPrismaService.payment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'local-contrato' },
+          data: expect.objectContaining({ status: 'RECEIVED' }),
+        }),
+      );
+      // Alinha primeiro, libera depois.
+      expect(
+        mockPrismaService.payment.update.mock.invocationCallOrder[0],
+      ).toBeLessThan(tx.subscription.updateMany.mock.invocationCallOrder[0]);
+    });
+
+    it('falha ao liberar não desfaz nem derruba o alinhamento', async () => {
+      contractCharge('PENDING', true);
+      mockPrismaService.$transaction.mockRejectedValue(new Error('banco fora'));
+
+      const counts = await (service as any).syncMissingPayments(
+        'sub-contrato',
+        'sub_asaas',
+        PAID_IN_ASAAS,
+      );
+
+      expect(counts).toEqual({
+        created: 0,
+        updated: 1,
+        canceled: 0,
+        activated: 0,
+      });
+    });
+
+    it('a rotina das 03:00 desbloqueia sem ativar a contratação que ainda espera o pagamento', async () => {
+      mockPrismaService.company.findMany.mockResolvedValue([
+        {
+          id: 'company-1',
+          name: 'Empresa',
+          blockLevel: 'PARTIAL',
+          blockReason: 'Assinatura com 3 dias de atraso (verificado no Asaas)',
+          Subscription: [
+            {
+              id: 'sub-contrato',
+              asaasSubscriptionId: 'sub_asaas',
+              asaasInstallmentId: null,
+              billingMode: null,
+              nextDueDate: new Date(),
+              status: 'INACTIVE',
+            },
+          ],
+        },
+      ]);
+      // A primeira cobrança vence em dois dias: nada vencido, nada pago.
+      const inTwoDays = new Date(Date.now() + 2 * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        {
+          id: 'pay_contrato',
+          status: 'PENDING',
+          dueDate: inTwoDays,
+          value: 147,
+          customer: 'cus_1',
+          invoiceUrl: 'https://asaas/i/contrato',
+          bankSlipUrl: 'https://asaas/b/contrato',
+        },
+      ]);
+      contractCharge('PENDING', false);
+
+      const [result] = await service.checkAndUnblockCompanies();
+
+      expect(result.action).toBe('unblocked');
+      expect(mockPrismaService.company.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'company-1' },
+          data: expect.objectContaining({ blockLevel: 'NONE' }),
+        }),
+      );
+      // Sem vencida não quer dizer paga: a assinatura segue INACTIVE.
+      expect(mockPrismaService.subscription.update).not.toHaveBeenCalled();
+      expect(tx.subscription.updateMany).not.toHaveBeenCalled();
     });
   });
 });

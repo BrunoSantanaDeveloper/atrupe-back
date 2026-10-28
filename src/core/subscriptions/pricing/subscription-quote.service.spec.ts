@@ -123,6 +123,47 @@ describe('SubscriptionQuoteService', () => {
     });
   });
 
+  describe('contratação que espera o pagamento (regra de 20/10)', () => {
+    const aguardando = (overrides: Record<string, any> = {}) =>
+      subscription({
+        status: 'INACTIVE',
+        contractedAt: new Date('2026-08-25T11:00:00.000Z'),
+        payments: [
+          payment('PENDING', { dueDate: new Date('2026-08-27T00:00:00.000Z') }),
+        ],
+        ...overrides,
+      });
+
+    it('é cobrança em aberto, com o plano a liberar', async () => {
+      withSubscriptions(null, aguardando());
+
+      const ctx = await service.getBillingContext('company-1', AGORA);
+
+      expect(ctx.awaitingActivation).toBe(true);
+      expect(ctx.firstChargePending).toBe(false);
+      expect(ctx.hasOpenCharge).toBe(true);
+      expect(ctx.intent).toBe('REGULARIZATION');
+    });
+
+    it('a pendente do legado, sem data de contratação, não entra nesta regra', async () => {
+      withSubscriptions(null, aguardando({ contractedAt: null }));
+
+      const ctx = await service.getBillingContext('company-1', AGORA);
+
+      expect(ctx.awaitingActivation).toBe(false);
+      expect(ctx.intent).toBe('REGULARIZATION');
+    });
+
+    it('a de antes da regra, já liberada com a cobrança pendente, segue como estava', async () => {
+      withSubscriptions(aguardando({ status: 'ACTIVE' }));
+
+      const ctx = await service.getBillingContext('company-1', AGORA);
+
+      expect(ctx.firstChargePending).toBe(true);
+      expect(ctx.awaitingActivation).toBe(false);
+    });
+  });
+
   describe('sem contratação em curso', () => {
     it('só o START é oferecido, com o preço', async () => {
       withCatalog();

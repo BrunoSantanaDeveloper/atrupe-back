@@ -345,7 +345,7 @@ describe('CheckoutService', () => {
   });
 
   describe('contratação que dá certo', () => {
-    it('registra, libera o acesso e devolve a fatura', async () => {
+    it('registra a contratação aguardando o pagamento e devolve a fatura', async () => {
       const result = await service.checkout(ADMIN, baseDto(), META);
 
       // A assinatura nasce no Asaas com o valor cheio da renovação.
@@ -357,16 +357,28 @@ describe('CheckoutService', () => {
           externalReference: 'sub-local-1',
         }),
       );
-      // Contratação registrada libera o acesso: ACTIVE, com data de contratação.
+      // Contratação registrada não libera o plano: a assinatura segue
+      // INACTIVE, com data de contratação, até o pagamento ser confirmado.
       expect(tx.subscription.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'sub-local-1' },
-          data: expect.objectContaining({
-            status: 'ACTIVE',
-            contractedAt: expect.any(Date),
-          }),
+          data: expect.objectContaining({ contractedAt: expect.any(Date) }),
         }),
       );
+      expect(tx.subscription.update.mock.calls[0][0].data).not.toHaveProperty(
+        'status',
+      );
+      // O teste gratuito segue valendo: nenhuma outra assinatura é tocada.
+      expect(tx.subscription.update).toHaveBeenCalledTimes(1);
+      // A marca que a liberação pelo pagamento procura.
+      expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          subscriptionId: 'sub-local-1',
+          action: 'CONTRACTED',
+          metadata: expect.objectContaining({ accessAfterPayment: true }),
+        }),
+      });
+      expect(result.subscription.status).toBe('INACTIVE');
       expect(result.paymentUrl).toBe('https://asaas/i/1');
       expect(result.session).toEqual({ plan: { name: 'START', active: true } });
     });
@@ -593,7 +605,7 @@ describe('CheckoutService', () => {
             asaasInstallmentId: 'ins_1',
             billingMode: 'ASAAS_INSTALLMENT',
             installmentCount: 12,
-            status: 'ACTIVE',
+            contractedAt: expect.any(Date),
           }),
         }),
       );

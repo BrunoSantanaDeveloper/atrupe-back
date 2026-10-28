@@ -128,6 +128,20 @@ describe('RegularizationService', () => {
     });
   });
 
+  it('contratação que espera o pagamento, mesmo vencida, não é mensalidade atrasada', async () => {
+    withOpenCharge('2026-01-10');
+    const ctx = await quoteService.getBillingContext();
+    quoteService.getBillingContext.mockResolvedValue({
+      ...ctx,
+      awaitingActivation: true,
+    });
+
+    const view: any = await service.view('company-1');
+
+    expect(view.reason).toBe('CHECKOUT_PENDING');
+    expect(view.chargeInFocus.asaasPaymentId).toBe('pay_1');
+  });
+
   it('reemite a vencida para hoje na forma escolhida, e pede o aceite de novo', async () => {
     withOpenCharge('2026-01-10', 'BOLETO');
     const today = new Date().toISOString().split('T')[0];

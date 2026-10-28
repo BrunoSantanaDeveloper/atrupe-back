@@ -57,14 +57,16 @@ export interface RequestMeta {
  * recusada se ele tiver mudado. O cartão continua sendo digitado na fatura do
  * Asaas: aqui se escolhe a forma de pagamento e se registra a contratação.
  *
- * Contratação registrada LIBERA O ACESSO, com o pagamento ainda em aberto: a
- * pendência vira aviso, não bloqueio. O que depende de valor pago (crédito de
- * evolução, desbloqueio) só vem com o pagamento confirmado.
+ * Contratação registrada NÃO libera o plano: a assinatura fica INACTIVE,
+ * aguardando o pagamento, e o teste gratuito segue até o fim. Quem contratava
+ * e não pagava usava o sistema até o bloqueio (20/10). O plano é liberado
+ * quando a primeira cobrança aparece paga no alinhamento com o Asaas
+ * (SubscriptionBlockService.activateIfContractPaid).
  *
  * É uma saga em três passos, com compensação:
  * 1. reserva local (assinatura INACTIVE, cupom reservado), sob trava da empresa;
  * 2. Asaas (cliente, assinatura, ajuste da primeira cobrança);
- * 3. ativação local (ACTIVE, trial encerrado, cobrança, aceite do contrato).
+ * 3. registro local (contratação, cobrança, aceite do contrato).
  * Falhando o 2 ou o 3, a assinatura do Asaas é cancelada e a reserva desfeita:
  * nada fica cobrando sem uma contratação registrada por trás.
  */
@@ -151,7 +153,7 @@ export class CheckoutService {
     // A assinatura nasce com o valor CHEIO da renovação; cupom e crédito abatem
     // só a primeira cobrança.
     let contract: GatewayContract | null = null;
-    let activated: Awaited<ReturnType<CheckoutService['activate']>>;
+    let registered: Awaited<ReturnType<CheckoutService['register']>>;
     try {
       contract = await openGatewayContract(this.asaasGateway, this.logger, {
         customer: customer.asaasCustomerId,
@@ -165,8 +167,8 @@ export class CheckoutService {
         externalReference: reserved.id,
       });
 
-      // 3. Ativação
-      activated = await this.activate({
+      // 3. Registro
+      registered = await this.register({
         user,
         dto,
         quote,
@@ -209,11 +211,12 @@ export class CheckoutService {
         return null;
       });
 
-    const { payment, acceptance } = activated;
+    const { payment, acceptance } = registered;
     return {
       subscription: {
         id: reserved.id,
-        status: 'ACTIVE' as const,
+        // Aguardando o pagamento: o plano é liberado quando ele é confirmado.
+        status: 'INACTIVE' as const,
         planId: plan.id,
         planName: plan.name,
         cycle,
@@ -238,8 +241,12 @@ export class CheckoutService {
     };
   }
 
-  /** Passo 3: a ativação local, numa transação só. */
-  private async activate(input: {
+  /**
+   * Passo 3: o registro local, numa transação só. A assinatura continua
+   * INACTIVE e o teste gratuito, se houver, continua valendo: os dois trocam
+   * de lugar quando o pagamento é confirmado.
+   */
+  private async register(input: {
     user: CheckoutUser;
     dto: CheckoutDto;
     quote: QuoteResult;
@@ -282,38 +289,9 @@ export class CheckoutService {
             billingMode: contract.billingMode,
             installmentCount: installment ? input.installmentCount : null,
             nextDueDate: contract.nextDueDate,
-            status: 'ACTIVE',
             contractedAt: now,
           },
         });
-
-        const trial = await tx.subscription.findFirst({
-          where: {
-            companyId: user.companyId,
-            status: 'ACTIVE',
-            plan: { planType: 'TRIAL' },
-          },
-        });
-        if (trial) {
-          await tx.subscription.update({
-            where: { id: trial.id },
-            data: { status: 'INACTIVE' },
-          });
-          await tx.subscriptionHistory.create({
-            data: {
-              subscriptionId: trial.id,
-              action: 'DEACTIVATED',
-              description: 'Teste encerrado pela contratação',
-              changes: {
-                before: { status: 'ACTIVE' },
-                after: { status: 'INACTIVE' },
-              },
-              metadata: { newSubscriptionId: reserved.id },
-              createdBy: user.userId,
-              createdByName: sessionUser.name,
-            },
-          });
-        }
 
         const [payment] = await recordContractCharges(tx, this.asaasGateway, {
           subscriptionId: reserved.id,
@@ -331,8 +309,11 @@ export class CheckoutService {
             subscriptionId: reserved.id,
             action: 'CONTRACTED',
             description:
-              'Contratação registrada; acesso liberado com o pagamento em aberto',
+              'Contratação registrada; o plano é liberado com a confirmação do pagamento',
             metadata: {
+              // A marca de que esta assinatura espera o pagamento para ser
+              // liberada; as contratações anteriores nasciam ativas.
+              accessAfterPayment: true,
               paymentId: payment.asaasPaymentId,
               cycle: input.cycle,
               totalCents: quote.totalCents,

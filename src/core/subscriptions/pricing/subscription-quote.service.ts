@@ -105,14 +105,17 @@ export class SubscriptionQuoteService {
       current?.payments.find((p) => PAID.includes(p.status)) ?? null;
 
     // Contratação ainda não paga também é cobrança em aberto: o que resta a
-    // fazer com ela é regularizar, não evoluir. São dois formatos: o legado,
-    // em que a assinatura fica INACTIVE até o pagamento, e o atual, em que a
-    // contratação registrada já libera o acesso (ACTIVE) com a primeira
-    // cobrança ainda pendente.
+    // fazer com ela é regularizar, não evoluir. São dois formatos: o de antes
+    // de 20/10, em que a contratação registrada já liberava o acesso (ACTIVE)
+    // com a primeira cobrança ainda pendente, e o atual — como o legado —, em
+    // que a assinatura fica INACTIVE até o pagamento.
     const firstChargePending =
       !!active &&
       !confirmedPayment &&
       active.payments.some((p) => p.status === 'PENDING');
+    // A contratação registrada que espera o pagamento para liberar o plano.
+    const awaitingActivation =
+      !!pendingCheckout?.contractedAt && !confirmedPayment;
     const hasOpenCharge = !!pendingCheckout || hasOverdue || firstChargePending;
 
     const intent: ContractingIntent = !current
@@ -126,6 +129,7 @@ export class SubscriptionQuoteService {
       hasOpenCharge,
       hasOverdue,
       firstChargePending,
+      awaitingActivation,
       confirmedPayment,
       intent,
     };

@@ -72,9 +72,12 @@ export class RegularizationService {
       }),
     ]);
 
+    // A contratação que espera o pagamento é CHECKOUT_PENDING mesmo com a
+    // primeira cobrança vencida: não há mensalidade atrasada de um plano que
+    // nem foi liberado.
     const reason: RegularizationReason = ctx.firstChargePending
       ? 'FIRST_CHARGE_PENDING'
-      : ctx.hasOverdue
+      : ctx.hasOverdue && !ctx.awaitingActivation
         ? 'OVERDUE'
         : 'CHECKOUT_PENDING';
 

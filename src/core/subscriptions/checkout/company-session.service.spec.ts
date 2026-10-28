@@ -30,6 +30,7 @@ describe('CompanySessionService', () => {
     hasOpenCharge: false,
     hasOverdue: false,
     firstChargePending: false,
+    awaitingActivation: false,
     confirmedPayment: null,
     intent: 'EVOLUTION',
     ...extra,
@@ -79,6 +80,7 @@ describe('CompanySessionService', () => {
       situation: 'EM_DIA',
       daysOverdue: 0,
       paymentPending: false,
+      activationPending: false,
       chargeInFocus: null,
     });
   });
@@ -97,8 +99,49 @@ describe('CompanySessionService', () => {
     const s = await service.build('company-1', 'user-1', HOJE);
 
     expect(s.billing.paymentPending).toBe(true);
+    // Contratada antes de 20/10: o acesso já está liberado.
+    expect(s.billing.activationPending).toBe(false);
     expect(s.billing.situation).toBe('EM_DIA');
     expect(s.billing.chargeInFocus?.asaasPaymentId).toBe('pay_2026-08-27');
+  });
+
+  it('contratação esperando o pagamento: pendente, em foco e com o plano a liberar', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([payment('PENDING', '2026-08-27')], {
+        awaitingActivation: true,
+        hasOpenCharge: true,
+        intent: 'REGULARIZATION',
+      }),
+    );
+
+    const s = await service.build('company-1', 'user-1', HOJE);
+
+    expect(s.billing).toEqual({
+      situation: 'EM_DIA',
+      daysOverdue: 0,
+      paymentPending: true,
+      activationPending: true,
+      chargeInFocus: expect.objectContaining({
+        asaasPaymentId: 'pay_2026-08-27',
+      }),
+    });
+  });
+
+  it('contratação esperando o pagamento, com a cobrança vencida: segue a liberar', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([payment('OVERDUE', '2026-08-23')], {
+        awaitingActivation: true,
+        hasOpenCharge: true,
+        hasOverdue: true,
+        intent: 'REGULARIZATION',
+      }),
+    );
+
+    const s = await service.build('company-1', 'user-1', HOJE);
+
+    expect(s.billing.activationPending).toBe(true);
+    expect(s.billing.daysOverdue).toBe(2);
+    expect(s.billing.chargeInFocus?.asaasPaymentId).toBe('pay_2026-08-23');
   });
 
   it('renovação futura não é pendência nem entra em foco', async () => {
@@ -205,6 +248,7 @@ describe('CompanySessionService', () => {
         created: 0,
         updated: 1,
         canceled: 0,
+        activated: 0,
       });
 
       const s = await service.buildWithGatewayCheck(
@@ -220,12 +264,40 @@ describe('CompanySessionService', () => {
       expect(s.billing.chargeInFocus).toBeNull();
     });
 
+    it('contratação liberada no alinhamento: remonta a sessão com o plano', async () => {
+      const aLiberar = context([payment('PENDING', '2026-08-27')], {
+        awaitingActivation: true,
+        hasOpenCharge: true,
+      });
+      quoteService.getBillingContext
+        .mockResolvedValueOnce(aLiberar)
+        .mockResolvedValueOnce(paga);
+      // A cobrança já estava paga aqui; faltava só liberar.
+      subscriptionBlock.syncCompanyCharges.mockResolvedValue({
+        created: 0,
+        updated: 0,
+        canceled: 0,
+        activated: 1,
+      });
+
+      const s = await service.buildWithGatewayCheck(
+        'company-1',
+        'user-1',
+        HOJE,
+      );
+
+      expect(quoteService.getBillingContext).toHaveBeenCalledTimes(2);
+      expect(s.billing.activationPending).toBe(false);
+      expect(s.billing.paymentPending).toBe(false);
+    });
+
     it('nada mudou no Asaas: não remonta a sessão', async () => {
       quoteService.getBillingContext.mockResolvedValue(pendente);
       subscriptionBlock.syncCompanyCharges.mockResolvedValue({
         created: 0,
         updated: 0,
         canceled: 0,
+        activated: 0,
       });
 
       const s = await service.buildWithGatewayCheck(
@@ -244,6 +316,7 @@ describe('CompanySessionService', () => {
         created: 0,
         updated: 0,
         canceled: 0,
+        activated: 0,
       });
 
       await service.buildWithGatewayCheck('company-1', 'user-1', HOJE);
@@ -295,7 +368,7 @@ describe('CompanySessionService', () => {
       expect(quoteService.getBillingContext).toHaveBeenCalledTimes(1);
 
       // O alinhamento termina sozinho depois, sem erro solto.
-      finishSync({ created: 0, updated: 1, canceled: 0 });
+      finishSync({ created: 0, updated: 1, canceled: 0, activated: 0 });
       await slowSync;
     });
   });
