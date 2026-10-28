@@ -117,6 +117,24 @@ export class PaymentService {
 
       // Handle down payment if exists
       if (hasDownPayment && downPayment) {
+        // Entrada sem vencimento gravava `downPaymentDueDate` nulo e a venda
+        // so quebrava la na aprovacao, ao criar a parcela da entrada
+        // (`dueDate` e NOT NULL): a venda ficava aprovada, com O.S., e sem
+        // nenhum lancamento no financeiro.
+        //
+        // A edicao parcial nao reenvia tudo, entao o que vale e o valor final,
+        // ja considerando o que esta gravado.
+        const valorEntrada =
+          downPayment.amount !== undefined
+            ? orZero(downPayment.amount)
+            : (existingPayment.downPayment ?? 0);
+        const vencimentoEntrada =
+          downPayment.dueDate ?? existingPayment.downPaymentDueDate;
+        if (valorEntrada > 0 && !vencimentoEntrada) {
+          throw new BadRequestException(
+            'Informe a data de vencimento da entrada.',
+          );
+        }
         if (downPayment.amount !== undefined) {
           paymentData.downPayment = orZero(downPayment.amount);
         }

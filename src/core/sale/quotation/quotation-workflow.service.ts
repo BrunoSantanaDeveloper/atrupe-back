@@ -300,12 +300,37 @@ export class QuotationWorkflowService {
   ): Promise<Order> {
     const quotationBase = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
-      select: { companyId: true },
+      select: {
+        companyId: true,
+        quotationPayment: {
+          select: {
+            billing: true,
+            downPayment: true,
+            downPaymentDueDate: true,
+          },
+        },
+      },
     });
 
     if (!quotationBase) {
       throw new NotFoundException(
         `Quotation with ID '${quotationId}' not found.`,
+      );
+    }
+
+    // Checado ANTES da primeira transacao de proposito. Os lancamentos sao
+    // gerados numa segunda transacao, que falha sem desfazer a aprovacao —
+    // entao o que quebraria la precisa barrar a aprovacao aqui, senao a
+    // venda fica aprovada, com O.S., e invisivel no financeiro.
+    const pagamentoBase = quotationBase.quotationPayment;
+    if (
+      pagamentoBase &&
+      pagamentoBase.billing !== 'NO_INVOICE' &&
+      pagamentoBase.downPayment > 0 &&
+      !pagamentoBase.downPaymentDueDate
+    ) {
+      throw new BadRequestException(
+        'A entrada deste orçamento está sem data de vencimento. Edite as condições de pagamento e informe a data antes de aprovar.',
       );
     }
 

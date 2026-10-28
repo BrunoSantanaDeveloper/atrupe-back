@@ -202,6 +202,43 @@ describe('QuotationWorkflowService', () => {
         NotFoundException,
       );
     });
+
+    // Os lancamentos nascem numa segunda transacao, que falha sem desfazer
+    // a aprovacao. Entao o que quebraria la tem de barrar a aprovacao antes
+    // de qualquer commit.
+    it('nao aprova venda com entrada sem data de vencimento', async () => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        id: mockQuotationId,
+        companyId: mockCompanyId,
+        quotationPayment: {
+          billing: 'ON_ORDER',
+          downPayment: 2500,
+          downPaymentDueDate: null,
+        },
+      });
+
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('nao barra a aprovacao quando a serie nao lanca no financeiro', async () => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        id: mockQuotationId,
+        companyId: mockCompanyId,
+        quotationPayment: {
+          billing: 'NO_INVOICE',
+          downPayment: 2500,
+          downPaymentDueDate: null,
+        },
+      });
+
+      await service.approve(mockQuotationId, mockUserId).catch(() => undefined);
+
+      // Passou da pre-checagem: chegou a abrir a transacao da aprovacao.
+      expect(prisma.$transaction).toHaveBeenCalled();
+    });
   });
 
   describe('reject', () => {
