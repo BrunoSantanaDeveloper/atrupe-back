@@ -1029,13 +1029,14 @@ export class ReportService {
   ): Promise<{ name: string; value: number; count: number }[]> {
     const { startDate, endDate } = this.getDateRange(filters);
 
+    // Todo orçamento tem vendedor (sellerId é obrigatório): não há o que
+    // excluir por vendedor vazio, e o Prisma recusa `sellerId: null` (500)
     const orders = await this.prisma.order.findMany({
       where: {
         status: { not: 'CANCELED' },
         quotation: {
           ...this.getSalesQuotationFilters(companyId, filters),
           approvedAt: { gte: startDate, lte: endDate },
-          ...(filters.sellerId ? {} : { NOT: { sellerId: null } }),
         },
       },
       include: {
