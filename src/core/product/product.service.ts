@@ -289,10 +289,27 @@ export class ProductService {
                   },
                 },
                 _count: { select: { variations: true } },
+                // As variações, para a lista poder mostrar cada uma sob o
+                // produto (LITE part3, item 4, 28/10/2026)
+                variations: {
+                  select: { id: true, name: true, unitPrice: true },
+                  orderBy: { position: 'asc' },
+                },
               },
               take,
               skip,
-              orderBy: { name: 'asc' },
+              // A tela de produtos pede a ordem de cadastro (LITE part3,
+              // item 4); quem não pede (seletores) segue por nome
+              orderBy:
+                filter.orderBy === 'createdAt'
+                  ? [
+                      {
+                        createdAt:
+                          filter.orderDirection === 'desc' ? 'desc' : 'asc',
+                      },
+                      { name: 'asc' },
+                    ]
+                  : { name: 'asc' },
             })
           : Promise.resolve([]);
 
@@ -358,6 +375,11 @@ export class ProductService {
             ? composition.status
             : null,
           hasVariations: _count.variations > 0,
+          variations: (product.variations ?? []).map((variation) => ({
+            id: variation.id,
+            name: variation.name,
+            unitPrice: variation.unitPrice,
+          })),
           items: items.map((item) => ({
             unitCost: item.unitCost,
             salePrice: item.salePrice,

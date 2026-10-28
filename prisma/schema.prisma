@@ -1767,6 +1767,10 @@ model OrderHistory {
 
 model Product {
   id                   String              @id @default(uuid())
+  /// Data de cadastro (LITE part3, item 4, 28/10/2026): a lista de produtos
+  /// segue a ordem de cadastro. Os produtos de antes da coluna ficam com a
+  /// data da migração
+  createdAt            DateTime            @default(now())
   name                 String
   companyId            String?
   categoryId           String

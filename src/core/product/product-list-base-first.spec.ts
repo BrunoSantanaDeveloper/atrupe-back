@@ -71,4 +71,28 @@ describe('ProductService.findAll — Produto base primeiro', () => {
     // Nenhum Produto base cabe na página 2: só a lista dos outros é lida
     expect(prisma.product.findMany).toHaveBeenCalledTimes(1);
   });
+
+  it('a tela de produtos pede a ordem de cadastro; sem pedir, segue por nome', async () => {
+    const { service, prisma } = setup([], ['Adesivo', 'Banner']);
+    await service.findAll({
+      companyId: 'empresa-a',
+      page: '1',
+      limit: '10',
+      orderBy: 'createdAt',
+    } as any);
+    expect(prisma.product.findMany.mock.calls[0][0].orderBy).toEqual([
+      { createdAt: 'asc' },
+      { name: 'asc' },
+    ]);
+
+    prisma.product.findMany.mockClear();
+    await service.findAll({
+      companyId: 'empresa-a',
+      page: '1',
+      limit: '10',
+    } as any);
+    expect(prisma.product.findMany.mock.calls[0][0].orderBy).toEqual({
+      name: 'asc',
+    });
+  });
 });
