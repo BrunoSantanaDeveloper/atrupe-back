@@ -267,6 +267,16 @@ export class QuotationWorkflowService {
     return !!employee.sellerProfile?.onlySendToCash;
   }
 
+  /** O cliente de balcão da venda rápida da empresa (VR-5). */
+  private async isCounterClient(companyId: string, clientId?: string | null) {
+    if (!clientId) return false;
+    const settings = await this.prisma.quickSaleSettings.findUnique({
+      where: { companyId },
+      select: { clientId: true },
+    });
+    return settings?.clientId === clientId;
+  }
+
   private async validateClientForApproval(
     client: { status: string } | null,
     userId: string | undefined,
@@ -553,7 +563,7 @@ export class QuotationWorkflowService {
         quickSale: true,
         totalValue: true,
         pendingSale: { select: { id: true } },
-        client: { select: { status: true, blockClient: true } },
+        client: { select: { id: true, status: true, blockClient: true } },
         deliveryInfo: { select: { id: true } },
         // O limite de desconto do vendedor do orçamento (EC-2)
         seller: {
@@ -671,10 +681,15 @@ export class QuotationWorkflowService {
         current.seller?.sellerProfile?.maxDiscount,
       );
     }
-    // A venda da frente de caixa é paga no caixa, em nome do cliente de
-    // balcão: o faturamento para o cliente confere o cadastro e o crédito
-    // na frente de caixa (FC-4)
-    if (!atCheckout) {
+    // O cadastro do cliente (pré-cadastro só com o "Aprova pré-cadastro" do
+    // perfil) vale também no "Cobrar" e no "Enviar ao caixa" da série da
+    // frente de caixa (pacote de 27/10/2026, 4.2.2). Fica de fora o cliente
+    // de balcão da venda rápida: o consumidor sem cadastro, que o
+    // faturamento para o cliente confere na frente de caixa (FC-4)
+    if (
+      !atCheckout ||
+      !(await this.isCounterClient(current.companyId, current.client?.id))
+    ) {
       await this.validateClientForApproval(current.client, userId, this.prisma);
     }
     if (options.creditCheck !== false && !atCheckout) {

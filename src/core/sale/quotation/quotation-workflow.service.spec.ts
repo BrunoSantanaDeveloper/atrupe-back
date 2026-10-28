@@ -674,6 +674,46 @@ describe('QuotationWorkflowService', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
+    it('série da frente de caixa: o pré-cadastro também pede a permissão, salvo o cliente de balcão', async () => {
+      const atCheckout = (clientId: string) =>
+        currentQuotation({
+          client: { id: clientId, status: 'PROSPECT' },
+          quotationPayment: {
+            billing: 'ON_CHECKOUT',
+            _count: { quotationInstallment: 0 },
+          },
+        });
+      prisma.user.findUnique.mockResolvedValue({ employee: [] });
+      prisma.sellerProfile.findFirst.mockResolvedValue({
+        canApprovePreRegistration: false,
+      });
+      prisma.quickSaleSettings.findUnique.mockResolvedValue({
+        clientId: 'consumidor',
+      });
+      const charge = jest.fn();
+
+      // O cliente da negociação, só com o nome: o "Cobrar" recusa (4.2.2)
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? atCheckout('cliente-real')
+          : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+      );
+      await expect(
+        service.approve(mockQuotationId, mockUserId, undefined, { charge }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(charge).not.toHaveBeenCalled();
+
+      // O consumidor de balcão da venda rápida segue (FC-4)
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? atCheckout('consumidor')
+          : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+      );
+      await service.approve(mockQuotationId, mockUserId, undefined, { charge });
+      expect(charge).toHaveBeenCalled();
+      prisma.quickSaleSettings.findUnique.mockResolvedValue(null);
+    });
+
     it('sem a chave das abas de produção, a agenda nasce na entrega', async () => {
       mockPlanControl.getCompanyPlanInfo.mockResolvedValue({ features: {} });
 
