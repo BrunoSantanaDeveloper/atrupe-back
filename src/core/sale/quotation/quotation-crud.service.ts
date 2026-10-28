@@ -493,12 +493,19 @@ export class QuotationCrudService {
       // vencendo, com o orçamento ainda em negociação (CRM-2, 27/10/2026);
       // "sem próximo contato" e "vencendo" são os outros filtros da aba
       // Aguardando
-      if (dto.nextContact === 'due') {
-        where = { ...where, ...dueWhere() };
-      } else if (dto.nextContact === 'none') {
-        where = { ...where, ...noContactWhere() };
-      } else if (dto.nextContact === 'expiring') {
-        where = { ...where, ...expiringWhere() };
+      // Em AND: o filtro do acompanhamento tem o próprio OR, que no
+      // espalhamento substituía o OR da empresa e trazia orçamentos de
+      // todas as empresas a quem vê os outros vendedores (28/10/2026)
+      const followUp =
+        dto.nextContact === 'due'
+          ? dueWhere()
+          : dto.nextContact === 'none'
+            ? noContactWhere()
+            : dto.nextContact === 'expiring'
+              ? expiringWhere()
+              : null;
+      if (followUp) {
+        where = { AND: [where, followUp] };
       }
 
       if (dto.date) {

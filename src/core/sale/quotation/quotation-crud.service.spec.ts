@@ -295,6 +295,29 @@ describe('QuotationCrudService', () => {
 
       expect(prisma.quotation.findMany).toHaveBeenCalled();
     });
+
+    // O OR do "Para retomar" substituía o OR da empresa: a aba trazia os
+    // orçamentos de todas as empresas (28/10/2026)
+    it.each(['due', 'none', 'expiring'] as const)(
+      'acompanhamento "%s" mantém o filtro da empresa',
+      async (nextContact) => {
+        prisma.quotation.findMany.mockResolvedValue([]);
+        prisma.quotation.count.mockResolvedValue(0);
+
+        await service.findAll({
+          companyId: mockCompanyId,
+          nextContact,
+          page: '1',
+          limit: '10',
+        } as any);
+
+        const { where } = prisma.quotation.findMany.mock.calls[0][0];
+        expect(where.AND[0].OR).toEqual(
+          expect.arrayContaining([{ companyId: mockCompanyId }]),
+        );
+        expect(where.OR).toBeUndefined();
+      },
+    );
   });
 
   describe('findAllQuantity', () => {
