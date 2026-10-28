@@ -1,4 +1,7 @@
-FROM node:18 AS builder
+# Node 24 LTS com a versão completa na tag (segurança de outubro de 2026:
+# o Node 18 não recebe mais correção). A variante bookworm completa, e não a
+# slim: o HEALTHCHECK usa o wget e o Prisma, o openssl, que a slim não traz
+FROM node:24.22.1-bookworm AS builder
 
 # Diretório de trabalho
 WORKDIR /usr/src/app
@@ -22,7 +25,7 @@ RUN npm run build
 RUN npx tsc prisma/seed.ts --outDir dist/prisma --moduleResolution node --esModuleInterop --allowSyntheticDefaultImports --target es2018 --module commonjs
 
 # Etapa 2: Final
-FROM node:18
+FROM node:24.22.1-bookworm
 
 # Diretório de trabalho
 WORKDIR /usr/src/app

@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24.22.1
           cache: 'npm'
       - run: npm ci
       - run: npm run build
@@ -62,7 +62,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24.22.1
           cache: 'npm'
       - run: npm ci
       - name: Diff das migrations contra o schema.prisma

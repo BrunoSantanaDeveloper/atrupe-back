@@ -182,5 +182,8 @@
   "prisma": {
     "seedLocal": "ts-node prisma/seed.ts",
     "seed": "node dist/prisma/seed.js"
+  },
+  "engines": {
+    "node": ">=22.23.4"
   }
 }
