@@ -39,13 +39,17 @@ describe('ProductVariationController', () => {
   const handler = (name: keyof ProductVariationController) =>
     ProductVariationController.prototype[name] as object;
 
-  it('as variações não pedem recurso de plano; as faixas pedem a composição', () => {
-    for (const name of ['list', 'replace', 'update', 'remove'] as const) {
-      expect(
-        Reflect.getMetadata(GUARDS_METADATA, handler(name)),
-      ).toBeUndefined();
-    }
-    for (const name of ['tiers', 'saveTiers'] as const) {
+  it('ler variações é livre; gravar variações e faixas pede a composição (LITE em diante, 27/10/2026)', () => {
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, handler('list')),
+    ).toBeUndefined();
+    for (const name of [
+      'replace',
+      'update',
+      'remove',
+      'tiers',
+      'saveTiers',
+    ] as const) {
       expect(Reflect.getMetadata(GUARDS_METADATA, handler(name))).toEqual([
         FeatureGuard,
       ]);

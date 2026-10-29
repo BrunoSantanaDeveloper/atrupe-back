@@ -56,7 +56,11 @@ export class ProductController {
    */
   private async enforceProductFeatures(
     companyId: string,
-    dto: { items?: unknown[]; productionStages?: { isActive?: boolean }[] },
+    dto: {
+      items?: unknown[];
+      productionStages?: { isActive?: boolean }[];
+      minQuantity?: number | null;
+    },
     productId?: string,
   ) {
     const stored = productId
@@ -64,12 +68,18 @@ export class ProductController {
           where: { id: productId },
           select: {
             productionStages: true,
+            minQuantity: true,
             _count: { select: { items: true } },
           },
         })
       : null;
 
     if ((dto.items?.length ?? 0) > 1 && (stored?._count.items ?? 0) <= 1) {
+      await this.planControl.enforceFeature(companyId, 'product_composition');
+    }
+    // A quantidade mínima é do LITE em diante (27/10/2026), como as
+    // variações e as faixas; o produto que já a tem segue editável
+    if ((dto.minQuantity ?? 0) > 0 && !((stored?.minQuantity ?? 0) > 0)) {
       await this.planControl.enforceFeature(companyId, 'product_composition');
     }
 

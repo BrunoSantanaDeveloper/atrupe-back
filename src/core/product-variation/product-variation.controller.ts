@@ -81,7 +81,11 @@ export class ProductVariationController {
     return this.service.list(req.user.companyId, id);
   }
 
+  // Variações são do LITE em diante (PV-6, 27/10/2026): a tela já escondia
+  // e a API passa a recusar, como nas faixas (29/10/2026)
   @Put(':id/variation')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('product_composition')
   @HasPermission('edit', PRODUCTS)
   @MoneyFields('unitPrice')
   @ApiOperation({ summary: 'Substitui as variações simples: nome e preço' })
@@ -99,6 +103,8 @@ export class ProductVariationController {
   }
 
   @Patch(':id/variation/:variationId')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('product_composition')
   @HasPermission('edit', PRODUCTS)
   @MoneyFields('unitPrice')
   @ApiOperation({ summary: 'Renomeia a variação ou muda o preço dela' })
@@ -118,6 +124,8 @@ export class ProductVariationController {
   }
 
   @Delete(':id/variation/:variationId')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('product_composition')
   // Remover a variação de dentro do produto é editar o produto
   @HasPermission('edit', PRODUCTS)
   @HttpCode(204)
