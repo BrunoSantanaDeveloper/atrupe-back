@@ -3,8 +3,10 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { PlanControlService } from '../../../plan/plan-control.service';
 import { MailerService } from '@nestjs-modules/mailer';
 import { PrismaService } from 'nestjs-prisma';
 import { Prisma } from '@prisma/client';
@@ -88,6 +90,9 @@ export class FollowUpService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailer: MailerService,
+    // O acompanhamento é do LITE (CRM-7, 29/10/2026): o e-mail diário não
+    // sai para a empresa que não tem o recurso
+    @Optional() private readonly planControl?: PlanControlService,
   ) {}
 
   /* ------------------------------------------------------- contatos */
@@ -376,6 +381,12 @@ export class FollowUpService {
     });
     for (const { companyId } of companies) {
       try {
+        if (
+          this.planControl &&
+          !(await this.planControl.hasFeature(companyId, 'sales_follow_up'))
+        ) {
+          continue;
+        }
         await this.sendDailyEmailFor(companyId, now);
       } catch (error) {
         this.logger.error(

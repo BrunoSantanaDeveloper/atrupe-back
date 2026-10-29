@@ -61,8 +61,9 @@ const TOOL_FEATURES: Record<string, string[]> = {
   // A venda rápida existe a partir do LITE
   propose_quick_sale: ['quotation_quick_sale'],
   // As consultas e propostas do LITE (seção 5.2): a mesma chave da tela
-  get_follow_up_today: ['quotation_status_column'],
-  propose_next_contact: ['quotation_status_column'],
+  // O acompanhamento comercial tem chave própria (CRM-7, 29/10/2026)
+  get_follow_up_today: ['sales_follow_up'],
+  propose_next_contact: ['sales_follow_up'],
   get_lost_reasons_summary: ['quotation_rejection_reasons'],
   get_cash_status: ['cash_control'],
   get_cash_front_queue: ['pdv_screen'],

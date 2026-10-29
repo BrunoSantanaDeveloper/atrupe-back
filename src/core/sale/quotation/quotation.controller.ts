@@ -1159,6 +1159,11 @@ export class QuotationController {
       throw new BadRequestException('Invalid id');
     }
     await this.validateOwnership(id, req.user, 'edit');
+    // O acompanhamento comercial é do LITE (CRM-7, 29/10/2026)
+    await this.planControlService.enforceFeature(
+      req.user.companyId,
+      'sales_follow_up',
+    );
     return this.followUp.registerContact(
       { userId: req.user.userId, companyId: req.user.companyId },
       id,
@@ -1177,6 +1182,10 @@ export class QuotationController {
       throw new BadRequestException('Invalid id');
     }
     await this.validateOwnership(id, req.user, 'view');
+    await this.planControlService.enforceFeature(
+      req.user.companyId,
+      'sales_follow_up',
+    );
     return this.followUp.timeline(req.user.companyId, id);
   }
 

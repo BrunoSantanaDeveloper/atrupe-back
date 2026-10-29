@@ -3,6 +3,7 @@ import { ReportController } from './report.controller';
 import { ReportService } from './report.service';
 import { AbacService } from '../../core/auth/abac/abac.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import { PlanControlService } from '../../core/plan/plan-control.service';
 
 describe('ReportController', () => {
   let controller: ReportController;
@@ -32,6 +33,11 @@ describe('ReportController', () => {
           useValue: {
             company: { findUnique: jest.fn() },
           },
+        },
+        // O FeatureGuard (clientes sem compra, CRM-7) pede o plano
+        {
+          provide: PlanControlService,
+          useValue: { hasFeature: jest.fn().mockResolvedValue(true) },
         },
       ],
     }).compile();

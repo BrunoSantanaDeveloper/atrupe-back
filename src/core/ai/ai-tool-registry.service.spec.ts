@@ -579,7 +579,7 @@ describe('AiToolRegistry', () => {
 
     it('próximo contato: o orçamento da tela vai como contexto e vira proposta', async () => {
       const { registry, proposals, actions } = makeRegistry({
-        features: ['ai_assistant', 'quotation_status_column'],
+        features: ['ai_assistant', 'sales_follow_up'],
       });
 
       const result = await registry.execute(

@@ -36,6 +36,18 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  // Acompanhamento comercial (CRM, área 13), do LITE em diante (CRM-7,
+  // 29/10/2026): registrar contato, próximo contato, a aba Aguardando como
+  // visão do dia, modelos de mensagem, e-mail diário e clientes sem compra
+  {
+    key: 'sales_follow_up',
+    name: 'Acompanhamento comercial',
+    description:
+      'Registrar contatos, marcar o próximo contato, a visão do dia na aba Aguardando, modelos de mensagem, e-mail diário e clientes sem compra',
+    category: 'quotations',
+    price: 0,
+    isActive: true,
+  },
   // Assistente de IA, do START em diante (agente do START e do LITE,
   // 28/10/2026); a cota do mês é o limite ai_messages_month
   {

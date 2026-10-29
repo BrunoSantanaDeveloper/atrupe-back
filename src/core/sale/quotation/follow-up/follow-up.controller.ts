@@ -12,6 +12,8 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { HasPermission } from 'src/core/auth/abac/has-permission.decorator';
 import { HasAnyPermission } from 'src/core/auth/abac/has-any-permission.decorator';
 import { PermissionsGuard } from 'src/core/auth/abac/permissions.guard';
+import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
+import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
 import { JwtAuthGuard } from '../../../auth/guards/jwt.guard';
 import { AbacService } from '../../../auth/abac/abac.service';
 import { FollowUpService } from './follow-up.service';
@@ -26,7 +28,9 @@ const UUID = new ParseUUIDPipe({ version: '4' });
  */
 @ApiTags('Acompanhamento comercial')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+// O acompanhamento comercial é do LITE (CRM-7, 29/10/2026)
+@UseGuards(JwtAuthGuard, PermissionsGuard, FeatureGuard)
+@RequiresFeature('sales_follow_up')
 @Controller('sale/follow-up')
 export class FollowUpController {
   constructor(

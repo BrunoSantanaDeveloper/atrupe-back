@@ -230,6 +230,17 @@ describe('plan-feature-rules', () => {
     );
   });
 
+  it('o acompanhamento comercial nasce no Lite, com chave própria (CRM-7, 29/10/2026)', () => {
+    const firstPlan = cumulativeChain().find((c) =>
+      (c.features as string[]).includes('sales_follow_up'),
+    )?.plan.planType;
+
+    expect(firstPlan).toBe('LITE');
+    expect(PLAN_CONFIGURATIONS.TRIAL.features).not.toContain('sales_follow_up');
+    expect(FEATURE_DEPENDENCIES.sales_follow_up).toBeUndefined();
+    expect(FEATURE_ENFORCEMENT.sales_follow_up.level).toBe('api');
+  });
+
   it('o terceirizado avulso nasce no Start e no Trial, sem depender da composição (T-5, 24/10/2026)', () => {
     const firstPlan = cumulativeChain().find((c) =>
       (c.features as string[]).includes('outsourced_item'),

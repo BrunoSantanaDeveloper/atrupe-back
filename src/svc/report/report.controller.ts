@@ -1,4 +1,6 @@
 import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
+import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
+import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
 import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt.guard';
 import { PermissionsGuard } from '../../core/auth/abac/permissions.guard';
@@ -25,7 +27,7 @@ import { Request } from 'express';
 
 const RESOURCE = 'report';
 
-@UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, BlockLevelGuard, FeatureGuard)
 // Relatório é valor: sem values:values:view a rota é recusada (por
 // enquanto só observa, ver ValuesVisibilityInterceptor). O menu e as
 // permissões da sessão ficam de fora
@@ -205,8 +207,9 @@ export class ReportController {
     return this.reportService.getConversion(companyId, filters);
   }
 
-  // Clientes sem compra há N dias (CRM-4, 27/10/2026)
+  // Clientes sem compra há N dias (CRM-4, 27/10/2026); do LITE (CRM-7)
   @Get('sales/inactive-clients')
+  @RequiresFeature('sales_follow_up')
   @HasAnyPermission({ action: 'view', resource: 'reports:sales' })
   async getInactiveClients(@Query('days') days: string, @Req() req: Request) {
     const companyId = (req as any).user?.companyId;

@@ -59,6 +59,9 @@ export const PLAN_FEATURE_KEYS = [
   // START e do LITE). O interruptor global (system_settings) continua como
   // emergência: desligado, ninguém usa; ligado, vale o plano.
   'ai_assistant',
+  // 29/10/2026: o acompanhamento comercial (CRM, área 13) é do LITE; até
+  // aqui chegava ao START sem chave (CRM-7).
+  'sales_follow_up',
 ] as const;
 
 export type PlanFeatureKey = (typeof PLAN_FEATURE_KEYS)[number];
@@ -294,6 +297,11 @@ export const FEATURE_ENFORCEMENT: Record<
     level: 'api',
     detail:
       'Assistente de IA (/ai): o chat, as conversas e as propostas. Cada ferramenta confere também o recurso da consulta (contas a receber, a pagar, nota fiscal…). A cota do mês é o limite ai_messages_month.',
+  },
+  sales_follow_up: {
+    level: 'api',
+    detail:
+      'Acompanhamento comercial (CRM, área 13): resumo e configuração do acompanhamento, registrar contato e a linha do tempo, contatos do cliente, modelos de mensagem, e-mail diário, os focos e a ordenação por próximo contato na lista de orçamentos, clientes sem compra no relatório e as ferramentas da IA do acompanhamento.',
   },
 };
 

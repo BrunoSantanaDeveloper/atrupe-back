@@ -27,6 +27,8 @@ const liteFeatures = [
   'service_order_cancellation_reason',
   'quotation_status_configuration',
   'quotation_status_column',
+  // Acompanhamento comercial (CRM, área 13; CRM-7, 29/10/2026)
+  'sales_follow_up',
   'delivery_production_tabs',
   'delivery_production_stages',
   'delivery_stage_status_change',

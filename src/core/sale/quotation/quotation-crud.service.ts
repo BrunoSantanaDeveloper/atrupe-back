@@ -496,6 +496,13 @@ export class QuotationCrudService {
       // Em AND: o filtro do acompanhamento tem o próprio OR, que no
       // espalhamento substituía o OR da empresa e trazia orçamentos de
       // todas as empresas a quem vê os outros vendedores (28/10/2026)
+      if (dto.nextContact || dto.orderBy === 'nextContactAt') {
+        // O acompanhamento comercial é do LITE (CRM-7, 29/10/2026)
+        await this.planControl?.enforceFeature(
+          dto.companyId,
+          'sales_follow_up',
+        );
+      }
       const followUp =
         dto.nextContact === 'due'
           ? dueWhere()
