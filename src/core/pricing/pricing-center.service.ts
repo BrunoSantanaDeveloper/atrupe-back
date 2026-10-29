@@ -470,17 +470,23 @@ export class PricingCenterService {
    * prévia; com ele, grava. Produto: o preço da composição na medida padrão
    * (o mesmo do "adotar preço sugerido" do cadastro). Mão de obra e máquina:
    * custo × markup, gravado como preço variável pelo lucro desejado da
-   * empresa, que acompanha o custo. Item sem custo fica de fora com o motivo.
+   * empresa, que acompanha o custo. Material (28/10/2026): o mesmo preço
+   * variável, gravado como no cadastro dele, onde a regra é do material e o
+   * preço e o lucro são de cada variação. Item sem custo fica de fora com o
+   * motivo.
    */
   async applySuggested(
     companyId: string,
     userId: string | null,
     dto: ApplySuggestedDto,
   ) {
-    if (dto.group === 'materials') {
-      bad('O preço do material é gravado no cadastro do material');
-    }
     const params = await this.parameters.parametersOf(companyId);
+    // O material usa a conta do cadastro dele, para o preço sair igual ao do
+    // modal e ao da virada do mês
+    const charges =
+      dto.group === 'materials'
+        ? await this.parameters.chargesOf(companyId)
+        : null;
     const snapshot = await this.snapshots.load(companyId);
     const markup = markupOf(params);
     const byId = new Map(
@@ -520,9 +526,11 @@ export class PricingCenterService {
           : dto.group === 'products'
             ? ((await this.assemblies.standardPricing(companyId, id))
                 ?.suggestedUnitPrice ?? null)
-            : markup
-              ? Math.round(item.cost * markup)
-              : null;
+            : charges
+              ? variablePriceOf(item.cost, params.desiredMargin, charges)
+              : markup
+                ? Math.round(item.cost * markup)
+                : null;
       items.push({
         id,
         name: item.name,
@@ -552,6 +560,34 @@ export class PricingCenterService {
           companyId,
           productId: item.id,
         });
+      } else if (dto.group === 'materials') {
+        // mat:<material> ou mat:<material>:<variação>
+        const [, materialId, variationId] = item.id.split(':');
+        await this.prisma.$transaction([
+          ...(variationId
+            ? [
+                this.prisma.materialVariation.update({
+                  where: { id: variationId },
+                  data: {
+                    price: item.suggestedPrice,
+                    desiredMargin: params.desiredMargin,
+                  },
+                }),
+              ]
+            : []),
+          this.prisma.material.update({
+            where: { id: materialId },
+            data: {
+              priceRule: 'VARIABLE',
+              ...(variationId
+                ? {}
+                : {
+                    price: item.suggestedPrice,
+                    desiredMargin: params.desiredMargin,
+                  }),
+            },
+          }),
+        ]);
       } else if (dto.group === 'labor') {
         await this.prisma.companySector.update({
           where: { id: item.id },

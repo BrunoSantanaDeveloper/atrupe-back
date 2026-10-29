@@ -206,14 +206,76 @@ describe('PricingCenterService: gravar o preço', () => {
       );
     });
 
-    it('material segue no cadastro do material', async () => {
-      await refuses(
-        service.applySuggested('c', null, {
-          group: 'materials',
-          ids: ['mat:x'],
-        }),
-        'O preço do material é gravado no cadastro do material',
-      );
+    it('material: preço variável gravado como no cadastro dele', async () => {
+      prisma.$transaction = jest.fn();
+      prisma.material = {
+        update: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'lona',
+            code: null,
+            name: 'Lona',
+            unit: 'SQUARE_METER',
+            priceRule: 'FIXED',
+            cost: 1000,
+            price: null,
+            desiredMargin: null,
+            costUpdatedAt: null,
+            sector: null,
+            variations: [],
+          },
+          {
+            id: 'vinil',
+            code: null,
+            name: 'Vinil',
+            unit: 'SQUARE_METER',
+            priceRule: 'FIXED',
+            cost: null,
+            price: null,
+            desiredMargin: null,
+            costUpdatedAt: null,
+            sector: null,
+            variations: [
+              {
+                id: 'branco',
+                brand: '3M',
+                color: 'Branco',
+                cost: 2000,
+                price: 2500,
+                desiredMargin: null,
+                costUpdatedAt: null,
+              },
+            ],
+          },
+        ]),
+      };
+      prisma.materialVariation = { update: jest.fn() };
+      (service as any).parameters.chargesOf = jest
+        .fn()
+        .mockResolvedValue({ taxation: 60, commission: 30, financialCost: 15 });
+
+      const result = await service.applySuggested('c', 'u', {
+        group: 'materials',
+        ids: ['mat:lona', 'mat:vinil:branco'],
+        confirmed: true,
+      });
+      // 10,00 ÷ (1 − 0,105 − 0,30) = 16,81
+      expect(result.items.map((item) => item.suggestedPrice)).toEqual([
+        1681, 3361,
+      ]);
+      expect(result.applied).toBe(2);
+      expect(prisma.material.update).toHaveBeenCalledWith({
+        where: { id: 'lona' },
+        data: { priceRule: 'VARIABLE', price: 1681, desiredMargin: 300 },
+      });
+      expect(prisma.materialVariation.update).toHaveBeenCalledWith({
+        where: { id: 'branco' },
+        data: { price: 3361, desiredMargin: 300 },
+      });
+      expect(prisma.material.update).toHaveBeenCalledWith({
+        where: { id: 'vinil' },
+        data: { priceRule: 'VARIABLE' },
+      });
     });
   });
 });
