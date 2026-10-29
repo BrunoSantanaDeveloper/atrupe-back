@@ -399,10 +399,25 @@ export class NfeService {
     const activeEnvironment =
       this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config, 'NFE');
     const activeEnvironmentNumber = activeEnvironment === 'PRODUCAO' ? 1 : 2;
-    const existingNfe = [
+    const nfesDaOrdem = [
       ...(quotation.order.nfes || []),
       ...(quotation.order.nfeOrders || []).map((item) => item.nfe),
-    ].find((nfe) => nfe && nfe.ambiente === activeEnvironmentNumber);
+    ].filter((nfe) => nfe && nfe.ambiente === activeEnvironmentNumber);
+
+    // A nota "existente" da ordem e a que de fato impede uma nova emissao:
+    // autorizada ou com CC-e. Sem esse criterio o `.find()` devolvia a
+    // primeira linha que o banco retornasse, em ordem arbitraria — e uma nota
+    // CANCELADA fazia a tela esconder o botao de emitir, porque o cabecalho so
+    // mostra a barra de acoes para DRAFT, REJECTED ou nenhuma nota. Ordem com
+    // mais de uma NF-e e o caso comum: cancelar e refazer gera outra linha.
+    const nfesOrdenadas = [...nfesDaOrdem].sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    const existingNfe =
+      nfesOrdenadas.find((nfe) => EMITIDA_NFE_STATUSES.includes(nfe.status)) ??
+      // Senao, a mais recente: e o estado em que o usuario realmente parou.
+      nfesOrdenadas[0];
 
     return {
       // Metadados
