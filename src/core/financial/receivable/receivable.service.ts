@@ -4,7 +4,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { installmentListWhere } from '../utils/installment-list-filter';
+import {
+  installmentListWhere,
+  pageInstallmentDays,
+} from '../utils/installment-list-filter';
 import { PrismaService } from 'nestjs-prisma';
 import {
   CompensateDto,
@@ -324,41 +327,30 @@ export class ReceivableService {
       (filters.receivable as Prisma.ReceivableWhereInput).OR = searchConditions;
     }
 
-    // 1. Agrupamento no banco de dados com somatório e paginação
-    const grouped = await this.prisma.receivableInstallment.groupBy({
-      by: [field] as any,
-      where: filters,
-      orderBy: { [field]: listFilter.sort } as any,
-      skip: (+page - 1) * +limit,
-      take: +limit,
-      _sum: {
-        amount: true,
-        additionalFee: true,
-      },
-      _count: true,
-    });
-
-    // O total é o de grupos (datas) da empresa com os filtros: antes contava
-    // as parcelas de todas as empresas, e a última página saía errada
-    const totalInstallments = (
-      await this.prisma.receivableInstallment.groupBy({
-        by: [field] as any,
+    // 1. As datas das parcelas da empresa que passam no filtro, agrupadas por
+    // dia como no Fluxo. O total é o de dias: antes contava as parcelas de
+    // todas as empresas, e a última página saía errada
+    const { total, days } = pageInstallmentDays(
+      await this.prisma.receivableInstallment.findMany({
         where: filters,
-      })
-    ).length;
-
-    const total = totalInstallments;
+        select: {
+          id: true,
+          dueDate: true,
+          paidDate: true,
+          provisionDate: true,
+        },
+      }),
+      field,
+      listFilter.sort,
+      +page,
+      +limit,
+    );
     const lastPage = Math.ceil(total / +limit);
 
-    // 3. Buscar os detalhes das parcelas apenas para os grupos retornados
-    const dueDates = grouped.map((g: any) => g[field]);
-
+    // 2. Os detalhes só das parcelas dos dias da página
     const installments = await this.prisma.receivableInstallment.findMany({
-      where: {
-        [field]: { in: dueDates },
-        ...filters,
-      },
-      orderBy: { [field]: listFilter.sort } as any,
+      where: { id: { in: days.flatMap((day) => day.ids) } },
+      orderBy: { dueDate: listFilter.sort },
       select: {
         id: true,
         status: true,
@@ -401,86 +393,77 @@ export class ReceivableService {
       },
     });
 
-    const groupedByDate = grouped.map((group) => {
-      const expectedRevenue = installments
-        .filter(
-          (inst) =>
-            (inst as any)[field]?.toISOString() ===
-              (group as any)[field]?.toISOString() &&
-            inst.receivable?.status !== 'CANCELED',
-        )
+    const groupedByDate = days.map((day) => {
+      const ofDay = new Set(day.ids);
+      const dayInstallments = installments.filter((inst) => ofDay.has(inst.id));
+      const expectedRevenue = dayInstallments
+        .filter((inst) => inst.receivable?.status !== 'CANCELED')
         .reduce(
           (sum, inst) => sum + (inst.amount || 0) + (inst.additionalFee || 0),
           0,
         );
 
-      const receivables = installments
-        .filter(
-          (inst) =>
-            (inst as any)[field]?.toISOString() ===
-            (group as any)[field]?.toISOString(),
-        )
-        .map((inst) => {
-          return {
-            type: 'receivable',
-            id: inst.receivable?.id || null,
-            totalValue: inst.receivable?.totalValue || 0,
-            totalAdditionalFee: inst.receivable?.mainAdditionalFee || 0,
-            totalAmount: inst.receivable?.totalAmount || 0,
-            totalPaid: (inst.receivable?.installments || []).reduce(
-              (sum, item) => {
-                return sum + (item.paidAmount ?? 0);
-              },
-              0,
-            ),
-            description: inst.receivable?.description || '',
-            client: inst.receivable?.client
+      const receivables = dayInstallments.map((inst) => {
+        return {
+          type: 'receivable',
+          id: inst.receivable?.id || null,
+          totalValue: inst.receivable?.totalValue || 0,
+          totalAdditionalFee: inst.receivable?.mainAdditionalFee || 0,
+          totalAmount: inst.receivable?.totalAmount || 0,
+          totalPaid: (inst.receivable?.installments || []).reduce(
+            (sum, item) => {
+              return sum + (item.paidAmount ?? 0);
+            },
+            0,
+          ),
+          description: inst.receivable?.description || '',
+          client: inst.receivable?.client
+            ? {
+                id: inst.receivable.client.id,
+                name: inst.receivable.client.name,
+                cnpj: inst.receivable.client.cnpj,
+                cpf: inst.receivable.client.cpf,
+              }
+            : null,
+          subCategory: inst.receivable?.subCategory
+            ? {
+                id: inst.receivable.subCategory.id,
+                name: inst.receivable.subCategory.description,
+              }
+            : null,
+          nature: inst.receivable?.nature
+            ? {
+                id: inst.receivable.nature.id,
+                name: inst.receivable.nature.description,
+              }
+            : null,
+          installmentsQuantity: inst.receivable?.installments?.length || 0,
+          period: inst.receivable?.referenceDate || null,
+          notes: inst.receivable?.notes || '',
+          status: inst.receivable?.status || 'UNKNOWN',
+          // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
+          currentInstallment: (() => {
+            const currentInst = inst.receivable?.installments?.find(
+              (i) => i.id === inst.id,
+            );
+            return currentInst
               ? {
-                  id: inst.receivable.client.id,
-                  name: inst.receivable.client.name,
-                  cnpj: inst.receivable.client.cnpj,
-                  cpf: inst.receivable.client.cpf,
+                  id: currentInst.id,
+                  installmentNumber: currentInst.installmentNumber || 1,
+                  status: this.getActualStatus(currentInst),
+                  value: currentInst.amount || 0,
+                  additionalFee: currentInst.additionalFee || 0,
+                  dueDate: currentInst.dueDate || null,
+                  paidValue: currentInst.paidAmount || 0,
+                  paymentDate: currentInst.paidDate || null,
                 }
-              : null,
-            subCategory: inst.receivable?.subCategory
-              ? {
-                  id: inst.receivable.subCategory.id,
-                  name: inst.receivable.subCategory.description,
-                }
-              : null,
-            nature: inst.receivable?.nature
-              ? {
-                  id: inst.receivable.nature.id,
-                  name: inst.receivable.nature.description,
-                }
-              : null,
-            installmentsQuantity: inst.receivable?.installments?.length || 0,
-            period: inst.receivable?.referenceDate || null,
-            notes: inst.receivable?.notes || '',
-            status: inst.receivable?.status || 'UNKNOWN',
-            // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
-            currentInstallment: (() => {
-              const currentInst = inst.receivable?.installments?.find(
-                (i) => i.id === inst.id,
-              );
-              return currentInst
-                ? {
-                    id: currentInst.id,
-                    installmentNumber: currentInst.installmentNumber || 1,
-                    status: this.getActualStatus(currentInst),
-                    value: currentInst.amount || 0,
-                    additionalFee: currentInst.additionalFee || 0,
-                    dueDate: currentInst.dueDate || null,
-                    paidValue: currentInst.paidAmount || 0,
-                    paymentDate: currentInst.paidDate || null,
-                  }
-                : null;
-            })(),
-          };
-        });
+              : null;
+          })(),
+        };
+      });
 
       return {
-        date: (group as any)[field] || null,
+        date: day.date,
         expectedRevenue,
         transactions: receivables,
       };

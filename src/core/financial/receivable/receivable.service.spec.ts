@@ -298,6 +298,60 @@ describe('ReceivableService', () => {
       expect(findManyCallArgs.where.receivable.companyId).toBe(mockCompanyId);
     });
 
+    it('a página é de dias, e os detalhes vêm só das parcelas deles', async () => {
+      const at = (iso: string) => new Date(iso);
+      prisma.receivableInstallment.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'i1',
+            dueDate: at('2026-10-10T03:00:00.000Z'),
+            paidDate: null,
+            provisionDate: null,
+          },
+          // Gravada com hora: cai no mesmo dia da i1
+          {
+            id: 'i2',
+            dueDate: at('2026-10-10T15:00:00.000Z'),
+            paidDate: null,
+            provisionDate: null,
+          },
+          {
+            id: 'i3',
+            dueDate: at('2026-10-11T03:00:00.000Z'),
+            paidDate: null,
+            provisionDate: null,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'i3',
+            status: 'PENDING',
+            amount: 100,
+            additionalFee: 5,
+            dueDate: at('2026-10-11T03:00:00.000Z'),
+            paidDate: null,
+            receivable: { status: 'PENDING', installments: [] },
+          },
+        ]);
+
+      const result = await service.findAll({
+        companyId: mockCompanyId,
+        page: '1',
+        limit: '1',
+      });
+
+      expect(result.total).toBe(2);
+      expect(result.lastPage).toBe(2);
+      expect(
+        prisma.receivableInstallment.findMany.mock.calls[1][0].where,
+      ).toEqual({ id: { in: ['i3'] } });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].date.toISOString()).toBe(
+        '2026-10-11T03:00:00.000Z',
+      );
+      expect(result.data[0].expectedRevenue).toBe(105);
+    });
+
     it('deve rejeitar listagem se companyId não for fornecido', async () => {
       await expect(service.findAll({} as any)).rejects.toThrow(
         BadRequestException,

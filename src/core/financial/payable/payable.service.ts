@@ -14,7 +14,10 @@ import {
   UpdatePayableDto,
   UndoCancelPayableDto,
 } from './dto/update-payable.dto';
-import { installmentListWhere } from '../utils/installment-list-filter';
+import {
+  installmentListWhere,
+  pageInstallmentDays,
+} from '../utils/installment-list-filter';
 import { PrismaService } from 'nestjs-prisma';
 import { PaymentStatus, Prisma, TransactionType } from '@prisma/client';
 import { PayableFilterDto } from './dto/payable-filter.dto';
@@ -347,41 +350,30 @@ export class PayableService {
         (filters.payable as Prisma.PayableWhereInput).OR = searchConditions;
       }
 
-      // 1. Agrupamento no banco de dados com somatório e paginação
-      const grouped = await this.prisma.payableInstallment.groupBy({
-        by: [field] as any,
-        where: filters,
-        orderBy: { [field]: listFilter.sort } as any,
-        skip: (+page - 1) * +limit,
-        take: +limit,
-        _sum: {
-          amount: true,
-          additionalFee: true,
-        },
-        _count: true,
-      });
-
-      // O total é o de grupos (datas) da empresa com os filtros: antes contava
-      // as parcelas de todas as empresas, e a última página saía errada
-      const totalInstallments = (
-        await this.prisma.payableInstallment.groupBy({
-          by: [field] as any,
+      // 1. As datas das parcelas da empresa que passam no filtro, agrupadas
+      // por dia como no Fluxo. O total é o de dias: antes contava as
+      // parcelas de todas as empresas, e a última página saía errada
+      const { total, days } = pageInstallmentDays(
+        await this.prisma.payableInstallment.findMany({
           where: filters,
-        })
-      ).length;
-
-      const total = totalInstallments;
+          select: {
+            id: true,
+            dueDate: true,
+            paidDate: true,
+            provisionDate: true,
+          },
+        }),
+        field,
+        listFilter.sort,
+        +page,
+        +limit,
+      );
       const lastPage = Math.ceil(total / +limit);
 
-      // 3. Buscar os detalhes das parcelas apenas para os grupos retornados
-      const dueDates = grouped.map((g: any) => g[field]);
-
+      // 2. Os detalhes só das parcelas dos dias da página
       const installments = await this.prisma.payableInstallment.findMany({
-        where: {
-          [field]: { in: dueDates },
-          ...filters,
-        },
-        orderBy: { [field]: listFilter.sort } as any,
+        where: { id: { in: days.flatMap((day) => day.ids) } },
+        orderBy: { dueDate: listFilter.sort },
         select: {
           id: true,
           status: true,
@@ -428,88 +420,81 @@ export class PayableService {
         },
       });
 
-      const groupedByDate = grouped.map((group) => {
-        const expectedRevenue = installments
-          .filter(
-            (inst) =>
-              (inst as any)[field]?.toISOString() ===
-                (group as any)[field]?.toISOString() &&
-              inst.payable?.status !== 'CANCELED', // Filtro por status
-          )
+      const groupedByDate = days.map((day) => {
+        const ofDay = new Set(day.ids);
+        const dayInstallments = installments.filter((inst) =>
+          ofDay.has(inst.id),
+        );
+        const expectedRevenue = dayInstallments
+          .filter((inst) => inst.payable?.status !== 'CANCELED')
           .reduce(
             (sum, inst) => sum + (inst.amount || 0) + (inst.additionalFee || 0),
             0,
           );
-        const payableList = installments
-          .filter(
-            (inst) =>
-              (inst as any)[field]?.toISOString() ===
-              (group as any)[field]?.toISOString(),
-          )
-          .map((inst) => {
-            return {
-              type: 'payable',
-              id: inst.payable?.id || null,
-              totalValue: inst.payable?.totalAmount || 0,
-              totalPaid: (inst.payable?.installments || []).reduce(
-                (sum, item) => {
-                  return sum + (item.paidAmount ?? 0);
-                },
-                0,
-              ),
-              description: inst.payable?.description || '',
-              supplier: inst.payable?.supplier
+        const payableList = dayInstallments.map((inst) => {
+          return {
+            type: 'payable',
+            id: inst.payable?.id || null,
+            totalValue: inst.payable?.totalAmount || 0,
+            totalPaid: (inst.payable?.installments || []).reduce(
+              (sum, item) => {
+                return sum + (item.paidAmount ?? 0);
+              },
+              0,
+            ),
+            description: inst.payable?.description || '',
+            supplier: inst.payable?.supplier
+              ? {
+                  id: inst.payable.supplier.id,
+                  name: inst.payable.supplier.name,
+                }
+              : null,
+            employee: inst.payable?.employee
+              ? {
+                  id: inst.payable.employee.id,
+                  name: inst.payable.employee.name,
+                }
+              : null,
+            subCategory: inst.payable?.subCategory
+              ? {
+                  id: inst.payable.subCategory.id,
+                  name: inst.payable.subCategory.description,
+                }
+              : null,
+            nature: inst.payable?.nature
+              ? {
+                  id: inst.payable.nature.id,
+                  name: inst.payable.nature.description,
+                }
+              : null,
+            expenseSource: inst.payable?.expenseSource || null,
+            installmentsQuantity: inst.payable?.installments?.length || 0,
+            period: inst.payable?.referenceDate || null,
+            notes: inst.payable?.notes || '',
+            status: inst.payable?.status || 'UNKNOWN',
+            // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
+            currentInstallment: (() => {
+              const currentInst = inst.payable?.installments?.find(
+                (i) => i.id === inst.id,
+              );
+              return currentInst
                 ? {
-                    id: inst.payable.supplier.id,
-                    name: inst.payable.supplier.name,
+                    id: currentInst.id,
+                    installmentNumber: currentInst.installmentNumber || 1,
+                    status: this.getActualStatus(currentInst),
+                    value: currentInst.amount || 0,
+                    additionalFee: currentInst.additionalFee || 0,
+                    dueDate: currentInst.dueDate || null,
+                    paidValue: currentInst.paidAmount || 0,
+                    paymentDate: currentInst.paidDate || null,
                   }
-                : null,
-              employee: inst.payable?.employee
-                ? {
-                    id: inst.payable.employee.id,
-                    name: inst.payable.employee.name,
-                  }
-                : null,
-              subCategory: inst.payable?.subCategory
-                ? {
-                    id: inst.payable.subCategory.id,
-                    name: inst.payable.subCategory.description,
-                  }
-                : null,
-              nature: inst.payable?.nature
-                ? {
-                    id: inst.payable.nature.id,
-                    name: inst.payable.nature.description,
-                  }
-                : null,
-              expenseSource: inst.payable?.expenseSource || null,
-              installmentsQuantity: inst.payable?.installments?.length || 0,
-              period: inst.payable?.referenceDate || null,
-              notes: inst.payable?.notes || '',
-              status: inst.payable?.status || 'UNKNOWN',
-              // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
-              currentInstallment: (() => {
-                const currentInst = inst.payable?.installments?.find(
-                  (i) => i.id === inst.id,
-                );
-                return currentInst
-                  ? {
-                      id: currentInst.id,
-                      installmentNumber: currentInst.installmentNumber || 1,
-                      status: this.getActualStatus(currentInst),
-                      value: currentInst.amount || 0,
-                      additionalFee: currentInst.additionalFee || 0,
-                      dueDate: currentInst.dueDate || null,
-                      paidValue: currentInst.paidAmount || 0,
-                      paymentDate: currentInst.paidDate || null,
-                    }
-                  : null;
-              })(),
-            };
-          });
+                : null;
+            })(),
+          };
+        });
 
         return {
-          date: (group as any)[field] || null,
+          date: day.date,
           expectedRevenue,
           transactions: payableList,
         };
