@@ -6,6 +6,7 @@ import {
   PRODUCT_MONEY_FIELDS,
   QUOTATION_MONEY_FIELDS,
 } from './money-fields';
+import { omitMoneyFields } from './values-visibility.interceptor';
 
 /**
  * As listas do @MoneyFields contra o schema: toda coluna numérica dos models
@@ -15,6 +16,7 @@ import {
  * `values:values:view`.
  */
 const NOT_MONEY: Record<keyof typeof MONEY_COLUMNS, string[]> = {
+  ProductVariation: ['position'],
   ProductItem: [
     'distance',
     'duration',
@@ -89,7 +91,30 @@ describe('campos de dinheiro das rotas antigas', () => {
   });
 
   it('as listas de produto e de patrimônio cobrem as colunas de dinheiro deles', () => {
-    expect(PRODUCT_MONEY_FIELDS).toEqual(['unitCost', 'salePrice']);
+    // A lista de produtos traz o preço das variações (28/10/2026)
+    expect(PRODUCT_MONEY_FIELDS).toEqual([
+      'unitCost',
+      'salePrice',
+      'unitPrice',
+    ]);
+    const list = {
+      data: [
+        {
+          name: 'Camiseta',
+          items: [{ unitCost: 900, salePrice: 2000, width: 1 }],
+          variations: [{ id: 'v-1', name: 'P', unitPrice: 2500 }],
+        },
+      ],
+    };
+    expect(omitMoneyFields(list, new Set(PRODUCT_MONEY_FIELDS))).toEqual({
+      data: [
+        {
+          name: 'Camiseta',
+          items: [{ width: 1 }],
+          variations: [{ id: 'v-1', name: 'P' }],
+        },
+      ],
+    });
     // O patrimônio leva também o que as respostas calculam (módulo 4)
     expect(ASSET_MONEY_FIELDS).toEqual(
       expect.arrayContaining([

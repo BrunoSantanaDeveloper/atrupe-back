@@ -8,6 +8,8 @@
  */
 export const MONEY_COLUMNS = {
   ProductItem: ['unitCost', 'salePrice'],
+  // O preço de cada variação, que a lista de produtos traz junto
+  ProductVariation: ['unitPrice'],
   Asset: [
     'purchaseValue',
     'residualValue',
@@ -57,7 +59,10 @@ const columnsOf = (...models: MoneyModel[]): string[] => [
 export const EMPLOYEE_MONEY_FIELDS = columnsOf('Employee');
 
 /** Produto: custo e preço do produto e de cada item dele */
-export const PRODUCT_MONEY_FIELDS = columnsOf('ProductItem');
+export const PRODUCT_MONEY_FIELDS = columnsOf(
+  'ProductItem',
+  'ProductVariation',
+);
 
 /** Patrimônio: aquisição, residual e custos mensais */
 export const ASSET_MONEY_FIELDS = [

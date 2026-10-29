@@ -129,9 +129,11 @@ describe('cobertura do helper de valores', () => {
     expect(fields('QuotationController.getQuotationPdfData')).toEqual(
       expect.arrayContaining(['finalTotal', 'freightPrice', 'subtotal']),
     );
+    // O preço da variação entra na lista do produto (28/10/2026)
     expect(fields('ProductController.findOne')).toEqual([
       'unitCost',
       'salePrice',
+      'unitPrice',
     ]);
   });
 
