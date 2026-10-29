@@ -638,6 +638,17 @@ describe('CompanyService', () => {
       // Sectors already exist, so createMany should NOT be called
       expect(prisma.companySector.createMany).not.toHaveBeenCalled();
     });
+
+    it('Administração e Comercial nascem administrativos na base de custos', async () => {
+      await (service as any).createDefaultSectors(mockCompanyId);
+
+      const { data } = prisma.companySector.createMany.mock.calls[0][0];
+      const natureOf = (name: string) =>
+        data.find((sector) => sector.name === name)?.nature;
+      expect(natureOf('Administração')).toBe('ADMINISTRATIVE');
+      expect(natureOf('Comercial')).toBe('ADMINISTRATIVE');
+      expect(natureOf('Impressão')).toBe('PRODUCTIVE');
+    });
   });
 
   // ============================================

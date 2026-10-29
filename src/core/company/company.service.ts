@@ -15,6 +15,7 @@ import {
   ReasonType,
   RecurringType,
   CategoryKind,
+  SectorNature,
 } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { BaseFilterDTO } from 'src/shared/dto/filter.dto';
@@ -1744,6 +1745,12 @@ export class CompanyService {
       name: sector.name,
       icon: sector.icon,
       kind: sector.kind as any,
+      // A natureza na base de custos segue o tipo: sem ela, Administração e
+      // Comercial nasciam produtivos e entravam na Distribuição
+      nature:
+        sector.kind === 'ADMINISTRATIVE'
+          ? SectorNature.ADMINISTRATIVE
+          : SectorNature.PRODUCTIVE,
       isProductionStage: sector.isProductionStage,
       isSystem: sector.isSystem,
       companyId: companyId,
