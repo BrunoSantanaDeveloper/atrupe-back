@@ -811,6 +811,48 @@ export class QuotationController {
     );
   }
 
+  // Editar o terceirizado avulso (Lite 4, 29/10/2026): antes, só retirando
+  // e lançando de novo
+  @Get(':id/outsourced/:itemId')
+  @HasPermission('edit', 'sale:quotation')
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'O terceirizado avulso, para editar' })
+  async getOutsourcedItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Req() req,
+  ) {
+    await this.validateOwnership(id, req.user, 'edit');
+    return this.lines.outsourcedOf(
+      id,
+      itemId,
+      await canViewValues(req, this.abacService),
+    );
+  }
+
+  @Patch(':id/outsourced/:itemId')
+  @HasPermission('edit', 'sale:quotation')
+  @ObservePermissions(false)
+  @ApiOperation({ summary: 'Altera o terceirizado avulso' })
+  async updateOutsourcedItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: AddOutsourcedItemDto,
+    @Req() req,
+  ) {
+    await this.validateItemEdit(id, req.user);
+    await this.planControlService.enforceFeature(req.user.companyId, [
+      'outsourced_item',
+      'product_composition',
+    ]);
+    return this.lines.updateOutsourced(
+      id,
+      itemId,
+      dto,
+      await canViewValues(req, this.abacService),
+    );
+  }
+
   /* --------------------------------------------------------------------
    * Resultado previsto da venda (ORC-8): tela de método, com permissão
    * própria (desligada no perfil de vendedor), valores e a base de custos.

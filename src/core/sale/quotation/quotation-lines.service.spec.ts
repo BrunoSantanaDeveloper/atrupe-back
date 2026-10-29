@@ -230,4 +230,134 @@ describe('QuotationLinesService', () => {
     ).rejects.toThrow(new NotFoundException('Linha não encontrada'));
     expect(prisma.quotationItemLine.delete).not.toHaveBeenCalled();
   });
+
+  describe('terceirizado avulso (T-6)', () => {
+    const outsourced = (status = 'OPEN') => ({
+      id: itemId,
+      description: 'Instalação',
+      quantity: 2,
+      quotation: { status, companyId: 'c-1' },
+      lines: [
+        {
+          id: 'l-1',
+          supplierId: 's-1',
+          supplierName: 'Instala Já',
+          price: 58000,
+          cost: 40000,
+        },
+      ],
+    });
+    const dto = {
+      name: ' Instalação da fachada ',
+      supplierId: 's-2',
+      quantity: 3,
+      cost: 10000,
+      price: 15000,
+    };
+
+    beforeEach(() => {
+      prisma.quotation.findUnique = jest
+        .fn()
+        .mockResolvedValue({ companyId: 'c-1' });
+      prisma.quotationProduct.create = jest
+        .fn()
+        .mockResolvedValue({ id: itemId });
+      prisma.quotationItemLine.update = jest.fn();
+      prisma.$transaction = jest.fn((ops) => Promise.all(ops));
+      prisma.supplier.findFirst.mockResolvedValue({
+        id: 's-2',
+        name: 'Letras & Cia',
+      });
+    });
+
+    it('lança com fornecedor, custo e preço na linha avulsa', async () => {
+      await service.addOutsourced(quotationId, dto as any, true);
+      expect(prisma.quotationProduct.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            origin: 'OUTSOURCED',
+            description: 'Instalação da fachada',
+            quantity: 3,
+            lines: {
+              create: expect.objectContaining({
+                kind: 'LOOSE',
+                tags: ['terceirizado'],
+                sector: 'Terceirizado · Letras & Cia',
+                price: 45000,
+                cost: 30000,
+              }),
+            },
+          }),
+        }),
+      );
+    });
+
+    it('abre para editar com o valor por unidade; o custo só com valores', async () => {
+      prisma.quotationProduct.findFirst.mockResolvedValue(outsourced());
+      expect(await service.outsourcedOf(quotationId, itemId, true)).toEqual({
+        name: 'Instalação',
+        supplierId: 's-1',
+        supplierName: 'Instala Já',
+        quantity: 2,
+        cost: 20000,
+        price: 29000,
+      });
+      const seller = await service.outsourcedOf(quotationId, itemId, false);
+      expect(seller).not.toHaveProperty('cost');
+      expect(seller).not.toHaveProperty('price');
+    });
+
+    it('edita o item e a linha juntos', async () => {
+      prisma.quotationProduct.findFirst.mockResolvedValue(outsourced());
+      await service.updateOutsourced(quotationId, itemId, dto as any, true);
+      expect(prisma.quotationProduct.update).toHaveBeenCalledWith({
+        where: { id: itemId },
+        data: { description: 'Instalação da fachada', quantity: 3 },
+      });
+      expect(prisma.quotationItemLine.update).toHaveBeenCalledWith({
+        where: { id: 'l-1' },
+        data: {
+          name: 'Instalação da fachada',
+          sector: 'Terceirizado · Letras & Cia',
+          supplierId: 's-2',
+          supplierName: 'Letras & Cia',
+          price: 45000,
+          cost: 30000,
+        },
+      });
+    });
+
+    it('quem não vê valores grava o preço sugerido', async () => {
+      prisma.quotationProduct.findFirst.mockResolvedValue(outsourced());
+      await service.updateOutsourced(quotationId, itemId, dto as any, false);
+      expect(prisma.quotationItemLine.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // R$ 100 + 45 % sobre o custo, vezes 3
+          data: expect.objectContaining({ price: 43500, cost: 30000 }),
+        }),
+      );
+    });
+
+    it('só edita com o orçamento em digitação, e só o terceirizado', async () => {
+      prisma.quotationProduct.findFirst.mockResolvedValueOnce(
+        outsourced('APPROVED'),
+      );
+      await expect(
+        service.updateOutsourced(quotationId, itemId, dto as any, true),
+      ).rejects.toThrow(
+        'Só dá para mexer no item com o orçamento em digitação',
+      );
+
+      prisma.quotationProduct.findFirst.mockResolvedValueOnce(null);
+      await expect(
+        service.updateOutsourced(
+          quotationId,
+          'item-de-produto',
+          dto as any,
+          true,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.quotationItemLine.update).not.toHaveBeenCalled();
+    });
+  });
 });

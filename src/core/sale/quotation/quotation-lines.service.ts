@@ -234,12 +234,12 @@ export class QuotationLinesService {
    * custo e preço, para a conta a pagar nascer na aprovação como a do
    * terceirizado dentro do item. Só quantidade e custo unitário, sem medida.
    */
-  async addOutsourced(
-    quotationId: string,
+  /** Nome, fornecedor e preço do terceirizado avulso, ao lançar e ao editar. */
+  private async outsourcedQuote(
+    companyId: string,
     dto: AddOutsourcedItemDto,
     values: boolean,
   ) {
-    const companyId = await this.quotationCompany(quotationId);
     const name = dto.name?.trim();
     if (!name) bad('Informe o nome do serviço');
     const supplier = await this.prisma.supplier.findFirst({
@@ -253,6 +253,116 @@ export class QuotationLinesService {
     const unitPrice =
       values && dto.price !== undefined ? dto.price : suggestedPrice;
     const quantity = dto.quantity || 1;
+    return {
+      name: name!,
+      supplier,
+      markup,
+      suggestedPrice,
+      quantity,
+      line: {
+        name: name!,
+        sector: `Terceirizado · ${supplier.name}`,
+        supplierId: supplier.id,
+        supplierName: supplier.name,
+        price: unitPrice * quantity,
+        // Vira despesa no financeiro quando a venda acontece (T-3)
+        cost: dto.cost * quantity,
+      },
+    };
+  }
+
+  /**
+   * O terceirizado avulso do orçamento, com a linha que guarda fornecedor,
+   * custo e preço. Editar só com o orçamento em digitação: depois de
+   * aprovado, a conta a pagar ao fornecedor já nasceu com o custo.
+   */
+  private async outsourcedItem(quotationId: string, itemId: string) {
+    const item = await this.prisma.quotationProduct.findFirst({
+      where: { id: itemId, quotationId, origin: 'OUTSOURCED' },
+      select: {
+        id: true,
+        description: true,
+        quantity: true,
+        quotation: { select: { status: true, companyId: true } },
+        lines: {
+          select: {
+            id: true,
+            supplierId: true,
+            supplierName: true,
+            price: true,
+            cost: true,
+          },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+        },
+      },
+    });
+    if (!item?.lines.length) throw new NotFoundException(ITEM_NOT_FOUND);
+    return item;
+  }
+
+  /** O terceirizado avulso para a janela de editar; custo só com valores. */
+  async outsourcedOf(quotationId: string, itemId: string, values: boolean) {
+    const item = await this.outsourcedItem(quotationId, itemId);
+    const [line] = item.lines;
+    const quantity = item.quantity || 1;
+    return {
+      name: item.description,
+      supplierId: line.supplierId,
+      supplierName: line.supplierName,
+      quantity,
+      ...(values
+        ? {
+            cost: Math.round((line.cost ?? 0) / quantity),
+            price: Math.round((line.price ?? 0) / quantity),
+          }
+        : {}),
+    };
+  }
+
+  async updateOutsourced(
+    quotationId: string,
+    itemId: string,
+    dto: AddOutsourcedItemDto,
+    values: boolean,
+  ) {
+    const item = await this.outsourcedItem(quotationId, itemId);
+    if (item.quotation.status !== 'OPEN') bad(NOT_OPEN);
+    const quote = await this.outsourcedQuote(
+      item.quotation.companyId,
+      dto,
+      values,
+    );
+    await this.prisma.$transaction([
+      this.prisma.quotationProduct.update({
+        where: { id: item.id },
+        data: { description: quote.name, quantity: quote.quantity },
+      }),
+      this.prisma.quotationItemLine.update({
+        where: { id: item.lines[0].id },
+        data: quote.line,
+      }),
+    ]);
+    const summary = await this.refreshItem(item.id);
+    await this.afterItemChange(item.id);
+    return omit(
+      {
+        item: summary,
+        suggestedPrice: quote.suggestedPrice,
+        markup: quote.markup,
+      },
+      values,
+    );
+  }
+
+  async addOutsourced(
+    quotationId: string,
+    dto: AddOutsourcedItemDto,
+    values: boolean,
+  ) {
+    const companyId = await this.quotationCompany(quotationId);
+    const { name, quantity, markup, suggestedPrice, line } =
+      await this.outsourcedQuote(companyId, dto, values);
     const item = await this.prisma.quotationProduct.create({
       data: {
         quotationId,
@@ -263,17 +373,7 @@ export class QuotationLinesService {
         totalValue: 0,
         finalValue: 0,
         lines: {
-          create: {
-            kind: 'LOOSE',
-            name,
-            sector: `Terceirizado · ${supplier.name}`,
-            tags: ['terceirizado'],
-            supplierId: supplier.id,
-            supplierName: supplier.name,
-            price: unitPrice * quantity,
-            // Vira despesa no financeiro quando a venda acontece (T-3)
-            cost: dto.cost * quantity,
-          },
+          create: { kind: 'LOOSE', tags: ['terceirizado'], ...line },
         },
       },
       select: { id: true },

@@ -68,6 +68,10 @@ const SEM_VALOR: Record<string, string> = {
   // nunca devolve o custo (withoutCost), como a leitura da composição
   'QuotationController.readComposedDraft':
     'composição do rascunho: o serviço omite os valores e o custo',
+  // Editar o terceirizado avulso (patch 21): o serviço omite custo e preço
+  // unitários sem a permissão de valores, como na inclusão
+  'QuotationController.getOutsourcedItem':
+    'terceirizado avulso para editar: o serviço omite os valores',
   'PaymentController.getPaymentConditionsInUse': APOIO,
   'OrderController.findAllQuantity': CONTAGEM,
   'AssetController.quantity': CONTAGEM,
