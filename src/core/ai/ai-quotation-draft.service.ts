@@ -124,9 +124,8 @@ interface ResolvedItem {
 
 interface DraftContext {
   companyId: string;
-  /** Faixas e venda mínima por item: recurso da composição (LITE) */
+  /** Faixas: recurso da composição (LITE) */
   tiers: boolean;
-  minItemValue: number;
 }
 
 const MAX_ITEMS = 30;
@@ -600,14 +599,7 @@ export class AiQuotationDraftService {
     companyId: string,
     features: AiPlanFeatures,
   ): Promise<DraftContext> {
-    const tiers = features.has('product_composition');
-    const settings = tiers
-      ? await this.prisma.saleSettings.findUnique({
-          where: { companyId },
-          select: { minItemValue: true },
-        })
-      : null;
-    return { companyId, tiers, minItemValue: settings?.minItemValue ?? 0 };
+    return { companyId, tiers: features.has('product_composition') };
   }
 
   /**
@@ -878,7 +870,6 @@ export class AiQuotationDraftService {
         : null,
       tiers: context.tiers && !variation ? product.priceTiers : [],
       minQuantity: product.minQuantity,
-      minItemValue: context.tiers ? context.minItemValue : 0,
     });
     const priced: DraftItem = {
       ...item,

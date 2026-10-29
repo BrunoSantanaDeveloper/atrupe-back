@@ -16,12 +16,10 @@ export class SalesSettingsService {
   async get(companyId: string) {
     const row = await this.prisma.saleSettings.findUnique({
       where: { companyId },
-      select: { outsourcedMarkup: true, minItemValue: true },
+      select: { outsourcedMarkup: true },
     });
     return {
       outsourcedMarkup: row?.outsourcedMarkup ?? DEFAULT_OUTSOURCED_MARKUP,
-      // Venda mínima por item, em centavos (27/10/2026); 0 = sem mínimo
-      minItemValue: row?.minItemValue ?? 0,
     };
   }
 
@@ -35,22 +33,15 @@ export class SalesSettingsService {
       create: {
         companyId,
         outsourcedMarkup: dto.outsourcedMarkup ?? DEFAULT_OUTSOURCED_MARKUP,
-        minItemValue: dto.minItemValue ?? 0,
       },
       update: {
         ...(dto.outsourcedMarkup !== undefined && {
           outsourcedMarkup: dto.outsourcedMarkup,
         }),
-        ...(dto.minItemValue !== undefined && {
-          minItemValue: dto.minItemValue,
-        }),
       },
-      select: { outsourcedMarkup: true, minItemValue: true },
+      select: { outsourcedMarkup: true },
     });
-    return {
-      outsourcedMarkup: row.outsourcedMarkup,
-      minItemValue: row.minItemValue,
-    };
+    return { outsourcedMarkup: row.outsourcedMarkup };
   }
 
   async outsourcedMarkupOf(companyId: string) {

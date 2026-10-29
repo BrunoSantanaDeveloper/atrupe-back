@@ -1568,10 +1568,6 @@ model SaleSettings {
   id               String    @id @default(uuid())
   companyId        String    @unique
   outsourcedMarkup Float     @default(45)
-  /// Venda mínima por item, em centavos (27/10/2026): abaixo dela o item do
-  /// orçamento é cobrado pelo mínimo; 0 = sem mínimo. Vale junto com a
-  /// quantidade mínima do produto: o maior dos dois
-  minItemValue     Int       @default(0)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime? @updatedAt
   company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)

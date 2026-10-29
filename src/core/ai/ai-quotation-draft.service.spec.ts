@@ -118,9 +118,6 @@ describe('AiQuotationDraftService', () => {
         findFirst: jest.fn().mockResolvedValue({ id: ids.client }),
       },
       contact: { findMany: jest.fn().mockResolvedValue([]) },
-      saleSettings: {
-        findUnique: jest.fn().mockResolvedValue({ minItemValue: 0 }),
-      },
       quotation: {
         findFirst: jest.fn().mockResolvedValue({
           id: ids.quotation,

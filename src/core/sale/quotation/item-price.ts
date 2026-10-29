@@ -41,12 +41,6 @@ const UNIT_LABEL: Record<string, string> = {
 /** Unidade bruta por unidade comercial (1 m² = 1.000.000 mm²). */
 export const rawPerUnit = (unitKind: string) => RAW_UNITS[unitKind] ?? 1;
 
-const brl = (cents: number) =>
-  (cents / 100).toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  });
-
 const amount = (value: number) =>
   value.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 
@@ -64,8 +58,6 @@ export interface SimpleItemPriceInput {
   tiers?: { from: number; unitPrice: number }[];
   /** A quantidade mínima do produto, na unidade comercial */
   minQuantity?: number | null;
-  /** A venda mínima por item da empresa, em centavos (0 = sem mínimo) */
-  minItemValue?: number;
 }
 
 export interface ItemPrice {
@@ -120,17 +112,7 @@ export function priceSimpleItem(input: SimpleItemPriceInput): ItemPrice | null {
     );
   }
 
-  let total = rawUnitCost * charged;
-  const minItemValue = input.minItemValue ?? 0;
-  if (minItemValue > 0) {
-    // Como a tela: o maior entre a conta e a venda mínima
-    if (total < minItemValue) {
-      total = minItemValue;
-      rules.push(`venda mínima de ${brl(minItemValue)}`);
-    } else {
-      rules.push('venda mínima não se aplica');
-    }
-  }
+  const total = rawUnitCost * charged;
 
   return {
     rawUnitCost,

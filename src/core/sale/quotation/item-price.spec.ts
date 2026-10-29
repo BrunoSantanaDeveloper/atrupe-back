@@ -39,36 +39,6 @@ describe('priceSimpleItem: a conta do formulário do item no servidor', () => {
     expect(price.rules).toEqual(['quantidade mínima de 0,5 m²']);
   });
 
-  it('venda mínima por item: o maior entre a conta e o mínimo', () => {
-    const price = priceSimpleItem({
-      unitKind: 'AREA',
-      catalogUnitCost: perMm2,
-      measure: { width: 300, height: 300 },
-      quantity: 1,
-      minItemValue: 1_500,
-    });
-
-    // 0,09 m² × R$ 100 = R$ 9,00, abaixo dos R$ 15,00
-    expect(price.total).toBe(1_500);
-    // O "R$" do toLocaleString vem com espaço sem quebra
-    expect(price.rules.map((rule) => rule.replace(/\s/g, ' '))).toEqual([
-      'venda mínima de R$ 15,00',
-    ]);
-  });
-
-  it('venda mínima acima da conta não muda o preço e diz que não se aplica', () => {
-    const price = priceSimpleItem({
-      unitKind: 'UNITY',
-      catalogUnitCost: 5_000,
-      measure: {},
-      quantity: 3,
-      minItemValue: 1_500,
-    });
-
-    expect(price.total).toBe(15_000);
-    expect(price.rules).toEqual(['venda mínima não se aplica']);
-  });
-
   it('faixa de quantidade: o preço da maior faixa alcançada', () => {
     const price = priceSimpleItem({
       unitKind: 'UNITY',
