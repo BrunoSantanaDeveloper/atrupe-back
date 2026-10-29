@@ -1,5 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { QuotationItemsService } from './quotation-items.service';
+import {
+  QuotationItemsService,
+  compositionMeasure,
+} from './quotation-items.service';
 import { PrismaService } from 'nestjs-prisma';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { QuotationStatus } from '@prisma/client';
@@ -223,6 +226,34 @@ describe('QuotationItemsService', () => {
           snapshot: { create: { data: { cost: 1500, stages: [] } } },
         }),
       });
+    });
+
+    it('a composição usa as peças da linha: 4 un · 1 × 0,5 m com o produto em 1', async () => {
+      prisma.product.findFirst.mockResolvedValue({
+        ...mockProduct,
+        items: [mockProduct.productItem[0]],
+      });
+      const composition = { choices: [] };
+      await add({
+        quantity: 1,
+        items: [
+          {
+            id: 'item-1',
+            salePrice: 5688,
+            width: 1000,
+            height: 500,
+            quantity: 4,
+          },
+        ],
+        composition,
+      });
+      expect(productSale.itemComposition).toHaveBeenCalledWith(
+        'company-uuid-1',
+        mockProductId,
+        null,
+        { quantity: 4, width: 1000, height: 500 },
+        composition,
+      );
     });
 
     it('sem escolhas, o produto com composição liberada ganha o retrato padrão', async () => {
@@ -572,6 +603,31 @@ describe('QuotationItemsService', () => {
       await service.recalculateQuotationTotalValue(mockQuotationId);
 
       expect(prisma.quotation.update).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('compositionMeasure (a medida da composição do item)', () => {
+  it('no produto de um item, as peças da linha já são o total', () => {
+    expect(
+      compositionMeasure(1, [{ quantity: 4, width: 1000, height: 500 }]),
+    ).toEqual({ quantity: 4, width: 1000, height: 500 });
+  });
+
+  it('no produto de vários itens, as peças da linha são por unidade do produto', () => {
+    expect(
+      compositionMeasure(2, [
+        { quantity: 3, width: 1000, height: 500 },
+        { quantity: 1 },
+      ]),
+    ).toEqual({ quantity: 6, width: 1000, height: 500 });
+  });
+
+  it('sem quantidade na linha, vale a do produto', () => {
+    expect(compositionMeasure(2, [{ width: 900, height: 1200 }])).toEqual({
+      quantity: 2,
+      width: 900,
+      height: 1200,
     });
   });
 });

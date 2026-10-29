@@ -40,7 +40,32 @@ const asJson = (value: unknown) =>
 type ItemMeasureSource = {
   width?: number | null;
   height?: number | null;
+  quantity?: number | null;
 };
+
+/**
+ * A medida da composição do item, a mesma que a janela do orçamento simula:
+ * a largura, a altura e as peças da primeira linha. No produto de um item a
+ * quantidade da linha já é o total ("4 un · 1 × 0,5 m" com o produto em 1);
+ * no de vários itens ela é por unidade do produto. Antes ia só a quantidade
+ * do produto, e os quatro adesivos saíam com o custo de um (29/10/2026).
+ */
+export function compositionMeasure(
+  productQuantity: number,
+  items: ItemMeasureSource[],
+) {
+  const first = items[0];
+  const pieces = first?.quantity || 0;
+  return {
+    quantity: !pieces
+      ? productQuantity
+      : items.length > 1
+        ? pieces * productQuantity
+        : pieces,
+    width: first?.width || undefined,
+    height: first?.height || undefined,
+  };
+}
 
 // O item sem produto (material, montado na hora; Fase 4.4 e 4.5)
 export const MATERIAL_ITEM_NOT_OPEN =
@@ -103,12 +128,7 @@ export class QuotationItemsService {
     items: ItemMeasureSource[],
     choices: SaleChoicesDto | undefined,
   ) {
-    const first = items[0];
-    const measure = {
-      quantity,
-      width: first?.width || undefined,
-      height: first?.height || undefined,
-    };
+    const measure = compositionMeasure(quantity, items);
     if (choices) {
       return this.productSale.itemComposition(
         companyId,
@@ -487,7 +507,10 @@ export class QuotationItemsService {
       const measureChanged =
         data.quantity !== undefined ||
         (data.items ?? []).some(
-          (item) => item.width !== undefined || item.height !== undefined,
+          (item) =>
+            item.width !== undefined ||
+            item.height !== undefined ||
+            item.quantity !== undefined,
         );
       const storedChoices = product.composition as SaleChoicesDto | null;
       const choices = data.composition ?? storedChoices ?? undefined;
@@ -509,12 +532,17 @@ export class QuotationItemsService {
             product.productId,
             variationId,
             data.quantity ?? product.quantity,
-            [
-              {
-                width: incoming?.width ?? current?.width,
-                height: incoming?.height ?? current?.height,
-              },
-            ],
+            // As linhas gravadas, com a primeira como a tela mandou
+            (product.items.length ? product.items : [{}]).map(
+              (line: ItemMeasureSource, index) =>
+                index === 0
+                  ? {
+                      width: incoming?.width ?? line.width,
+                      height: incoming?.height ?? line.height,
+                      quantity: incoming?.quantity ?? line.quantity,
+                    }
+                  : line,
+            ),
             choices,
           );
         } catch (error) {
