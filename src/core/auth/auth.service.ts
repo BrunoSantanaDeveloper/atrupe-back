@@ -228,6 +228,7 @@ export class AuthService {
               legalName: employee.company.legalName,
               logo: employee.company.logoUrl,
               favicon: employee.company.favIconUrl,
+              logoDark: employee.company.logoDarkUrl,
               subscription: subscription,
               // O frontend lia este campo e sempre recebia false: nunca era enviado.
               subscriptionActive: companySession?.plan.active ?? false,

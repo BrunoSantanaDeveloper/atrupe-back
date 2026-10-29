@@ -53,6 +53,7 @@ export interface AuthEmployee {
     legalName?: string;
     logoUrl?: string | null;
     favIconUrl?: string | null;
+    logoDarkUrl?: string | null;
     blockLevel?: string | null;
   };
 }
@@ -85,6 +86,7 @@ export interface LoginResponse {
     legalName?: string;
     logo?: string | null;
     favicon?: string | null;
+    logoDark?: string | null;
     subscription: string;
     /** Há assinatura paga ativa (contratação registrada). */
     subscriptionActive?: boolean;

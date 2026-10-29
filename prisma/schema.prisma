@@ -24,6 +24,7 @@ model Company {
   email                  String?
   favIconUrl             String?
   logoUrl                String?
+  logoDarkUrl            String? // logo para o tema escuro da plataforma
   mobile                 String?
   phone                  String?
   siteUrl                String?

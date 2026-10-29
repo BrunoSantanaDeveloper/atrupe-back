@@ -72,6 +72,7 @@ export class AuthController {
           legalName: 'Razão Social da Empresa',
           logo: 'url-da-logo',
           favicon: 'url-do-favicon',
+          logoDark: 'url-da-logo-para-tema-escuro',
           subscription: 'LITE',
           trialEndsAt: null,
           features: [

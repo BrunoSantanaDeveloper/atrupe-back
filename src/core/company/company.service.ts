@@ -247,6 +247,7 @@ export class CompanyService {
             // Personalization fields
             logoUrl: personalization?.logoUrl,
             favIconUrl: personalization?.favIconUrl,
+            logoDarkUrl: personalization?.logoDarkUrl,
             textBeforeItems: 'Segue abaixo conforme sua solicitação:',
             textAfterItems:
               '1) Crédito e condição de pagamento sujeito à aprovação;\n2) Impressos c/ alta exigência colorimétrica exige-se prova de cor;\n3) Não nos responsabilizamos por características e especificações dos projetos gráficos fornecidos pelo cliente;\n4) Prazo de entrega são previsões que poderão se alterar e modificar de acordo com o andamento do processo produtivo;\n5) Não aceitamos cancelamentos de pedidos após iniciado o processo de produção;',
@@ -621,6 +622,7 @@ export class CompanyService {
           // Personalization fields
           logoUrl: personalization?.logoUrl,
           favIconUrl: personalization?.favIconUrl,
+          logoDarkUrl: personalization?.logoDarkUrl,
           textBeforeItems:
             personalization?.textsBeforeItems ||
             'Segue abaixo conforme sua solicitação:',
@@ -905,6 +907,7 @@ export class CompanyService {
       // Personalization fields
       logoUrl: personalization?.logoUrl,
       favIconUrl: personalization?.favIconUrl,
+      logoDarkUrl: personalization?.logoDarkUrl,
       textBeforeItems: personalization?.textsBeforeItems,
       textAfterItems: personalization?.textsAfterItems,
       // Social networks fields
@@ -2199,6 +2202,7 @@ export class CompanyService {
       personalization: {
         logoUrl: company.logoUrl,
         favIconUrl: company.favIconUrl,
+        logoDarkUrl: company.logoDarkUrl,
         textsBeforeItems: company.textBeforeItems,
         textsAfterItems: company.textAfterItems,
       },

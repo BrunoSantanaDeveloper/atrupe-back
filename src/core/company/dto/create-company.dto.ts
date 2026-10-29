@@ -158,6 +158,14 @@ export class CreatePersonalizationDto {
 
   @IsOptional()
   @ApiProperty({
+    description: 'URL do logo para o tema escuro (letras claras)',
+    required: false,
+    example: 'https://example.com/logo-escuro.png',
+  })
+  logoDarkUrl?: string;
+
+  @IsOptional()
+  @ApiProperty({
     description: 'Textos antes dos itens',
     required: false,
     example: 'Observações importantes:',
