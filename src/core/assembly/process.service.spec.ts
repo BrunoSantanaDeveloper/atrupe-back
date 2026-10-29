@@ -324,6 +324,36 @@ describe('ProcessService', () => {
       });
     });
 
+    it('o inativo só aparece quando já está marcado, para dar para desmarcar', async () => {
+      const other = (id: string, isActive: boolean) => ({
+        id,
+        name: `Processo ${id}`,
+        afterBase: 'INHERIT',
+        isActive,
+        sector: { name: 'Acabamento' },
+      });
+      prisma.process.findMany = jest
+        .fn()
+        .mockResolvedValue([
+          other('ativo', true),
+          other('inativo-marcado', false),
+          other('inativo-solto', false),
+        ]);
+      prisma.processUsualNext.findMany = jest
+        .fn()
+        .mockResolvedValue([
+          { fromProcessId: 'p-1', toProcessId: 'inativo-marcado' },
+        ]);
+
+      const { before, after } = await service.usualNext('c-1', 'p-1');
+
+      expect(after.map((item) => [item.id, item.active, item.usual])).toEqual([
+        ['inativo-marcado', false, true],
+        ['ativo', true, false],
+      ]);
+      expect(before.map((item) => item.id)).toEqual(['ativo']);
+    });
+
     it('o par é guardado uma vez e sai quando desmarcado', async () => {
       await service.setUsualNext('c-1', { ...pair, usual: true });
       await service.setUsualNext('c-1', { ...pair, usual: false });

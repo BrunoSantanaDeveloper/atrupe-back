@@ -507,8 +507,10 @@ export class ProcessService {
   }
 
   /**
-   * "Costuma vir depois de" e "etapas seguintes usuais" (FL-7): todos os
-   * outros processos, inclusive os inativos, marcados pelos pares.
+   * "Costuma vir depois de" e "etapas seguintes usuais" (FL-7): os outros
+   * processos ativos, marcados pelos pares. O inativo só aparece quando já
+   * está marcado, para dar para desmarcar; os outros inativos (os de testes
+   * antigos, por exemplo) só poluíam a escolha (29/10/2026).
    */
   async usualNext(companyId: string, id: string) {
     await this.processForWrite(companyId, id);
@@ -519,6 +521,7 @@ export class ProcessService {
           id: true,
           name: true,
           afterBase: true,
+          isActive: true,
           sector: { select: { name: true } },
         },
       }),
@@ -535,11 +538,13 @@ export class ProcessService {
     );
     const listOf = (marked: Set<string>) =>
       others
+        .filter((other) => other.isActive || marked.has(other.id))
         .map((other) => ({
           id: other.id,
           name: other.name,
           sector: other.sector.name,
           afterBase: other.afterBase,
+          active: other.isActive,
           usual: marked.has(other.id),
         }))
         .sort(
