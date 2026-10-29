@@ -5,13 +5,14 @@ import { FiscalOnboardingService } from '../fiscal/onboarding/fiscal-onboarding.
 import { PlanControlService } from '../plan/plan-control.service';
 import { AiSafetyService } from './ai-safety.service';
 import { AiRequestUser } from './ai.types';
+import { SUPPORT_ARTICLES } from './help/support-articles';
 
 type PermissionRequirement = {
   action: string;
   resource: string;
 };
 
-interface HelpProcess {
+export interface HelpProcess {
   id: string;
   title: string;
   summary: string;
@@ -19,7 +20,40 @@ interface HelpProcess {
   paths: string[];
   steps: string[];
   permissions?: PermissionRequirement[];
+  // Problemas comuns e o que fazer, na linguagem de quem usa a tela
+  notes?: string[];
+  // Recurso ou módulo do plano: fora do plano, o passo a passo não sai
+  requiredFeature?: string;
 }
+
+// Palavras que não ajudam a achar o artigo
+const STOP_WORDS = new Set([
+  'como',
+  'para',
+  'onde',
+  'qual',
+  'quais',
+  'porque',
+  'esta',
+  'esse',
+  'essa',
+  'isso',
+  'fazer',
+  'consigo',
+  'posso',
+  'preciso',
+  'quero',
+  'sistema',
+  'atrupe',
+  'tela',
+  'nao',
+  'sim',
+  'meu',
+  'minha',
+  'uma',
+  'umas',
+  'uns',
+]);
 
 @Injectable()
 export class AiHelpContentService {
@@ -49,6 +83,7 @@ export class AiHelpContentService {
     },
     {
       id: 'issue_fiscal_document',
+      requiredFeature: 'nota_fiscal',
       title: 'Emitir NF-e, NFS-e ou NFC-e',
       summary:
         'Emitir uma nota a partir de uma ordem de servico ou iniciar uma nota avulsa.',
@@ -76,6 +111,7 @@ export class AiHelpContentService {
     },
     {
       id: 'manage_fiscal_documents',
+      requiredFeature: 'nota_fiscal',
       title: 'Consultar notas emitidas e em digitacao',
       summary:
         'Acompanhar documentos fiscais autorizados, rascunhos, cancelamentos e rejeicoes.',
@@ -98,6 +134,7 @@ export class AiHelpContentService {
     },
     {
       id: 'cancel_fiscal_document',
+      requiredFeature: 'nota_fiscal',
       title: 'Cancelar uma nota fiscal',
       summary:
         'Solicitar o cancelamento de uma nota autorizada dentro das regras fiscais aplicaveis.',
@@ -118,6 +155,7 @@ export class AiHelpContentService {
     },
     {
       id: 'configure_fiscal_issuer',
+      requiredFeature: 'nota_fiscal',
       title: 'Configurar emissor, CFOP e natureza de operacao',
       summary:
         'Manter configuracoes fiscais usadas na emissao de documentos da empresa.',
@@ -142,6 +180,7 @@ export class AiHelpContentService {
     },
     {
       id: 'configure_product_fiscal_data',
+      requiredFeature: 'nota_fiscal',
       title: 'Configurar dados fiscais de produtos',
       summary:
         'Preencher NCM, CFOP, unidade comercial e tributacao dos produtos usados na nota.',
@@ -164,6 +203,9 @@ export class AiHelpContentService {
         'Salve o produto e retorne a emissao da nota.',
       ],
     },
+    // A base de suporte: cadastros, vendas, financeiro e relatórios (a
+    // mesma que alimenta o atendimento pelo WhatsApp)
+    ...SUPPORT_ARTICLES,
   ];
 
   constructor(
@@ -230,16 +272,33 @@ export class AiHelpContentService {
   }
 
   private async formatProcess(process: HelpProcess, user: AiRequestUser) {
-    const allowed = await this.hasAnyPermission(user, process.permissions);
-    return {
+    const base = {
       id: process.id,
       title: process.title,
       summary: process.summary,
+    };
+    if (
+      process.requiredFeature &&
+      !(await this.planControlService.hasFeature(
+        user.companyId,
+        process.requiredFeature,
+      ))
+    ) {
+      return {
+        ...base,
+        availableForUser: false,
+        reason: 'Este recurso nao faz parte do plano da sua empresa.',
+      };
+    }
+    const allowed = await this.hasAnyPermission(user, process.permissions);
+    return {
+      ...base,
       availableForUser: allowed,
       ...(allowed
         ? {
             path: process.paths[0],
             steps: process.steps,
+            ...(process.notes?.length ? { notes: process.notes } : {}),
           }
         : {
             reason:
@@ -291,6 +350,17 @@ export class AiHelpContentService {
       )
     ) {
       score += 1;
+    }
+
+    // Com muitos artigos, a frase inteira raramente bate: cada palavra da
+    // pergunta que aparece no artigo soma um pouco
+    const text = this.normalize(
+      `${process.title} ${process.summary} ${process.keywords.join(' ')}`,
+    );
+    for (const word of new Set(normalizedQuery.split(/[^a-z0-9]+/))) {
+      if (word.length > 3 && !STOP_WORDS.has(word) && text.includes(word)) {
+        score += 0.5;
+      }
     }
 
     return score;
