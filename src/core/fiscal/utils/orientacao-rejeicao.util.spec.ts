@@ -27,6 +27,27 @@ describe('orientacaoRejeicaoFiscal', () => {
     expect(texto).toContain('CSC ativo');
   });
 
+  /**
+   * O código que a SEFAZ devolveu de fato à NFC-e da Atrupe em 29/10/2026
+   * (DocSitCodigo 781, com o mesmo texto do 203). Sem ele na tabela, o
+   * usuário via só o texto cru, como antes da orientação existir.
+   */
+  it('781, o "não habilitado" próprio da NFC-e, tem a mesma orientação do 203', () => {
+    const texto = orientacaoRejeicaoFiscal({
+      origem: 'SEFAZ',
+      codigo: 781,
+      modelo: 'NFC-e',
+    });
+
+    expect(texto).toBe(
+      orientacaoRejeicaoFiscal({
+        origem: 'SEFAZ',
+        codigo: 203,
+        modelo: 'NFC-e',
+      }),
+    );
+  });
+
   it('203 na NF-e não fala de CSC', () => {
     const texto = orientacaoRejeicaoFiscal({
       origem: 'SEFAZ',

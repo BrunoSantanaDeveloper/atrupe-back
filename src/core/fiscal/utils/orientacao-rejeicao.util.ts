@@ -54,6 +54,10 @@ const CSC_RECUSADO: Entrada = {
 /** cStat da SEFAZ (Situacao.SitCodigo). */
 const SEFAZ: Record<number, Entrada> = {
   203: HABILITACAO_SEFAZ,
+  // A NFC-e tem código próprio para a falta de credenciamento. A SVRS manda o
+  // mesmo texto do 203 ("...NF-e/NFC-e"), e foi o 781 que veio nas NFC-e da
+  // Atrupe em 23/10 e 29/10/2026: com só o 203 na tabela, a orientação sumia.
+  781: HABILITACAO_SEFAZ,
   301: {
     onde: 'situação cadastral na SEFAZ, fora do Atrupe',
     texto: () =>
