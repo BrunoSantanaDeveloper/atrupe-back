@@ -124,6 +124,39 @@ describe('DeliveryScheduleService', () => {
     });
   });
 
+  describe('findAll', () => {
+    const query = { companyId: mockCompanyId, page: '1', limit: '10' };
+
+    it('o filtro por setor pega a entrega com etapa aberta daquele setor', async () => {
+      prisma.deliverySchedule.findMany.mockResolvedValue([]);
+      prisma.deliverySchedule.count.mockResolvedValue(0);
+
+      await service.findAll({ ...query, stageId: 'sector-1' } as any);
+
+      const { where } = prisma.deliverySchedule.findMany.mock.calls[0][0];
+      expect(where).toEqual({
+        companyId: mockCompanyId,
+        productionStages: {
+          some: {
+            stageId: 'sector-1',
+            status: { notIn: ['DONE', 'CANCELED'] },
+          },
+        },
+      });
+      expect(prisma.deliverySchedule.count).toHaveBeenCalledWith({ where });
+    });
+
+    it('sem setor, não filtra pelas etapas', async () => {
+      prisma.deliverySchedule.findMany.mockResolvedValue([]);
+      prisma.deliverySchedule.count.mockResolvedValue(0);
+
+      await service.findAll(query as any);
+
+      const { where } = prisma.deliverySchedule.findMany.mock.calls[0][0];
+      expect(where).toEqual({ companyId: mockCompanyId });
+    });
+  });
+
   describe('findAllQuantity', () => {
     it('should return grouped status counts with ACTIVE total', async () => {
       prisma.deliverySchedule.groupBy.mockResolvedValue([

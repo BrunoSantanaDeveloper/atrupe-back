@@ -113,6 +113,20 @@ export class DeliveryScheduleService {
         where = { ...where, status: dto.status };
       }
 
+      // Filtro por setor (GP-46): a entrega com uma etapa daquele setor que
+      // ainda não terminou nem foi cancelada
+      if (dto.stageId) {
+        where = {
+          ...where,
+          productionStages: {
+            some: {
+              stageId: dto.stageId,
+              status: { notIn: ['DONE', 'CANCELED'] },
+            },
+          },
+        };
+      }
+
       if (dto.sellerId) {
         quotationFilters.sellerId = dto.sellerId;
       }

@@ -40,4 +40,16 @@ export class DeliveryScheduleFitlerDto extends BaseFilterDTO {
     required: false,
   })
   serieId?: string;
+
+  // A fila de um setor dentro da agenda (GP-46, 29/10/2026): a etapa da
+  // entrega aponta para o setor (ProductionStage.stageId → CompanySector)
+  @IsOptional()
+  @IsUUID()
+  @ApiProperty({
+    description:
+      'Setor da etapa: só as entregas com etapa desse setor ainda aberta (nem concluída, nem cancelada)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  stageId?: string;
 }
