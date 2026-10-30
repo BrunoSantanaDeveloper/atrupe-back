@@ -16,6 +16,57 @@ import {
 import { DeliveryScheduleFitlerDto } from './dto/filter.dto';
 import { consumeSale } from '../../stock/stock-consumption';
 
+/** "4 un · 1 × 0,5 m" (design §7), pelas linhas de medida do item. */
+const mm = (value: number) =>
+  (value / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+const measureOf = (
+  quantity: number,
+  lines: { quantity: number; width: number | null; height: number | null }[],
+) => {
+  const first = lines[0];
+  const total = first ? quantity * first.quantity : quantity;
+  const size =
+    first?.width && first?.height
+      ? ` · ${mm(first.width)} × ${mm(first.height)} m`
+      : first?.width
+        ? ` · ${mm(first.width)} m`
+        : '';
+  return `${total} un${size}`;
+};
+
+/** Os itens da ordem com as etapas de cada um, quando o gerenciador existe. */
+const itemsOf = (
+  products: {
+    id: string;
+    description: string | null;
+    quantity: number;
+    items: { quantity: number; width: number | null; height: number | null }[];
+  }[],
+  tasks: {
+    id: string;
+    quotationProductId: string | null;
+    stageName: string;
+    status: string;
+    sectorId: string | null;
+    sectorName: string;
+  }[],
+) =>
+  products.map((product) => ({
+    id: product.id,
+    name: product.description ?? '',
+    quantity: product.quantity,
+    measure: measureOf(product.quantity, product.items),
+    stages: tasks
+      .filter((task) => task.quotationProductId === product.id)
+      .map((task) => ({
+        id: task.id,
+        name: task.stageName,
+        sectorId: task.sectorId,
+        sector: task.sectorName,
+        status: task.status,
+      })),
+  }));
+
 export interface DeliveryScheduleGroup {
   date: string;
   deliveries: DeliverySchedule[];
@@ -88,8 +139,24 @@ export class DeliveryScheduleService {
                     payable: true,
                     receivable: true,
                     // Com projeto no gerenciador (ELITE), as etapas espelham
-                    // as tarefas e não se editam aqui (D20)
-                    productionProject: { select: { id: true } },
+                    // as tarefas e não se editam aqui (D20). As tarefas dão
+                    // as etapas de cada item (agenda em dois níveis, §4.7)
+                    productionProject: {
+                      select: {
+                        id: true,
+                        tasks: {
+                          select: {
+                            id: true,
+                            quotationProductId: true,
+                            stageName: true,
+                            status: true,
+                            sectorId: true,
+                            sectorName: true,
+                          },
+                          orderBy: { position: 'asc' },
+                        },
+                      },
+                    },
                     seller: {
                       include: {
                         user: {
@@ -243,6 +310,14 @@ export class DeliveryScheduleService {
                 icon: stage.stage.icon,
               },
             })),
+            // O segundo nível da agenda (área 9 §4.7, 29/10/2026): os itens
+            // da ordem, com a medida e, com projeto no gerenciador, as etapas
+            // de cada um (as tarefas). Sem projeto, as etapas por item ainda
+            // não existem no dado: a lista vem vazia
+            items: itemsOf(
+              delivery.order?.quotation?.quotationProduct ?? [],
+              delivery.order?.quotation?.productionProject?.tasks ?? [],
+            ),
             createdAt: delivery.createdAt,
             updatedAt: delivery.updatedAt,
           });
