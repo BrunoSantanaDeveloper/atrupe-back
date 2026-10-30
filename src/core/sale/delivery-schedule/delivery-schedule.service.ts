@@ -15,6 +15,7 @@ import {
 } from '@prisma/client';
 import { DeliveryScheduleFitlerDto } from './dto/filter.dto';
 import { consumeSale } from '../../stock/stock-consumption';
+import { compositionMeasure } from '../quotation/quotation-items.service';
 
 /** "4 un · 1 × 0,5 m" (design §7), pelas linhas de medida do item. */
 const mm = (value: number) =>
@@ -23,13 +24,18 @@ const measureOf = (
   quantity: number,
   lines: { quantity: number; width: number | null; height: number | null }[],
 ) => {
-  const first = lines[0];
-  const total = first ? quantity * first.quantity : quantity;
+  // As peças contam como na composição do item (5.1, 29/10/2026): as da
+  // primeira linha; vezes a quantidade do produto só no de vários itens
+  const {
+    quantity: total,
+    width,
+    height,
+  } = compositionMeasure(quantity, lines);
   const size =
-    first?.width && first?.height
-      ? ` · ${mm(first.width)} × ${mm(first.height)} m`
-      : first?.width
-        ? ` · ${mm(first.width)} m`
+    width && height
+      ? ` · ${mm(width)} × ${mm(height)} m`
+      : width
+        ? ` · ${mm(width)} m`
         : '';
   return `${total} un${size}`;
 };

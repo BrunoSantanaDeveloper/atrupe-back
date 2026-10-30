@@ -146,6 +146,56 @@ describe('DeliveryScheduleService', () => {
       expect(prisma.deliverySchedule.count).toHaveBeenCalledWith({ where });
     });
 
+    it('a medida do item conta as peças como a composição (5.1)', async () => {
+      const product = (
+        id: string,
+        quantity: number,
+        items: {
+          quantity: number;
+          width: number | null;
+          height: number | null;
+        }[],
+      ) => ({ id, description: id, quantity, items });
+      prisma.deliverySchedule.findMany.mockResolvedValue([
+        {
+          id: mockDeliveryId,
+          createdAt: new Date('2026-10-30T12:00:00Z'),
+          productionStages: [],
+          order: {
+            id: mockOrderId,
+            quotation: {
+              id: mockQuotationId,
+              receivable: [],
+              quotationProduct: [
+                // Um item só: as peças da linha, sem multiplicar pelo produto
+                product('adesivo', 2, [
+                  { quantity: 4, width: 1000, height: 500 },
+                ]),
+                // Vários itens: as peças da primeira linha por unidade
+                product('kit', 2, [
+                  { quantity: 3, width: 300, height: null },
+                  { quantity: 1, width: null, height: null },
+                ]),
+                // Sem linha: a quantidade do produto
+                product('caneca', 5, []),
+              ],
+            },
+          },
+        },
+      ]);
+      prisma.deliverySchedule.count.mockResolvedValue(1);
+
+      const result = await service.findAll(query as any);
+
+      // O tipo do grupo é o DeliverySchedule do Prisma, sem os itens
+      const [delivery] = result.data[0].deliveries as any[];
+      expect(delivery.items.map((item) => item.measure)).toEqual([
+        '4 un · 1 × 0,5 m',
+        '6 un · 0,3 m',
+        '5 un',
+      ]);
+    });
+
     it('sem setor, não filtra pelas etapas', async () => {
       prisma.deliverySchedule.findMany.mockResolvedValue([]);
       prisma.deliverySchedule.count.mockResolvedValue(0);
