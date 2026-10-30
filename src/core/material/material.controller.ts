@@ -64,6 +64,16 @@ const FULL_REGISTRY_FIELDS = [
   'advanced',
 ] as const;
 
+/**
+ * O corpo da tela Papéis: sem custo, preço nem os campos da tela completa.
+ * Na tela de Materiais a unidade é obrigatória, então o corpo dela nunca é
+ * só de papel.
+ */
+const isPaperBody = (dto: CreateMaterialDto) =>
+  ![...COST_FIELDS, ...FULL_REGISTRY_FIELDS].some(
+    (field) => dto[field] !== undefined,
+  );
+
 // O id que não é UUID responde como o que não existe
 const MaterialId = new ParseUUIDPipe({
   exceptionFactory: () => new NotFoundException('Material não encontrado'),
@@ -123,19 +133,30 @@ export class MaterialController {
       throw permissionDenied([`${PRODUCTS}:view`, 'stock:invoice_entry:view']);
     }
 
-    if (!(await this.planControlService.hasFeature(user.companyId, FEATURE))) {
-      if (directSaleSearch) return { data: [], page: 1, lastPage: 1, total: 0 };
-      // Papéis no LITE: a lista dos papéis, sem custo nem preço
-      if (filter.paper === true) {
+    const full = await this.planControlService.hasFeature(
+      user.companyId,
+      FEATURE,
+    );
+    if (!full && directSaleSearch) {
+      return { data: [], page: 1, lastPage: 1, total: 0 };
+    }
+    // Papéis: a lista dos papéis com a folha, sem custo nem preço. No LITE é
+    // o cadastro do papel; no PRO a mesma tela lê daqui e o custo fica em
+    // Materiais (30/10/2026: antes o PRO recebia a forma de Materiais, sem a
+    // folha no topo, e a tela mostrava a folha vazia)
+    if (filter.paper === true) {
+      if (!full) {
         await this.planControlService.enforceFeature(user.companyId, [
           FEATURE,
           PAPER_FEATURE,
         ]);
-        return this.materialService.findAll(user.companyId, filter, {
-          values: false,
-          paper: true,
-        });
       }
+      return this.materialService.findAll(user.companyId, filter, {
+        values: false,
+        paper: true,
+      });
+    }
+    if (!full) {
       await this.planControlService.enforceFeature(user.companyId, FEATURE);
     }
 
@@ -151,11 +172,17 @@ export class MaterialController {
   @RequiresFeature([FEATURE, PAPER_FEATURE])
   @ApiOperation({
     summary:
-      'Cadastra um material; sem a base de custos, só o papel (Papéis no LITE)',
+      'Cadastra um material; sem a base de custos, ou com o corpo da tela Papéis, o papel',
   })
   async create(@Req() req, @Body() dto: CreateMaterialDto) {
     const companyId = req.user.companyId;
-    if (await this.planControlService.hasFeature(companyId, FEATURE)) {
+    // O corpo da tela Papéis (nome, setor e os campos do papel) cria o papel
+    // também com a base de custos: o caminho completo pedia unidade e forma,
+    // que a tela não manda, e o PRO recebia 400 (30/10/2026)
+    if (
+      !isPaperBody(dto) &&
+      (await this.planControlService.hasFeature(companyId, FEATURE))
+    ) {
       return this.materialService.create(companyId, dto, {
         values: await canViewValues(req, this.abacService),
       });

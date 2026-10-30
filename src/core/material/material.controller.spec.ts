@@ -144,9 +144,10 @@ describe('MaterialController', () => {
 
   describe('valores', () => {
     it('o cadastro leva ao service se quem chama vê valores', async () => {
-      await controller.create(request(), {} as any);
+      // O corpo da tela de Materiais sempre tem a unidade
+      await controller.create(request(), { unit: 'UN' } as any);
       granted.delete('values:values:view');
-      await controller.create(request(), {} as any);
+      await controller.create(request(), { unit: 'UN' } as any);
 
       expect(materialService.create.mock.calls[0][2]).toEqual({ values: true });
       expect(materialService.create.mock.calls[1][2]).toEqual({
@@ -333,16 +334,53 @@ describe('MaterialController', () => {
       expect(materialService.update).not.toHaveBeenCalled();
     });
 
-    it('com a base de custos, tudo como hoje (a tela completa)', async () => {
+    it('com a base de custos, a tela completa segue como hoje', async () => {
       features.add('cost_base');
 
-      await controller.create(request(), { name: 'Couché' } as any);
+      await controller.create(request(), { name: 'Lona', unit: 'M2' } as any);
       await controller.update(request(), ID, { cost: 95 });
 
       expect(materialService.create).toHaveBeenCalled();
       expect(materialService.update).toHaveBeenCalled();
       expect(materialService.createPaper).not.toHaveBeenCalled();
       expect(materialService.updatePaper).not.toHaveBeenCalled();
+    });
+  });
+
+  // A tela Papéis abre também no PRO (cost_base e paper_register): ela manda
+  // só os campos do papel e lê a lista no formato do papel (30/10/2026)
+  describe('Papéis no PRO (com a base de custos)', () => {
+    beforeEach(() => {
+      features = new Set(['cost_base', 'paper_register']);
+      granted.add('product_settings:products:edit');
+      materialService.createPaper = jest.fn().mockResolvedValue({ id: 'p' });
+    });
+
+    it('o corpo da tela Papéis cria o papel, sem pedir unidade', async () => {
+      const dto = {
+        name: 'Couché 300 g',
+        sectorId: 's-1',
+        grammage: 300,
+        sheetFormat: 'SRA3' as const,
+        usableWidth: 310,
+        usableHeight: 440,
+      };
+
+      await controller.create(request(), dto);
+
+      expect(materialService.createPaper).toHaveBeenCalledWith('c-1', dto);
+      expect(materialService.create).not.toHaveBeenCalled();
+    });
+
+    it('a lista dos papéis sai no formato do papel, com a folha', async () => {
+      await controller.findAll(request(), { paper: true });
+
+      expect(materialService.findAll).toHaveBeenCalledWith(
+        'c-1',
+        { paper: true },
+        { values: false, paper: true },
+      );
+      expect(planControl.enforceFeature).not.toHaveBeenCalled();
     });
   });
 });
