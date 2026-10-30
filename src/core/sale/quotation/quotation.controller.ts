@@ -1398,6 +1398,17 @@ export class QuotationController {
         );
       }
     }
+    // O próximo contato é do acompanhamento comercial (CRM-7, 29/10/2026):
+    // o card que o grava já pede a chave na tela; a API passa a pedir também
+    if (
+      updateQuotationDto.nextContactAt !== undefined ||
+      updateQuotationDto.nextContactNote !== undefined
+    ) {
+      await this.planControlService.enforceFeature(
+        req.user.companyId,
+        'sales_follow_up',
+      );
+    }
     return await this.quotationService.update(
       id,
       updateQuotationDto,
