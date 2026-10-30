@@ -177,14 +177,12 @@ describe('ProductSaleService', () => {
     );
   });
 
-  it('sem composição, nulo; em edição ou inativo, não é vendável', async () => {
+  it('sem composição ou em montagem, nulo (vende pelo cadastro, IP-14 revisto em 29/10/2026); inativo, não é vendável', async () => {
     assemblies.assemblyRow.mockResolvedValueOnce(null);
     expect(await service.saleForm('c-1', 'pr-1')).toBeNull();
 
     assemblies.assemblyRow.mockResolvedValueOnce(assembly('DRAFT'));
-    await expect(service.saleForm('c-1', 'pr-1')).rejects.toThrow(
-      'Este produto não está liberado para venda',
-    );
+    expect(await service.saleForm('c-1', 'pr-1')).toBeNull();
     assemblies.product.mockResolvedValueOnce(product({ isActive: false }));
     await expect(service.saleForm('c-1', 'pr-1')).rejects.toThrow(
       'Este produto não está liberado para venda',
@@ -354,11 +352,11 @@ describe('ProductSaleService', () => {
     expect(snapshot.cost).toBe(stage.cost);
   });
 
-  it('o item só leva composição de produto liberado e com lista preenchida', async () => {
+  it('o item só leva composição de produto aprovado e com lista preenchida', async () => {
     assemblies.assemblyRow.mockResolvedValueOnce(assembly('DRAFT'));
     await expect(
       service.itemComposition('c-1', 'pr-1', null, { quantity: 1 }, {}),
-    ).rejects.toThrow('Este produto não está liberado para venda');
+    ).rejects.toThrow('ainda não foi aprovada');
     await expect(
       service.itemComposition(
         'c-1',

@@ -41,6 +41,10 @@ import {
 } from './product-assembly.service';
 
 const NOT_FOR_SALE = 'Este produto não está liberado para venda';
+// IP-14 revisto (29/10/2026): o produto vende sempre; a composição em
+// montagem (ou só parte) não entra no item, que usa o preço do cadastro
+const NOT_APPROVED =
+  'A composição deste produto ainda não foi aprovada: o item usa o preço do cadastro, sem custo';
 const TIME_FORMULAS = ['PER_TIME', 'EQUAL_TIME', 'TIME_TIMES_EXTRA'];
 
 const bad = (message: string): never => {
@@ -195,8 +199,10 @@ export class ProductSaleService {
       variationId,
     );
     if (!assembly?.blocks.length) return null;
-    // Inativo, em edição ou só parte: não é vendável (IP-14, PAD-7)
-    if (!product.isActive || assembly.status !== 'RELEASED') bad(NOT_FOR_SALE);
+    // Inativo não é vendável (PAD-7); em montagem ou só parte, o item não
+    // leva composição: vende pelo cadastro (IP-14 revisto em 29/10/2026)
+    if (!product.isActive) bad(NOT_FOR_SALE);
+    if (assembly.status !== 'RELEASED') return null;
 
     const engine = builder.build(
       product,
@@ -455,13 +461,8 @@ export class ProductSaleService {
       productId,
       variationId ?? undefined,
     );
-    if (
-      !assembly?.blocks.length ||
-      assembly.status !== 'RELEASED' ||
-      !product.isActive
-    ) {
-      bad(NOT_FOR_SALE);
-    }
+    if (!assembly?.blocks.length || !product.isActive) bad(NOT_FOR_SALE);
+    if (assembly.status !== 'RELEASED') bad(NOT_APPROVED);
     // Na lista, o vendedor informa quanto vai de cada item (IP-8)
     if ((choices.lists ?? []).some((entry) => !(entry.quantity > 0))) {
       bad('Informe a quantidade de cada item da lista');

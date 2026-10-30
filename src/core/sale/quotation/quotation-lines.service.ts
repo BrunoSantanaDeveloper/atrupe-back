@@ -658,11 +658,11 @@ export class QuotationLinesService {
     });
     if (!product) throw new NotFoundException('Produto não encontrado');
     if (!product.isActive) bad('Produto inativo não entra no orçamento');
+    // O produto é sempre vendável (IP-14 revisto em 29/10/2026): a
+    // composição em montagem não entra no custo; só a aprovada
     const assembly = product.assemblies[0];
-    const composed = !!assembly?._count.blocks;
-    if (composed && assembly.status !== 'RELEASED') {
-      bad('Este produto não está liberado para venda');
-    }
+    const composed =
+      !!assembly?._count.blocks && assembly.status === 'RELEASED';
     const unitKind = (product.items[0]?.unitKind ?? 'UNITY') as UnitKind;
     const raw = product.items[0]?.unitCost ?? 0;
     if (!(raw > 0)) bad('Este produto está sem preço de venda');

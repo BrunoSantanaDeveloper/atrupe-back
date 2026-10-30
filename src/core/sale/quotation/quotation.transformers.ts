@@ -303,6 +303,10 @@ export function transformQuotationItem(qp: any, base?: BasePriceContext) {
         ? (qp.product.isActive ?? true)
         : (qp.material?.active ?? true),
       hasComposition: !!qp.product?.assemblies?.[0]?._count?.blocks,
+      // A situação da composição (IP-14 revisto em 29/10/2026): em montagem,
+      // o item vende pelo preço do cadastro e a tela avisa "custo não
+      // conferido"; só a aprovada tem custo
+      compositionStatus: qp.product?.assemblies?.[0]?.status ?? null,
       quantity: qp.quantity,
       unitValue,
       finalValue: totalValue,
