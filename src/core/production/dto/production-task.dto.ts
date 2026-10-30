@@ -38,16 +38,17 @@ export class TaskActionDto {
 export class PendencyDto {
   @ApiProperty()
   @IsOptional()
-  @IsString()
-  @MaxLength(500)
+  @IsString({ message: 'Escreva a pendência' })
+  @MaxLength(500, { message: 'A pendência tem até 500 letras' })
   text?: string;
 }
 
 /** O comentário da equipe (VS-5): texto livre, no histórico da tarefa. */
 export class TaskCommentDto {
   @ApiProperty()
-  @IsString()
-  @MaxLength(1000)
+  // A tela não limita o tamanho: sem a mensagem, o 400 saía em inglês
+  @IsString({ message: 'Escreva o comentário' })
+  @MaxLength(1000, { message: 'O comentário tem até 1.000 letras' })
   text: string;
 }
 
