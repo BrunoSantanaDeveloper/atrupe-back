@@ -30,7 +30,8 @@ import {
 } from './production-view.service';
 import { consumeSale } from '../stock/stock-consumption';
 
-export const PRODUCTION_FEATURE = 'production_manager';
+// O projeto nasce também na tela por setor do PRO (GP-46, GP-47)
+export const PRODUCTION_FEATURE = ['production_manager', 'sector_board'];
 const DEFAULT_TYPE = 'Produção';
 const SYSTEM = 'sistema';
 const PROJECT_CLOSED = 'O projeto já foi encerrado';

@@ -230,6 +230,16 @@ describe('plan-feature-rules', () => {
     );
   });
 
+  it('a tela por setor da produção nasce no Pro, sem tempo (GP-46/GP-47, 29/10/2026)', () => {
+    const firstPlan = cumulativeChain().find((c) =>
+      (c.features as string[]).includes('sector_board'),
+    )?.plan.planType;
+
+    expect(firstPlan).toBe('PRO');
+    expect(FEATURE_DEPENDENCIES.sector_board).toEqual(['product_composition']);
+    expect(FEATURE_ENFORCEMENT.sector_board.level).toBe('api');
+  });
+
   it('o acompanhamento comercial nasce no Lite, com chave própria (CRM-7, 29/10/2026)', () => {
     const firstPlan = cumulativeChain().find((c) =>
       (c.features as string[]).includes('sales_follow_up'),

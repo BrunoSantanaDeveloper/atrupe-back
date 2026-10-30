@@ -368,6 +368,17 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  // A tela por setor da produção sem controle de tempo (PRO; GP-46/GP-47,
+  // 29/10/2026): cada setor vê a sua fila e conclui o que é seu
+  {
+    key: 'sector_board',
+    name: 'Tela por setor da produção',
+    description:
+      'Cada setor vê a sua fila de tarefas e conclui o que é seu, sem controle de tempo',
+    category: 'production',
+    price: 0,
+    isActive: true,
+  },
   // Módulos adicionais pagos (aparecem na página de assinatura)
   {
     key: 'nota_fiscal',

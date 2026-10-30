@@ -4714,6 +4714,9 @@ model ProductionAttachmentVersion {
 enum ProductionTimeMode {
   PLAY_STOP
   DRAG_DROP
+  // Sem controle de tempo (GP-47, 29/10/2026): a tarefa só se conclui. É o
+  // modo da tela por setor do PRO; o tempo é do ELITE
+  NONE
 }
 
 enum ProductionReleaseRule {

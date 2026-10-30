@@ -39,7 +39,7 @@ import { ProductionConfigService } from './production-config.service';
 @ApiTags('Produção')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard, FeatureGuard)
-@RequiresFeature('production_manager')
+@RequiresFeature(['production_manager', 'sector_board'])
 @Controller('production')
 export class ProductionConfigController {
   constructor(private readonly config: ProductionConfigService) {}

@@ -56,7 +56,13 @@ const liteFeatures = [
 ];
 
 // Cada plano tem tudo o que o anterior tem (regra cumulativa, 10/10/2026).
-const proFeatures = [...liteFeatures, 'cost_base', 'pricing_center'];
+// A tela por setor da produção, sem tempo (GP-46/GP-47, 29/10/2026)
+const proFeatures = [
+  ...liteFeatures,
+  'cost_base',
+  'pricing_center',
+  'sector_board',
+];
 
 const eliteFeatures = [
   ...proFeatures,

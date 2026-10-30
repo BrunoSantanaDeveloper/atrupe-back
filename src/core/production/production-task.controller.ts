@@ -58,7 +58,9 @@ const attachmentUpload = FileInterceptor('file', {
 @ApiTags('Produção')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard, FeatureGuard)
-@RequiresFeature('production_manager')
+// Concluir, pendência, liberar a próxima e anexos valem na tela por setor do
+// PRO (sector_board); agenda com hora, relógio e apontamento são do ELITE
+@RequiresFeature(['production_manager', 'sector_board'])
 @Controller('production/task')
 export class ProductionTaskController {
   constructor(
@@ -104,6 +106,7 @@ export class ProductionTaskController {
   }
 
   @Put(':id/schedule')
+  @RequiresFeature('production_manager')
   @HasPermission('view', PRODUCTION)
   @ApiOperation({ summary: 'Agenda ou tira da agenda (GP-35)' })
   async schedule(
@@ -126,6 +129,7 @@ export class ProductionTaskController {
   }
 
   @Post(':id/work/start')
+  @RequiresFeature('production_manager')
   @HasPermission('view', PRODUCTION)
   @ApiOperation({ summary: 'Liga o relógio de um colaborador (GP-43)' })
   async workStart(
@@ -137,6 +141,7 @@ export class ProductionTaskController {
   }
 
   @Post(':id/work/stop')
+  @RequiresFeature('production_manager')
   @HasPermission('view', PRODUCTION)
   @ApiOperation({ summary: 'Para o relógio de um colaborador' })
   async workStop(
@@ -152,6 +157,7 @@ export class ProductionTaskController {
   }
 
   @Put(':id/time-entry/:entryId')
+  @RequiresFeature('production_manager')
   @HasPermission('view', PRODUCTION)
   @ApiOperation({ summary: 'Corrige um trecho de tempo (GP-44)' })
   async correctEntry(
@@ -169,6 +175,7 @@ export class ProductionTaskController {
   }
 
   @Post(':id/time-entry')
+  @RequiresFeature('production_manager')
   @HasPermission('view', PRODUCTION)
   @ApiOperation({ summary: 'Lança tempo à mão (GP-44)' })
   async addEntry(

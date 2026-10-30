@@ -62,6 +62,9 @@ export const PLAN_FEATURE_KEYS = [
   // 29/10/2026: o acompanhamento comercial (CRM, área 13) é do LITE; até
   // aqui chegava ao START sem chave (CRM-7).
   'sales_follow_up',
+  // 29/10/2026: a tela por setor da produção no PRO, sem controle de tempo
+  // (GP-46, GP-47); o ELITE liga o tempo por production_manager.
+  'sector_board',
 ] as const;
 
 export type PlanFeatureKey = (typeof PLAN_FEATURE_KEYS)[number];
@@ -91,6 +94,8 @@ export const FEATURE_DEPENDENCIES: Partial<
   // A base de custos e o gerenciador partem da composição do produto.
   cost_base: ['product_composition'],
   production_manager: ['product_composition'],
+  // A tela por setor parte das etapas da composição, como o gerenciador.
+  sector_board: ['product_composition'],
   // A precificação e o estoque leem os custos prontos.
   pricing_center: ['cost_base'],
   stock_control: ['cost_base'],
@@ -297,6 +302,11 @@ export const FEATURE_ENFORCEMENT: Record<
     level: 'api',
     detail:
       'Assistente de IA (/ai): o chat, as conversas e as propostas. Cada ferramenta confere também o recurso da consulta (contas a receber, a pagar, nota fiscal…). A cota do mês é o limite ai_messages_month.',
+  },
+  sector_board: {
+    level: 'api',
+    detail:
+      'A tela por setor da produção sem controle de tempo (PRO, GP-46): projetos e tarefas nascem da venda aprovada, cada setor vê a sua fila e conclui o que é seu; a configuração dos gerenciadores e tipos de tarefa. Agenda com hora, relógio, pessoas na tarefa e produtividade continuam pedindo production_manager.',
   },
   sales_follow_up: {
     level: 'api',

@@ -15,7 +15,8 @@ import {
   Min,
 } from 'class-validator';
 
-export const TIME_MODES = ['PLAY_STOP', 'DRAG_DROP'] as const;
+// NONE (GP-47, 29/10/2026): sem controle de tempo, a tarefa só se conclui
+export const TIME_MODES = ['PLAY_STOP', 'DRAG_DROP', 'NONE'] as const;
 export const RELEASE_RULES = ['AFTER_BASE', 'WITH_BASE', 'DONE'] as const;
 export const ACCESS_LEVELS = ['NONE', 'ALL', 'ASSIGNED'] as const;
 export const ROLES = ['OPERATOR', 'MANAGER'] as const;

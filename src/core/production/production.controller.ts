@@ -35,7 +35,9 @@ import { ProductionProjectService } from './production-project.service';
 @ApiTags('Produção')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard, FeatureGuard)
-@RequiresFeature('production_manager')
+// A tela por setor do PRO (sector_board) lê o mesmo gerenciador; a agenda
+// com hora e a produtividade são do ELITE (GP-46, GP-47)
+@RequiresFeature(['production_manager', 'sector_board'])
 @Controller('production')
 export class ProductionController {
   constructor(
@@ -75,6 +77,7 @@ export class ProductionController {
   }
 
   @Get('agenda')
+  @RequiresFeature('production_manager')
   @HasPermission('view', PRODUCTION)
   @ApiOperation({ summary: 'A agenda viva e a ocupação dos veículos' })
   async agenda(@Req() req, @Query() query: PeriodDto) {
