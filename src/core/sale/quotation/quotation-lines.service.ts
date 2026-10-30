@@ -228,12 +228,6 @@ export class QuotationLinesService {
     return omit({ markup, suggestedPrice }, values);
   }
 
-  /**
-   * O serviço terceirizado avulso como item do orçamento (T-6): um item sem
-   * produto (origin OUTSOURCED) com uma linha avulsa guardando fornecedor,
-   * custo e preço, para a conta a pagar nascer na aprovação como a do
-   * terceirizado dentro do item. Só quantidade e custo unitário, sem medida.
-   */
   /** Nome, fornecedor e preço do terceirizado avulso, ao lançar e ao editar. */
   private async outsourcedQuote(
     companyId: string,
@@ -355,6 +349,12 @@ export class QuotationLinesService {
     );
   }
 
+  /**
+   * O serviço terceirizado avulso como item do orçamento (T-6): um item sem
+   * produto (origin OUTSOURCED) com uma linha avulsa guardando fornecedor,
+   * custo e preço, para a conta a pagar nascer na aprovação como a do
+   * terceirizado dentro do item. Só quantidade e custo unitário, sem medida.
+   */
   async addOutsourced(
     quotationId: string,
     dto: AddOutsourcedItemDto,
