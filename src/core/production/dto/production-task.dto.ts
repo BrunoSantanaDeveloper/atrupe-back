@@ -43,6 +43,16 @@ export class PendencyDto {
   text?: string;
 }
 
+/** O comentário da equipe (VS-5): texto livre, no histórico da tarefa. */
+export class TaskCommentDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(1000)
+  text: string;
+}
+
+export const TASK_PRIORITIES = ['NORMAL', 'URGENT'] as const;
+
 export class ReleaseNextDto {
   @ApiPropertyOptional({ description: 'Quantas unidades vão (opcional)' })
   @IsOptional()
@@ -89,6 +99,12 @@ export class UpdateTaskDto {
   @IsNumber({}, { message: 'Os km são um número' })
   @Min(0, { message: 'Os km não podem ser negativos' })
   km?: number | null;
+
+  // Urgente sobe na fila do setor (GP-47, item 4)
+  @ApiPropertyOptional({ enum: TASK_PRIORITIES })
+  @IsOptional()
+  @IsIn(TASK_PRIORITIES, { message: 'Prioridade inválida' })
+  priority?: (typeof TASK_PRIORITIES)[number];
 }
 
 export class WorkStartDto {

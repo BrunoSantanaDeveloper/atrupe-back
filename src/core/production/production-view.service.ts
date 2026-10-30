@@ -95,6 +95,7 @@ const DETAIL_SELECT = {
   completedAt: true,
   vehicleId: true,
   km: true,
+  priority: true,
   timeEntries: {
     select: {
       id: true,
@@ -141,7 +142,7 @@ const DETAIL_SELECT = {
     orderBy: { createdAt: 'asc' },
   },
   history: {
-    select: { id: true, at: true, byName: true, text: true },
+    select: { id: true, at: true, byName: true, text: true, kind: true },
     orderBy: { at: 'desc' },
   },
 } satisfies Prisma.ProductionTaskSelect;
@@ -481,7 +482,11 @@ export class ProductionViewService {
         at: entry.at.toISOString(),
         by: entry.byName,
         text: entry.text,
+        kind: entry.kind,
       })),
+      // O balão do cartão conta os comentários da equipe (VS-5)
+      comments: row.history.filter((entry) => entry.kind === 'COMMENT').length,
+      priority: row.priority,
       completedBy: row.completedBy,
       completedAt: row.completedAt?.toISOString() ?? null,
       vehicleId: row.vehicleId,

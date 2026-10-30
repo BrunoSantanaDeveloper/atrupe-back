@@ -27,6 +27,7 @@ import {
   AttachmentDto,
   CurrentVersionDto,
   PendencyDto,
+  TaskCommentDto,
   ReleaseNextDto,
   TaskActionDto,
   TaskScheduleDto,
@@ -94,6 +95,18 @@ export class ProductionTaskController {
     );
   }
 
+  // O comentário da equipe (VS-5; GP-47, item 3), no histórico da tarefa
+  @Post(':id/comment')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({ summary: 'Comenta a tarefa para a equipe' })
+  async comment(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: TaskCommentDto,
+  ) {
+    return this.tasks.comment(await this.access.viewer(req.user), id, dto.text);
+  }
+
   @Post(':id/release-next')
   @HasPermission('view', PRODUCTION)
   @ApiOperation({ summary: 'Libera a próxima etapa antes de concluir (FL-13)' })
@@ -119,7 +132,7 @@ export class ProductionTaskController {
 
   @Patch(':id')
   @HasPermission('view', PRODUCTION)
-  @ApiOperation({ summary: 'Quem faz, veículo e km' })
+  @ApiOperation({ summary: 'Quem faz, veículo, km e prioridade' })
   async update(
     @Req() req,
     @Param('id') id: string,

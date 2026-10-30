@@ -4601,6 +4601,8 @@ model ProductionTask {
   completedAt        DateTime?
   vehicleId          String?
   km                 Float?
+  /// Urgente sobe na fila do setor (GP-47, item 4; 29/10/2026)
+  priority           ProductionTaskPriority     @default(NORMAL)
   position           Int                        @default(0)
   createdAt          DateTime                   @default(now())
   updatedAt          DateTime                   @updatedAt
@@ -4671,6 +4673,9 @@ model ProductionTaskHistory {
   text     String
   /// Quem foi afetado (a correção de tempo aparece para eles, GP-44)
   affects  String[]
+  /// O comentário da equipe vive no histórico (VS-5, GP-47 item 3): texto
+  /// livre de quem tem acesso ao gerenciador, sem notificação
+  kind     ProductionHistoryKind @default(EVENT)
   task     ProductionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId])
@@ -4709,6 +4714,16 @@ model ProductionAttachmentVersion {
 
   @@unique([attachmentId, version])
   @@map("production_attachment_versions")
+}
+
+enum ProductionTaskPriority {
+  NORMAL
+  URGENT
+}
+
+enum ProductionHistoryKind {
+  EVENT
+  COMMENT
 }
 
 enum ProductionTimeMode {

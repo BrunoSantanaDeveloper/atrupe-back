@@ -128,6 +128,7 @@ export class ProductionTaskService {
     taskId: string,
     text: string,
     affects: string[] = [],
+    kind: 'EVENT' | 'COMMENT' = 'EVENT',
   ) {
     return tx.productionTaskHistory.create({
       data: {
@@ -136,8 +137,23 @@ export class ProductionTaskService {
         byName: viewer.name,
         text,
         affects,
+        kind,
       },
     });
+  }
+
+  /**
+   * O comentário da equipe (VS-5; GP-47, item 3): texto livre de quem tem
+   * acesso ao gerenciador, no histórico da tarefa, sem notificação. Vale
+   * também na tarefa fechada: a conversa sobre o trabalho continua.
+   */
+  async comment(viewer: ProductionViewer, id: string, text?: string) {
+    await this.load(viewer, id);
+    const content = text?.trim() || bad('Escreva o comentário');
+    await this.prisma.$transaction((tx) =>
+      this.log(tx, viewer, id, content, [], 'COMMENT'),
+    );
+    return this.respond(viewer, id, 'Comentário registrado');
   }
 
   /** Fecha os trechos abertos da tarefa (de todos que estão nela). */
@@ -373,6 +389,12 @@ export class ProductionTaskService {
     } else if (dto.km !== undefined) {
       data.km = dto.km;
       messages.push(dto.km ? `Mudou os km para ${dto.km}` : 'Tirou os km');
+    }
+    if (dto.priority !== undefined) {
+      data.priority = dto.priority;
+      messages.push(
+        dto.priority === 'URGENT' ? 'Marcou como urgente' : 'Tirou a urgência',
+      );
     }
     if (!messages.length) bad('Nada para mudar');
     await this.prisma.$transaction(async (tx) => {
