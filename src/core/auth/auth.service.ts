@@ -232,7 +232,12 @@ export class AuthService {
               subscription: subscription,
               // O frontend lia este campo e sempre recebia false: nunca era enviado.
               subscriptionActive: companySession?.plan.active ?? false,
-              trialEndsAt: planInfo?.trialEndsAt ?? null,
+              // A da sessão: sem assinatura ativa, ela traz o fim do último
+              // teste, que leva à tela de assinatura.
+              trialEndsAt:
+                companySession?.plan.trialEndsAt ??
+                planInfo?.trialEndsAt ??
+                null,
               blockLevel: employee.company.blockLevel ?? 'NONE',
               billing: companySession?.billing ?? null,
               isOwner: companySession?.isOwner ?? false,

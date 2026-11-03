@@ -901,7 +901,10 @@ export class SubscriptionsService {
       );
     }
 
-    const result = await this.evaluateSubscriptionStatus(companyId);
+    const result = await this.evaluateSubscriptionStatus(
+      companyId,
+      charges.activated > 0,
+    );
     return { ...result, charges };
   }
 
@@ -917,9 +920,12 @@ export class SubscriptionsService {
    * bloqueado. Falha no Asaas não impede a reavaliação, que segue com o banco.
    */
   async checkAndSyncSubscriptionStatus(companyId: string) {
+    let activatedBySync = false;
     if (companyId) {
       try {
-        await this.subscriptionBlockService.syncCompanyCharges(companyId);
+        const charges =
+          await this.subscriptionBlockService.syncCompanyCharges(companyId);
+        activatedBySync = charges.activated > 0;
       } catch (error) {
         this.logger.warn(
           `Cobranças da empresa ${companyId} não alinhadas ao Asaas: ${error.message}`,
@@ -927,14 +933,19 @@ export class SubscriptionsService {
       }
     }
 
-    return this.evaluateSubscriptionStatus(companyId);
+    return this.evaluateSubscriptionStatus(companyId, activatedBySync);
   }
 
   /**
    * Reavalia ativação e bloqueio a partir do banco e, na assinatura que ainda
-   * não está ativa, da cobrança no Asaas. Quem chama alinha as cobranças antes.
+   * não está ativa, da cobrança no Asaas. Quem chama alinha as cobranças antes
+   * — e, se esse alinhamento acabou de liberar uma contratação paga, avisa
+   * (`activatedBySync`): a resposta é "ativada", não "já estava ativa".
    */
-  private async evaluateSubscriptionStatus(companyId: string) {
+  private async evaluateSubscriptionStatus(
+    companyId: string,
+    activatedBySync = false,
+  ) {
     if (!companyId) {
       this.logger.warn(
         'Tentativa de sincronizar subscription com companyId nulo',
@@ -1028,7 +1039,10 @@ export class SubscriptionsService {
         }
       }
 
-      return { status: 'already_active', subscription };
+      return {
+        status: activatedBySync ? 'activated' : 'already_active',
+        subscription,
+      };
     }
 
     // Verificar se a subscription foi manualmente inativada por um admin.
@@ -1051,6 +1065,28 @@ export class SubscriptionsService {
       this.logger.warn(
         `Subscription ${subscription.id} foi manualmente inativada por admin. Auto-ativação bloqueada.`,
       );
+      return { status: 'manually_deactivated', subscription };
+    }
+
+    // Contratação que espera o pagamento (regra de 20/10): libera pelas
+    // cobranças locais, já alinhadas ao Asaas por quem chama. A regra antiga,
+    // abaixo, olha uma cobrança qualquer do mês no Asaas e marcaria como paga
+    // a cobrança local mais recente — que pode ser a renovação, não a paga.
+    const contract = await this.subscriptionBlockService.activateIfContractPaid(
+      subscription.id,
+    );
+    if (contract === 'activated') {
+      return {
+        status: 'activated',
+        subscription: { ...subscription, status: 'ACTIVE' as const },
+      };
+    }
+    if (contract === 'awaiting_payment') {
+      return { status: 'payment_pending', subscription };
+    }
+    // Retida pelo superadmin (desativada à mão, ou outro plano em vigor): o
+    // pagamento não a libera, e a regra antiga também não pode.
+    if (contract === 'held') {
       return { status: 'manually_deactivated', subscription };
     }
 

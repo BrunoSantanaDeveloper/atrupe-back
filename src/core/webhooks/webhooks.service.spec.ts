@@ -67,6 +67,9 @@ describe('WebhooksService', () => {
             checkAndApplyBlocks: jest.fn(),
             unblockCompany: jest.fn(),
             refreshLocalCharge: jest.fn(),
+            activateIfContractPaid: jest
+              .fn()
+              .mockResolvedValue('not_applicable'),
           },
         },
         {
@@ -202,6 +205,32 @@ describe('WebhooksService', () => {
       );
 
       expect(mockCouponExpiry.expireIfDue).toHaveBeenCalledWith('sub-local-1');
+    });
+
+    it('contratação ou evolução que espera o pagamento: libera pela conferência do alinhamento', async () => {
+      mockPrismaService.payment.findFirst.mockResolvedValue(null);
+      mockPrismaService.subscription.findFirst.mockResolvedValue({
+        id: 'sub-local-1',
+        companyId: 'company-1',
+        status: 'INACTIVE',
+      });
+      const block = (service as any).subscriptionBlockService;
+      block.activateIfContractPaid.mockResolvedValue('activated');
+
+      await service.handleAsaasWebhook(
+        makePayload('pay_123', 'sub_asaas_1') as any,
+      );
+
+      expect(block.activateIfContractPaid).toHaveBeenCalledWith('sub-local-1', {
+        id: null,
+        name: 'Sistema Asaas',
+      });
+      // A regra antiga, que não encerra o plano anterior, não roda.
+      expect(mockPrismaService.subscription.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'ACTIVE' }),
+        }),
+      );
     });
 
     it('assinatura desativada à mão pelo superadmin não volta por pagamento', async () => {

@@ -20,7 +20,10 @@ const payment = (status: string, dueDate: string) => ({
 
 describe('CompanySessionService', () => {
   let service: CompanySessionService;
-  const prisma = { company: { findUnique: jest.fn() } };
+  const prisma = {
+    company: { findUnique: jest.fn() },
+    subscription: { findFirst: jest.fn() },
+  };
   const planControl = { getCompanyPlanInfo: jest.fn() };
   const quoteService = { getBillingContext: jest.fn() };
   const subscriptionBlock = { syncCompanyCharges: jest.fn() };
@@ -30,6 +33,9 @@ describe('CompanySessionService', () => {
     hasOpenCharge: false,
     hasOverdue: false,
     firstChargePending: false,
+    awaitingActivation: false,
+    evolutionPending: false,
+    pendingEvolution: null,
     confirmedPayment: null,
     intent: 'EVOLUTION',
     ...extra,
@@ -79,6 +85,8 @@ describe('CompanySessionService', () => {
       situation: 'EM_DIA',
       daysOverdue: 0,
       paymentPending: false,
+      activationPending: false,
+      evolutionPending: false,
       chargeInFocus: null,
     });
   });
@@ -97,8 +105,78 @@ describe('CompanySessionService', () => {
     const s = await service.build('company-1', 'user-1', HOJE);
 
     expect(s.billing.paymentPending).toBe(true);
+    // Contratada antes de 20/10: o acesso já está liberado.
+    expect(s.billing.activationPending).toBe(false);
     expect(s.billing.situation).toBe('EM_DIA');
     expect(s.billing.chargeInFocus?.asaasPaymentId).toBe('pay_2026-08-27');
+  });
+
+  it('contratação esperando o pagamento: pendente, em foco e com o plano a liberar', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([payment('PENDING', '2026-08-27')], {
+        awaitingActivation: true,
+        hasOpenCharge: true,
+        intent: 'REGULARIZATION',
+      }),
+    );
+
+    const s = await service.build('company-1', 'user-1', HOJE);
+
+    expect(s.billing).toEqual({
+      situation: 'EM_DIA',
+      daysOverdue: 0,
+      paymentPending: true,
+      activationPending: true,
+      evolutionPending: false,
+      chargeInFocus: expect.objectContaining({
+        asaasPaymentId: 'pay_2026-08-27',
+      }),
+    });
+  });
+
+  it('contratação esperando o pagamento, com a cobrança vencida: segue a liberar', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([payment('OVERDUE', '2026-08-23')], {
+        awaitingActivation: true,
+        hasOpenCharge: true,
+        hasOverdue: true,
+        intent: 'REGULARIZATION',
+      }),
+    );
+
+    const s = await service.build('company-1', 'user-1', HOJE);
+
+    expect(s.billing.activationPending).toBe(true);
+    expect(s.billing.daysOverdue).toBe(2);
+    expect(s.billing.chargeInFocus?.asaasPaymentId).toBe('pay_2026-08-23');
+  });
+
+  it('evolução esperando o pagamento: pendente e em foco, sem atraso no plano em curso', async () => {
+    quoteService.getBillingContext.mockResolvedValue(
+      context([payment('CONFIRMED', '2026-08-15')], {
+        evolutionPending: true,
+        pendingEvolution: {
+          payments: [payment('PENDING', '2026-08-27')],
+        },
+        hasOpenCharge: true,
+        intent: 'REGULARIZATION',
+      }),
+    );
+
+    const s = await service.build('company-1', 'user-1', HOJE);
+
+    expect(s.billing).toEqual({
+      situation: 'EM_DIA',
+      daysOverdue: 0,
+      paymentPending: true,
+      activationPending: false,
+      evolutionPending: true,
+      chargeInFocus: expect.objectContaining({
+        asaasPaymentId: 'pay_2026-08-27',
+      }),
+    });
+    // O plano em curso segue valendo.
+    expect(s.plan).toMatchObject({ name: 'START', active: true });
   });
 
   it('renovação futura não é pendência nem entra em foco', async () => {
@@ -170,7 +248,57 @@ describe('CompanySessionService', () => {
     expect(s.plan).toMatchObject({
       name: 'TRIAL',
       active: false,
+      trialEndsAt: null,
       features: [],
+    });
+    // Indisponível não é "sem plano": não procura o último teste.
+    expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
+  });
+
+  describe('empresa sem nenhuma assinatura ativa', () => {
+    beforeEach(() => {
+      planControl.getCompanyPlanInfo.mockResolvedValue(null);
+      quoteService.getBillingContext.mockResolvedValue(context([]));
+    });
+
+    it('vale o fim do último teste, que leva à tela de assinatura', async () => {
+      prisma.subscription.findFirst.mockResolvedValue({
+        nextDueDate: dia('2026-08-05'),
+        updatedAt: dia('2026-08-10'),
+      });
+
+      const s = await service.build('company-1', 'user-1', HOJE);
+
+      expect(s.plan).toMatchObject({
+        name: 'TRIAL',
+        active: false,
+        trialEndsAt: '2026-08-05T00:00:00.000Z',
+      });
+      expect(prisma.subscription.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { companyId: 'company-1', plan: { planType: 'TRIAL' } },
+        }),
+      );
+    });
+
+    it('teste encerrado antes do prazo acabou quando foi encerrado', async () => {
+      // Encerrado em 26/07 por uma contratação; iria até 02/08.
+      prisma.subscription.findFirst.mockResolvedValue({
+        nextDueDate: dia('2026-08-02'),
+        updatedAt: dia('2026-07-26'),
+      });
+
+      const s = await service.build('company-1', 'user-1', HOJE);
+
+      expect(s.plan.trialEndsAt).toBe('2026-07-26T00:00:00.000Z');
+    });
+
+    it('sem teste nenhum, sem data', async () => {
+      prisma.subscription.findFirst.mockResolvedValue(null);
+
+      const s = await service.build('company-1', 'user-1', HOJE);
+
+      expect(s.plan.trialEndsAt).toBeNull();
     });
   });
 
@@ -205,6 +333,7 @@ describe('CompanySessionService', () => {
         created: 0,
         updated: 1,
         canceled: 0,
+        activated: 0,
       });
 
       const s = await service.buildWithGatewayCheck(
@@ -220,12 +349,40 @@ describe('CompanySessionService', () => {
       expect(s.billing.chargeInFocus).toBeNull();
     });
 
+    it('contratação liberada no alinhamento: remonta a sessão com o plano', async () => {
+      const aLiberar = context([payment('PENDING', '2026-08-27')], {
+        awaitingActivation: true,
+        hasOpenCharge: true,
+      });
+      quoteService.getBillingContext
+        .mockResolvedValueOnce(aLiberar)
+        .mockResolvedValueOnce(paga);
+      // A cobrança já estava paga aqui; faltava só liberar.
+      subscriptionBlock.syncCompanyCharges.mockResolvedValue({
+        created: 0,
+        updated: 0,
+        canceled: 0,
+        activated: 1,
+      });
+
+      const s = await service.buildWithGatewayCheck(
+        'company-1',
+        'user-1',
+        HOJE,
+      );
+
+      expect(quoteService.getBillingContext).toHaveBeenCalledTimes(2);
+      expect(s.billing.activationPending).toBe(false);
+      expect(s.billing.paymentPending).toBe(false);
+    });
+
     it('nada mudou no Asaas: não remonta a sessão', async () => {
       quoteService.getBillingContext.mockResolvedValue(pendente);
       subscriptionBlock.syncCompanyCharges.mockResolvedValue({
         created: 0,
         updated: 0,
         canceled: 0,
+        activated: 0,
       });
 
       const s = await service.buildWithGatewayCheck(
@@ -244,6 +401,7 @@ describe('CompanySessionService', () => {
         created: 0,
         updated: 0,
         canceled: 0,
+        activated: 0,
       });
 
       await service.buildWithGatewayCheck('company-1', 'user-1', HOJE);
@@ -295,7 +453,7 @@ describe('CompanySessionService', () => {
       expect(quoteService.getBillingContext).toHaveBeenCalledTimes(1);
 
       // O alinhamento termina sozinho depois, sem erro solto.
-      finishSync({ created: 0, updated: 1, canceled: 0 });
+      finishSync({ created: 0, updated: 1, canceled: 0, activated: 0 });
       await slowSync;
     });
   });

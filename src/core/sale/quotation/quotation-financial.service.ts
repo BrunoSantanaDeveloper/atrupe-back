@@ -40,6 +40,15 @@ export class QuotationFinancialService {
       );
     }
 
+    // A parcela da entrada usa esta data e `dueDate` e NOT NULL. Sem a
+    // guarda, o Prisma recusava o create no meio da geracao e a venda
+    // ficava aprovada sem nenhum lancamento.
+    if (downPayment > 0 && !downPaymentDueDate) {
+      throw new BadRequestException(
+        'A entrada deste orçamento está sem data de vencimento. Edite as condições de pagamento e informe a data antes de aprovar.',
+      );
+    }
+
     // -----------------------------------------------------------------------
     // Validação: verificar se as parcelas estão sincronizadas com o totalValue
     // atual do orçamento. Caso contrário, recalcular proporcionalmente.

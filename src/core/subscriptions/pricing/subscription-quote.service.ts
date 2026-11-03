@@ -89,6 +89,23 @@ export class SubscriptionQuoteService {
           include,
         });
 
+    // Evolução registrada que espera o pagamento: o plano em curso segue
+    // valendo até ela ser paga (regra de 20/10).
+    const pendingEvolution = active
+      ? await this.prisma.subscription.findFirst({
+          where: {
+            companyId,
+            status: 'INACTIVE',
+            previousSubscriptionId: active.id,
+            contractedAt: { not: null },
+            endedReason: null,
+            payments: { some: { status: { in: ['PENDING', 'OVERDUE'] } } },
+          },
+          orderBy: { createdAt: 'desc' },
+          include,
+        })
+      : null;
+
     const found = active ?? pendingCheckout;
     const current = found?.previousSubscriptionId
       ? { ...found, payments: await this.withTransferredPayments(found) }
@@ -105,15 +122,21 @@ export class SubscriptionQuoteService {
       current?.payments.find((p) => PAID.includes(p.status)) ?? null;
 
     // Contratação ainda não paga também é cobrança em aberto: o que resta a
-    // fazer com ela é regularizar, não evoluir. São dois formatos: o legado,
-    // em que a assinatura fica INACTIVE até o pagamento, e o atual, em que a
-    // contratação registrada já libera o acesso (ACTIVE) com a primeira
-    // cobrança ainda pendente.
+    // fazer com ela é regularizar, não evoluir. São dois formatos: o de antes
+    // de 20/10, em que a contratação registrada já liberava o acesso (ACTIVE)
+    // com a primeira cobrança ainda pendente, e o atual — como o legado —, em
+    // que a assinatura fica INACTIVE até o pagamento.
     const firstChargePending =
       !!active &&
       !confirmedPayment &&
       active.payments.some((p) => p.status === 'PENDING');
-    const hasOpenCharge = !!pendingCheckout || hasOverdue || firstChargePending;
+    // A contratação registrada que espera o pagamento para liberar o plano.
+    const awaitingActivation =
+      !!pendingCheckout?.contractedAt && !confirmedPayment;
+    // Evolução em aberto também: até ser paga (ou desfeita), não há outra.
+    const evolutionPending = !!pendingEvolution;
+    const hasOpenCharge =
+      !!pendingCheckout || hasOverdue || firstChargePending || evolutionPending;
 
     const intent: ContractingIntent = !current
       ? 'NEW'
@@ -126,6 +149,9 @@ export class SubscriptionQuoteService {
       hasOpenCharge,
       hasOverdue,
       firstChargePending,
+      awaitingActivation,
+      evolutionPending,
+      pendingEvolution,
       confirmedPayment,
       intent,
     };

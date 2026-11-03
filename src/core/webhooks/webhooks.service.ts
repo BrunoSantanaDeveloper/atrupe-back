@@ -371,6 +371,19 @@ export class WebhooksService {
         return;
       }
 
+      // Contratação ou evolução que espera o pagamento (regra de 20/10): quem
+      // libera é a mesma conferência do alinhamento com o Asaas — na
+      // evolução, ela também encerra o plano anterior, que a ativação abaixo
+      // deixaria cobrando.
+      if (subscription?.status === 'INACTIVE') {
+        const contract =
+          await this.subscriptionBlockService.activateIfContractPaid(
+            subscription.id,
+            { id: null, name: 'Sistema Asaas' },
+          );
+        if (contract !== 'not_applicable') return;
+      }
+
       // Desativada à mão pelo superadmin também não volta por pagamento: foi
       // decisão de quem administra — por exemplo, a cobrança mantida no Asaas
       // para um plano que o cliente usa fora do sistema. O pagamento acima

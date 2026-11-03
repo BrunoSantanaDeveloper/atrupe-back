@@ -10,9 +10,17 @@ import {
   Min,
   Max,
   Length,
+  Matches,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
+import {
+  CSC_ID_PADRAO,
+  CSC_TOKEN_MAX,
+  MENSAGEM_CSC_ID_INVALIDO,
+  MENSAGEM_CSC_TOKEN_LONGO,
+} from '../../utils/csc.util';
 
 // Helper to parse numeric strings or undefined
 /**
@@ -62,6 +70,14 @@ const emptyToUndefined = ({ value }) => {
   }
   return value;
 };
+
+/**
+ * Como emptyToUndefined, aparando as pontas. Feito para o CSC: copiado do
+ * portal da SEFAZ ele costuma vir com espaço, e um espaço a mais estoura o
+ * campo do provedor.
+ */
+const trimToUndefined = ({ value }) =>
+  emptyToUndefined({ value: typeof value === 'string' ? value.trim() : value });
 
 export class CreateInvoicyConfigDto {
   @ApiProperty({
@@ -186,13 +202,13 @@ export class CreateInvoicyConfigDto {
   @ApiPropertyOptional({ description: 'ID do CSC da NFC-e' })
   @IsString()
   @IsOptional()
-  @Transform(emptyToUndefined)
+  @Transform(trimToUndefined)
   cscId?: string;
 
   @ApiPropertyOptional({ description: 'Token CSC da NFC-e' })
   @IsString()
   @IsOptional()
-  @Transform(emptyToUndefined)
+  @Transform(trimToUndefined)
   cscToken?: string;
 
   // NFS-e fields
@@ -606,13 +622,13 @@ export class UpdateInvoicyConfigDto {
   @ApiPropertyOptional({ description: 'ID do CSC da NFC-e' })
   @IsString()
   @IsOptional()
-  @Transform(emptyToUndefined)
+  @Transform(trimToUndefined)
   cscId?: string;
 
   @ApiPropertyOptional({ description: 'Token CSC da NFC-e' })
   @IsString()
   @IsOptional()
-  @Transform(emptyToUndefined)
+  @Transform(trimToUndefined)
   cscToken?: string;
 
   // NFS-e fields
@@ -848,15 +864,23 @@ export class UpdateInvoicyConfigDto {
   sendFiscalEmailCopyTo?: string;
 }
 
+/**
+ * Os limites são os do cadastro do provedor, para onde a ativação envia o CSC:
+ * recusar aqui é melhor que descobrir na ativação ou na primeira nota.
+ */
 export class SetCscDto {
   @ApiProperty({ description: 'ID do CSC (Código de Segurança do Consumidor)' })
-  @IsString()
-  @IsNotEmpty()
+  @Transform(trimToUndefined)
+  @IsString({ message: 'Informe o ID do CSC.' })
+  @IsNotEmpty({ message: 'Informe o ID do CSC.' })
+  @Matches(CSC_ID_PADRAO, { message: MENSAGEM_CSC_ID_INVALIDO })
   cscId: string;
 
   @ApiProperty({ description: 'Token CSC (Código de Segurança do Consumidor)' })
-  @IsString()
-  @IsNotEmpty()
+  @Transform(trimToUndefined)
+  @IsString({ message: 'Informe o código do CSC.' })
+  @IsNotEmpty({ message: 'Informe o código do CSC.' })
+  @MaxLength(CSC_TOKEN_MAX, { message: MENSAGEM_CSC_TOKEN_LONGO })
   cscToken: string;
 }
 

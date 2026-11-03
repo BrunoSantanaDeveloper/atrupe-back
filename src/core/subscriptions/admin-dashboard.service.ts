@@ -14,7 +14,25 @@ import {
 import { BillingMode, billingModeOf, billingModeWhere } from './billing-mode';
 
 /** As abas de Gerenciar contas, na ordem dos totais. */
-const ACCOUNT_TABS = ['ativas', 'bloqueadas', 'inativas', 'canceladas'];
+const ACCOUNT_TABS = [
+  'ativas',
+  'bloqueadas',
+  'aguardando',
+  'inativas',
+  'canceladas',
+];
+
+/**
+ * Contratação à espera do pagamento (regra de 20/10): registrada, ainda
+ * INACTIVE e com a cobrança em aberto. Não é conta inativa — o plano é
+ * liberado quando a cobrança for paga.
+ */
+const AWAITING_PAYMENT_WHERE = {
+  status: 'INACTIVE',
+  contractedAt: { not: null },
+  endedReason: null,
+  payments: { some: { status: { in: ['PENDING', 'OVERDUE'] } } },
+} satisfies Prisma.SubscriptionWhereInput;
 
 /** Paginação e filtros de Gerenciar contas (`ListActiveClientsDto`). */
 export interface AccountListQuery {
@@ -87,11 +105,17 @@ const BILLING_CHANGE_ACTIONS = [
 ];
 
 /** A situação que Gerenciar contas mostra: o bloqueio pesa mais que o status. */
-function accountStatus(blockLevel: BlockLevel, status: SubscriptionStatus) {
+function accountStatus(
+  blockLevel: BlockLevel,
+  status: SubscriptionStatus,
+  awaitingPayment = false,
+) {
   if (blockLevel === 'PARTIAL') return 'BLOCKED';
   if (blockLevel === 'FULL') return 'INACTIVE';
   if (status === 'CANCELED') return 'CANCELED';
-  if (status === 'INACTIVE') return 'INACTIVE';
+  if (status === 'INACTIVE') {
+    return awaitingPayment ? 'AWAITING_PAYMENT' : 'INACTIVE';
+  }
   return 'ACTIVE';
 }
 
@@ -295,7 +319,7 @@ export class AdminDashboardService {
   }
 
   async getActiveTotals() {
-    const [active, blocked, inactive, canceled] = await Promise.all(
+    const [active, blocked, awaiting, inactive, canceled] = await Promise.all(
       ACCOUNT_TABS.map((tab) =>
         this.prisma.company.count({ where: this.accountTabWhere(tab) }),
       ),
@@ -305,9 +329,10 @@ export class AdminDashboardService {
       data: {
         ACTIVE: active,
         BLOCKED: blocked,
+        AWAITING_PAYMENT: awaiting,
         INACTIVE: inactive,
         CANCELED: canceled,
-        TOTAL: active + blocked + inactive + canceled,
+        TOTAL: active + blocked + awaiting + inactive + canceled,
       },
     };
   }
@@ -640,6 +665,14 @@ export class AdminDashboardService {
         };
       case 'bloqueadas':
         return { blockLevel: 'PARTIAL', Subscription: { some: sub() } };
+      case 'aguardando':
+        return {
+          blockLevel: 'NONE',
+          Subscription: {
+            some: sub(AWAITING_PAYMENT_WHERE),
+            none: sub({ status: 'ACTIVE' }),
+          },
+        };
       case 'inativas':
         return {
           OR: [
@@ -648,7 +681,9 @@ export class AdminDashboardService {
               blockLevel: 'NONE',
               Subscription: {
                 some: sub({ status: 'INACTIVE' }),
-                none: sub({ status: 'ACTIVE' }),
+                none: {
+                  OR: [sub({ status: 'ACTIVE' }), sub(AWAITING_PAYMENT_WHERE)],
+                },
               },
             },
           ],
@@ -658,7 +693,9 @@ export class AdminDashboardService {
           blockLevel: 'NONE',
           Subscription: {
             some: sub({ status: 'CANCELED' }),
-            none: sub({ status: 'ACTIVE' }),
+            none: {
+              OR: [sub({ status: 'ACTIVE' }), sub(AWAITING_PAYMENT_WHERE)],
+            },
           },
         };
       default:
@@ -840,6 +877,11 @@ export class AdminDashboardService {
       const address = company.address[0];
       const billingMode = billingModeOf(subscription);
       const charges = chargesBySubscription.get(subscription.id) ?? [];
+      const awaitingPayment =
+        subscription.status === 'INACTIVE' &&
+        !!subscription.contractedAt &&
+        !subscription.endedReason &&
+        charges.length > 0;
       const upcoming = charges.find(
         (charge) =>
           charge.status === 'PENDING' && charge.dueDate >= startOfToday,
@@ -862,7 +904,11 @@ export class AdminDashboardService {
         createdAt: subscription.createdAt,
         plan: subscription.plan.name,
         planType: subscription.plan.planType,
-        status: accountStatus(company.blockLevel, subscription.status),
+        status: accountStatus(
+          company.blockLevel,
+          subscription.status,
+          awaitingPayment,
+        ),
         state: address?.state
           ? { id: address.state, name: address.state }
           : { id: '', name: '' },

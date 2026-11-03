@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   ALREADY_APPROVED_MESSAGE,
+  DOWN_PAYMENT_DUE_DATE_REQUIRED,
   INACTIVE_PRODUCT_ITEMS,
   PAYMENT_CONDITION_REQUIRED,
   QuotationWorkflowService,
@@ -818,6 +819,58 @@ describe('QuotationWorkflowService', () => {
       expect(
         mockFinancialService.generateReceivableFromQuotation,
       ).not.toHaveBeenCalled();
+    });
+
+    // A entrada com valor e sem vencimento faria o financeiro falhar dentro
+    // da transação: a recusa sai antes, com o que corrigir (O.S. 295 da
+    // Creativa, 27/10/2026)
+    it('entrada sem data de vencimento: 400 antes de gravar', async () => {
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? currentQuotation({
+              quotationPayment: {
+                billing: 'ON_ORDER',
+                downPayment: 2500,
+                downPaymentDueDate: null,
+                _count: { quotationInstallment: 1 },
+              },
+            })
+          : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+      );
+
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toThrow(
+        new BadRequestException(DOWN_PAYMENT_DUE_DATE_REQUIRED),
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('entrada sem vencimento não barra a série que não gera o título', async () => {
+      // A cobrança sem nota não tem parcelas, e a série da frente de caixa
+      // não gera o título da condição (FC-1)
+      for (const billing of ['NO_INVOICE', 'ON_CHECKOUT']) {
+        prisma.$transaction.mockClear();
+        prisma.quotation.findUnique.mockImplementation(async (args) =>
+          args.select
+            ? currentQuotation({
+                quotationPayment: {
+                  billing,
+                  downPayment: 2500,
+                  downPaymentDueDate: null,
+                  _count: { quotationInstallment: 0 },
+                },
+              })
+            : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+        );
+
+        await service
+          .approve(mockQuotationId, mockUserId)
+          .catch(() => undefined);
+
+        // Passou das conferências: chegou a abrir a transação da aprovação
+        expect(prisma.$transaction).toHaveBeenCalled();
+      }
     });
 
     it('série da frente de caixa sem o PDV no plano: só o "Cobrar" aprova', async () => {

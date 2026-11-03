@@ -52,6 +52,8 @@ export const ONLY_SEND_TO_CASH =
   'Seu perfil só envia a venda ao caixa: a forma de pagamento e o faturamento ficam com o caixa';
 export const PAYMENT_CONDITION_REQUIRED =
   'Informe a condição de pagamento para aprovar';
+export const DOWN_PAYMENT_DUE_DATE_REQUIRED =
+  'A entrada deste orçamento está sem data de vencimento. Edite as condições de pagamento e informe a data antes de aprovar.';
 export const INACTIVE_PRODUCT_ITEMS =
   'Este orçamento não pode ser aprovado: troque ou retire os itens com produto inativo';
 
@@ -576,6 +578,8 @@ export class QuotationWorkflowService {
             discountTotal: true,
             discountValue: true,
             discountType: true,
+            downPayment: true,
+            downPaymentDueDate: true,
             _count: { select: { quotationInstallment: true } },
           },
         },
@@ -649,6 +653,18 @@ export class QuotationWorkflowService {
       (payment?._count.quotationInstallment ?? 0) > 0;
     if (!atCheckout && !hasCondition) {
       throw new BadRequestException(PAYMENT_CONDITION_REQUIRED);
+    }
+    // Entrada com valor e sem vencimento: a parcela da entrada não tem data
+    // (`dueDate` é NOT NULL) e o financeiro falharia no meio da transação.
+    // Recusa aqui, com o que corrigir. A série da frente de caixa não gera o
+    // título, e a cobrança sem nota não tem parcelas
+    if (
+      !atCheckout &&
+      payment?.billing !== 'NO_INVOICE' &&
+      (payment?.downPayment ?? 0) > 0 &&
+      !payment?.downPaymentDueDate
+    ) {
+      throw new BadRequestException(DOWN_PAYMENT_DUE_DATE_REQUIRED);
     }
     // Produto, ou parte de uma linha, inativado depois de lançado (PAD-7):
     // a tela recebe os itens a trocar ou retirar

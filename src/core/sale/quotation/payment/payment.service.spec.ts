@@ -86,6 +86,29 @@ describe('PaymentService', () => {
       expect(data.downPaymentAdditionalFee).toBe(0);
     });
 
+    it('recusa entrada com valor e sem data de vencimento', async () => {
+      // Deixar passar gravava downPaymentDueDate nulo, e a venda so
+      // quebrava na aprovacao, ao criar a parcela da entrada: ficava
+      // aprovada, com O.S., e sem nenhum lancamento no financeiro.
+      await expect(
+        service.updatePayment(quotationId, {
+          hasDownPayment: true,
+          downPayment: { amount: 2500, paymentConditionId },
+        }),
+      ).rejects.toThrow('Informe a data de vencimento da entrada.');
+
+      expect(prisma.quotationPayment.update).not.toHaveBeenCalled();
+    });
+
+    it('aceita entrada zerada sem data de vencimento', async () => {
+      await service.updatePayment(quotationId, {
+        hasDownPayment: true,
+        downPayment: { amount: 0, paymentConditionId },
+      });
+
+      expect(prisma.quotationPayment.update).toHaveBeenCalled();
+    });
+
     it('traduz erro de chave estrangeira em mensagem legível', async () => {
       prisma.quotationPayment.update.mockRejectedValue(
         Object.assign(new Error('FK violation'), { code: 'P2003' }),

@@ -3,6 +3,7 @@ import { validate } from 'class-validator';
 
 import {
   CreateInvoicyConfigDto,
+  SetCscDto,
   UpdateInvoicyConfigDto,
 } from './invoicy-config.dto';
 
@@ -91,5 +92,55 @@ describe('campos da Reforma no UpdateInvoicyConfigDto', () => {
 
   it('regApIbsCbsSn fora de 1..3 é recusado', async () => {
     expect(await erroDe({ regApIbsCbsSn: 4 }, 'regApIbsCbsSn')).toBeDefined();
+  });
+});
+
+/**
+ * O CSC salvo aqui é o que a ativação envia ao cadastro do provedor, que guarda
+ * o identificador com até 6 caracteres e o código com até 36. Recusar no
+ * formulário é melhor que descobrir na ativação ou na primeira nota.
+ */
+describe('SetCscDto', () => {
+  const CSC = 'ABCDEF12-3456-7890-ABCD-EF1234567890';
+
+  const validar = async (dto: object) => {
+    const inst = plainToInstance(SetCscDto, dto);
+    return { inst, erros: await validate(inst) };
+  };
+
+  it('apara o espaço que vem junto ao copiar do portal', async () => {
+    const { inst, erros } = await validar({
+      cscId: ' 1 ',
+      cscToken: ` ${CSC}`,
+    });
+
+    expect(erros).toHaveLength(0);
+    expect(inst.cscId).toBe('1');
+    expect(inst.cscToken).toBe(CSC);
+  });
+
+  it('recusa identificador com mais de 6 dígitos, explicando onde achar o certo', async () => {
+    const { erros } = await validar({
+      cscId: '374425537129440041',
+      cscToken: CSC,
+    });
+    const mensagem = Object.values(
+      erros.find((e) => e.property === 'cscId')?.constraints ?? {},
+    ).join(' ');
+
+    expect(mensagem).toContain('até 6 dígitos');
+    expect(mensagem).toContain('portal da SEFAZ');
+  });
+
+  it('recusa código com mais de 36 caracteres', async () => {
+    const { erros } = await validar({ cscId: '1', cscToken: `${CSC}X` });
+
+    expect(erros.find((e) => e.property === 'cscToken')).toBeDefined();
+  });
+
+  it('só espaços conta como não informado', async () => {
+    const { erros } = await validar({ cscId: '   ', cscToken: CSC });
+
+    expect(erros.find((e) => e.property === 'cscId')).toBeDefined();
   });
 });

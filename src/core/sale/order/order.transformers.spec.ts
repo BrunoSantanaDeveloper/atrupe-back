@@ -569,6 +569,36 @@ describe('OrderTransformers', () => {
 
       expect(result.status).toBe('BILLING_PENDING');
     });
+
+    // Sem recebivel a tabela e uma previa montada do orcamento. Numa O.S.
+    // cancelada ela aparecia como "Faturamento Pendente" com parcelas
+    // "Pendente", prometendo um recebimento que nunca vai existir.
+    it('marca a previa como cancelada quando a O.S. foi cancelada sem faturar', () => {
+      const result = transformOrderFinancial(
+        [],
+        {
+          payment: [{ id: 1, status: 'PENDING' }],
+          commission: [{ id: 2, status: 'PENDING' }],
+          delivery: [],
+        },
+        'CANCELED',
+      );
+
+      expect(result.status).toBe('CANCELED');
+      expect(result.payment).toEqual([{ id: 1, status: 'CANCELED' }]);
+      expect(result.commission).toEqual([{ id: 2, status: 'CANCELED' }]);
+    });
+
+    it('mantem BILLED na O.S. cancelada que chegou a faturar', () => {
+      const result = transformOrderFinancial(
+        [{ id: 'rec-1' }],
+        { payment: [{ id: 1, status: 'PAID' }] },
+        'CANCELED',
+      );
+
+      expect(result.status).toBe('BILLED');
+      expect(result.payment).toEqual([{ id: 1, status: 'PAID' }]);
+    });
   });
 
   // ===========================================

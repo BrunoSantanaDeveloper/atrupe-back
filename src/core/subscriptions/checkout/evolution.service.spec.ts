@@ -323,34 +323,53 @@ describe('EvolutionService', () => {
       expect(result).toMatchObject({
         paymentUrl: 'https://asaas/i/new',
         creditCents: 9010,
-        subscription: { id: 'sub-local-1', planName: 'Atrupe Lite' },
+        // O Lite é liberado quando o pagamento for confirmado.
+        subscription: {
+          id: 'sub-local-1',
+          planName: 'Atrupe Lite',
+          status: 'INACTIVE',
+        },
       });
     });
 
-    it('a anterior só deixa de cobrar depois de a nova existir, e sem renovações futuras', async () => {
+    it('com algo a pagar, a anterior segue valendo e cobrando até a evolução ser paga', async () => {
       await service.evolve(ADMIN, dto(), META);
 
+      // A anterior é conferida no Asaas antes de abrir a cobrança nova...
+      const checked =
+        gateway.getAsaasSubscriptionPayments.mock.invocationCallOrder[0];
       const created = gateway.createSubscription.mock.invocationCallOrder[0];
-      const deleted = gateway.deleteAsaasPayment.mock.invocationCallOrder[0];
-      const canceled =
-        gateway.cancelAsaasSubscription.mock.invocationCallOrder[0];
-      expect(gateway.deleteAsaasPayment).toHaveBeenCalledTimes(1);
-      expect(gateway.deleteAsaasPayment).toHaveBeenCalledWith('pay_old_next');
-      expect(gateway.cancelAsaasSubscription).toHaveBeenCalledWith('sub_old');
-      expect(created).toBeLessThan(deleted);
-      expect(deleted).toBeLessThan(canceled);
+      expect(gateway.getAsaasSubscriptionPayments).toHaveBeenCalledWith(
+        'sub_old',
+      );
+      expect(checked).toBeLessThan(created);
+      // ...e não é encerrada: a troca é feita quando a evolução for paga.
+      expect(gateway.deleteAsaasPayment).not.toHaveBeenCalled();
+      expect(gateway.cancelAsaasSubscription).not.toHaveBeenCalled();
+      expect(tx.subscription.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'sub-start' } }),
+      );
+      expect(tx.payment.updateMany).not.toHaveBeenCalled();
     });
 
-    it('registra a anterior como evoluída, a cobrança com o crédito e o aceite', async () => {
+    it('registra a evolução à espera do pagamento, com a cobrança, a marca e o aceite', async () => {
       await service.evolve(ADMIN, dto(), META);
 
-      expect(tx.subscription.update).toHaveBeenCalledWith({
-        where: { id: 'sub-start' },
-        data: { status: 'CANCELED', endedReason: 'EVOLVED' },
+      const [{ data: registered }] = tx.subscription.update.mock.calls[0];
+      expect(registered).toMatchObject({
+        asaasSubscriptionId: 'sub_new',
+        contractedAt: expect.any(Date),
       });
-      expect(tx.payment.updateMany).toHaveBeenCalledWith({
-        where: { subscriptionId: 'sub-start', status: 'PENDING' },
-        data: { status: 'CANCELED' },
+      expect(registered).not.toHaveProperty('status');
+      expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          subscriptionId: 'sub-local-1',
+          action: 'EVOLUTION_CONTRACTED',
+          metadata: expect.objectContaining({
+            accessAfterPayment: true,
+            fromSubscriptionId: 'sub-start',
+          }),
+        }),
       });
       expect(tx.payment.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -398,10 +417,37 @@ describe('EvolutionService', () => {
       });
       expect(result.paymentUrl).toBeNull();
     });
+
+    it('coberta pelo crédito, a troca é na hora: a anterior deixa de cobrar e é encerrada', async () => {
+      quoteService.quote.mockResolvedValue(
+        evolutionQuote({ ...CREDITO_DO_START, creditCents: 40000 }),
+      );
+
+      const result = await service.evolve(ADMIN, dto(), META);
+
+      const created = gateway.createSubscription.mock.invocationCallOrder[0];
+      const deleted = gateway.deleteAsaasPayment.mock.invocationCallOrder[0];
+      const canceled =
+        gateway.cancelAsaasSubscription.mock.invocationCallOrder[0];
+      expect(gateway.deleteAsaasPayment).toHaveBeenCalledTimes(1);
+      expect(gateway.deleteAsaasPayment).toHaveBeenCalledWith('pay_old_next');
+      expect(gateway.cancelAsaasSubscription).toHaveBeenCalledWith('sub_old');
+      expect(created).toBeLessThan(deleted);
+      expect(deleted).toBeLessThan(canceled);
+      expect(tx.subscription.update).toHaveBeenCalledWith({
+        where: { id: 'sub-start' },
+        data: { status: 'CANCELED', endedReason: 'EVOLVED' },
+      });
+      expect(tx.payment.updateMany).toHaveBeenCalledWith({
+        where: { subscriptionId: 'sub-start', status: 'PENDING' },
+        data: { status: 'CANCELED' },
+      });
+      expect(result.subscription.status).toBe('ACTIVE');
+    });
   });
 
   describe('quando algo falha', () => {
-    it('cobrança vencida no Asaas que o banco não viu: nada muda e a nova é desfeita', async () => {
+    it('cobrança vencida no Asaas que o banco não viu: nada é aberto', async () => {
       withGatewayPayments([
         {
           id: 'pay_old_due',
@@ -414,18 +460,16 @@ describe('EvolutionService', () => {
       await expect(service.evolve(ADMIN, dto(), META)).rejects.toMatchObject({
         response: { code: 'REGULARIZATION_REQUIRED' },
       });
+      expect(gateway.createSubscription).not.toHaveBeenCalled();
       expect(gateway.deleteAsaasPayment).not.toHaveBeenCalled();
-      expect(gateway.cancelAsaasSubscription).toHaveBeenCalledWith('sub_new');
-      expect(gateway.cancelAsaasSubscription).not.toHaveBeenCalledWith(
-        'sub_old',
-      );
-      expect(tx.subscription.update).toHaveBeenCalledWith({
-        where: { id: 'sub-local-1' },
-        data: { status: 'CANCELED', endedReason: 'ABANDONED' },
-      });
+      expect(gateway.cancelAsaasSubscription).not.toHaveBeenCalled();
+      expect(tx.subscription.create).not.toHaveBeenCalled();
     });
 
-    it('falha ao encerrar a anterior desfaz a evolução, e a anterior segue', async () => {
+    it('coberta pelo crédito, falha ao encerrar a anterior desfaz a evolução, e a anterior segue', async () => {
+      quoteService.quote.mockResolvedValue(
+        evolutionQuote({ ...CREDITO_DO_START, creditCents: 40000 }),
+      );
       gateway.cancelAsaasSubscription.mockImplementation((id: string) =>
         id === 'sub_old'
           ? Promise.reject(new Error('Asaas fora'))
@@ -439,7 +483,7 @@ describe('EvolutionService', () => {
       expect(acceptance.record).not.toHaveBeenCalled();
     });
 
-    it('ativação que falha uma vez é tentada de novo', async () => {
+    it('registro que falha uma vez é tentado de novo', async () => {
       tx.subscription.update.mockRejectedValueOnce(new Error('deadlock'));
 
       const result = await service.evolve(ADMIN, dto(), META);
@@ -516,7 +560,7 @@ describe('EvolutionService', () => {
       });
     });
 
-    it('do anual parcelado para o anual em 12x: a renovação não paga some, e não há assinatura a cancelar', async () => {
+    it('do anual parcelado para o anual em 12x: a renovação da anterior fica até a evolução ser paga', async () => {
       const result = await service.evolve(
         ADMIN,
         dto({
@@ -530,7 +574,11 @@ describe('EvolutionService', () => {
       expect(gateway.createInstallmentCharge).toHaveBeenCalledWith(
         expect.objectContaining({ installmentCount: 12 }),
       );
-      expect(gateway.deleteAsaasPayment).toHaveBeenCalledWith('pay_renov_1');
+      // A anterior foi conferida, mas a renovação dela só sai na troca.
+      expect(gateway.getInstallmentPayments).toHaveBeenCalledWith(
+        'ins_renovacao',
+      );
+      expect(gateway.deleteAsaasPayment).not.toHaveBeenCalled();
       expect(gateway.cancelAsaasSubscription).not.toHaveBeenCalled();
       expect(tx.subscription.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -546,6 +594,7 @@ describe('EvolutionService', () => {
       expect(result.subscription).toMatchObject({
         cycle: 'YEARLY',
         installmentCount: 12,
+        status: 'INACTIVE',
       });
     });
 

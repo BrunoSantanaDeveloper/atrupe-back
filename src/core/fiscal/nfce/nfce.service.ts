@@ -63,6 +63,11 @@ import {
   aliquotasReformaTributaria,
   calcularVNFIBScbsIS,
 } from '../utils/ibs-cbs-nfe.util';
+import {
+  mensagemComOrientacao,
+  motivoComOrientacao,
+  orientacaoRejeicaoFiscal,
+} from '../utils/orientacao-rejeicao.util';
 
 /**
  * Recusas da SEFAZ que NÃO liberam o número da NFC-e: a denegação registra o
@@ -895,11 +900,16 @@ export class NfceService {
         // lido como falha de transporte — a nota ficava em UNKNOWN, o usuário
         // via "falha de comunicação" e o motivo real só existia no log.
         const motivo = this.describeProviderRefusal(response);
+        const orientacao = orientacaoRejeicaoFiscal({
+          origem: 'PROVEDOR',
+          codigo: response.Codigo,
+          modelo: 'NFC-e',
+        });
         await this.prisma.nfce.update({
           where: { id: nfce.id },
           data: {
             status: NfceStatus.REJECTED,
-            motivoRejeicao: motivo,
+            motivoRejeicao: motivoComOrientacao(motivo, orientacao),
           },
         });
         await this.releaseRejectedNfceNumber(
@@ -910,7 +920,12 @@ export class NfceService {
         this.logger.warn(
           `Emissão NFC-e ${nfce.numero}/${environment} recusada pelo Invoicy (código ${response.Codigo})`,
         );
-        throw new BadRequestException(`NFC-e recusada pelo Invoicy: ${motivo}`);
+        throw new BadRequestException(
+          mensagemComOrientacao(
+            `NFC-e recusada pelo Invoicy: ${motivo}`,
+            orientacao,
+          ),
+        );
       }
 
       const doc = response.Documentos?.[0];
@@ -927,6 +942,16 @@ export class NfceService {
         : isAuthorized
           ? NfceStatus.AUTHORIZED
           : NfceStatus.REJECTED;
+
+      // Recusa cuja providência está fora da nota (habilitação, CSC): o texto
+      // da SEFAZ sozinho não diz a quem recorrer.
+      const orientacao = isAuthorized
+        ? null
+        : orientacaoRejeicaoFiscal({
+            origem: 'SEFAZ',
+            codigo: situacao?.SitCodigo,
+            modelo: 'NFC-e',
+          });
 
       // Atualizar NFC-e com resposta
       const updatedNfce = await this.prisma.nfce.update({
@@ -945,7 +970,9 @@ export class NfceService {
           xmlAutorizado: doc.DocXMLBase64
             ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
             : null,
-          motivoRejeicao: !isAuthorized ? situacao?.SitDescricao : null,
+          motivoRejeicao: !isAuthorized
+            ? motivoComOrientacao(situacao?.SitDescricao, orientacao)
+            : null,
         },
       });
 
@@ -973,7 +1000,10 @@ export class NfceService {
         }
 
         throw new BadRequestException(
-          `NFC-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}`,
+          mensagemComOrientacao(
+            `NFC-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}`,
+            orientacao,
+          ),
         );
       }
 
@@ -1443,7 +1473,14 @@ export class NfceService {
           where: { id: nfce.id },
           data: {
             status: NfceStatus.REJECTED,
-            motivoRejeicao: situacao.SitDescricao,
+            motivoRejeicao: motivoComOrientacao(
+              situacao.SitDescricao,
+              orientacaoRejeicaoFiscal({
+                origem: 'SEFAZ',
+                codigo: situacao.SitCodigo,
+                modelo: 'NFC-e',
+              }),
+            ),
           },
         });
       }
@@ -1481,16 +1518,27 @@ export class NfceService {
         // retornado", lida como falha de comunicação, e o usuário era
         // mandado tentar de novo contra uma recusa que não passa sozinha.
         const motivo = this.describeProviderRefusal(response);
+        const orientacao = orientacaoRejeicaoFiscal({
+          origem: 'PROVEDOR',
+          codigo: response.Codigo,
+          modelo: 'NFC-e',
+        });
         await this.prisma.nfce.update({
           where: { id: nfce.id },
           data: {
             status: NfceStatus.UNKNOWN,
-            motivoRejeicao: `Reenvio recusado pelo Invoicy: ${motivo}`,
+            motivoRejeicao: motivoComOrientacao(
+              `Reenvio recusado pelo Invoicy: ${motivo}`,
+              orientacao,
+            ),
           },
         });
         throw new BadRequestException(
-          `O Invoicy recusou o reenvio da NFC-e: ${motivo}. ` +
-            'A nota continua com resultado desconhecido; resolva a recusa antes de reprocessar.',
+          mensagemComOrientacao(
+            `O Invoicy recusou o reenvio da NFC-e: ${motivo}. ` +
+              'A nota continua com resultado desconhecido; resolva a recusa antes de reprocessar.',
+            orientacao,
+          ),
         );
       }
 
@@ -1526,7 +1574,16 @@ export class NfceService {
           xmlAutorizado: doc.DocXMLBase64
             ? Buffer.from(doc.DocXMLBase64, 'base64').toString('utf-8')
             : nfce.xmlAutorizado,
-          motivoRejeicao: !isAuthorized ? situacao?.SitDescricao : null,
+          motivoRejeicao: !isAuthorized
+            ? motivoComOrientacao(
+                situacao?.SitDescricao,
+                orientacaoRejeicaoFiscal({
+                  origem: 'SEFAZ',
+                  codigo: situacao?.SitCodigo,
+                  modelo: 'NFC-e',
+                }),
+              )
+            : null,
         },
       });
     } catch (error) {

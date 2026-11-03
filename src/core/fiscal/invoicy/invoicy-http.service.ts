@@ -1549,4 +1549,201 @@ export class InvoicyHttpService {
       );
     }
   }
+
+  /**
+   * Grava o CSC da NFC-e no cadastro da empresa no Invoicy.
+   *
+   * É dali que o provedor tira o CSC para o QR Code: o `ide.CSC` que vai no
+   * payload de emissão não existe no contrato dele. Sem isto o CSC ficava só no
+   * nosso banco — em 23/10/2026 o cadastro de produção de duas empresas com o
+   * emissor "configurado" tinha `IDTokenCscSEFAZ` e `CscSEFAZ` vazios.
+   *
+   * O layout de atualização não diz se o PUT preserva o que não é enviado, e o
+   * exemplo dele é um cadastro completo. Para não depender disso: lê o
+   * cadastro, devolve o grupo `Parametros` inteiro como o provedor o tem
+   * (trocando só o CSC) com os campos de identificação obrigatórios, e confirma
+   * numa nova consulta. Certificado, usuários, licenças e extensões não vão —
+   * o mesmo recorte de updateCompanyCertificate.
+   */
+  async updateCompanyNfceCsc(data: {
+    cnpj: string;
+    cscId: string;
+    cscToken: string;
+    environment?: InvoicyEnvironment;
+    signal?: AbortSignal;
+  }): Promise<{ alterado: boolean }> {
+    const environment = data.environment || this.getPartnerEnvironment();
+    const cnpj = data.cnpj.replace(/\D/g, '');
+
+    const antes = this.findCompanyRecord(
+      await this.consultCompany(cnpj, environment, data.signal),
+      cnpj,
+    );
+    if (!antes) {
+      throw new Error(
+        `Empresa ${this.maskCnpj(cnpj)} não encontrada no cadastro do Invoicy (${environment})`,
+      );
+    }
+
+    const parametros = antes.Parametros ?? {};
+    const nfce = parametros.NFCe ?? {};
+    if (this.mesmoCsc(nfce, data.cscId, data.cscToken)) {
+      return { alterado: false };
+    }
+
+    this.logger.log(
+      `Gravando o CSC da NFC-e no cadastro do Invoicy (${this.maskCnpj(cnpj)}, ${environment})`,
+    );
+
+    const token = await this.authenticateAsPartner(environment, data.signal);
+    const baseUrl = this.getBaseUrl(environment);
+    const payload = [
+      {
+        EmpCNPJ: cnpj,
+        // Obrigatórios (1-1) no layout de envio; vão como o provedor os tem.
+        EmpRazSocial: antes.EmpRazSocial,
+        EmpNomFantasia: antes.EmpNomFantasia,
+        EmpApelido: antes.EmpApelido,
+        Parametros: {
+          ...parametros,
+          NFCe: {
+            ...nfce,
+            IDTokenCscSEFAZ: data.cscId,
+            CscSEFAZ: data.cscToken,
+          },
+        },
+      },
+    ];
+
+    let resposta: any;
+    try {
+      const response = await this.httpClient.put(
+        `${baseUrl}/companies`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          ...(data.signal ? { signal: data.signal } : {}),
+        },
+      );
+      resposta = response.data;
+    } catch (error) {
+      const status = error.response?.status;
+      const errorCode =
+        error.response?.data?.Codigo ||
+        error.response?.data?.codigo ||
+        error.response?.data?.code;
+      this.logger.error(
+        `Falha ao gravar o CSC no Invoicy (status ${status ?? 'n/a'})` +
+          (errorCode ? `: ${errorCode}` : ''),
+      );
+      throw new Error(
+        `Erro ao gravar o CSC no Invoicy (${errorCode ?? status ?? 'PROVIDER_ERROR'})`,
+      );
+    }
+
+    // O retorno traz um item por aspecto do cadastro, e alguns códigos ≠ 100
+    // não são erro (102: "certificado não informado"). Só o código de topo
+    // decide aqui; quem confirma o CSC é a consulta logo abaixo.
+    const topo = Array.isArray(resposta) ? resposta[0] : resposta;
+    if (topo?.Codigo !== undefined && Number(topo.Codigo) !== 100) {
+      throw new Error(
+        `Invoicy recusou a atualização do cadastro: Codigo ${topo.Codigo}` +
+          (topo.Descricao ? ` - ${topo.Descricao}` : ''),
+      );
+    }
+
+    const depois = this.findCompanyRecord(
+      await this.consultCompany(cnpj, environment, data.signal),
+      cnpj,
+    );
+    if (
+      !this.mesmoCsc(depois?.Parametros?.NFCe ?? {}, data.cscId, data.cscToken)
+    ) {
+      throw new Error(
+        'O Invoicy aceitou a atualização, mas o CSC não aparece no cadastro consultado em seguida',
+      );
+    }
+
+    const alterados = this.camposAlterados(
+      this.semCsc(antes),
+      this.semCsc(depois),
+    );
+    if (alterados.length) {
+      // Só os caminhos, nunca os valores: o cadastro tem chave e certificado.
+      this.logger.error(
+        `O PUT do CSC alterou outros campos do cadastro no Invoicy (${this.maskCnpj(cnpj)}, ${environment}): ` +
+          alterados.slice(0, 30).join(', '),
+      );
+    }
+
+    return { alterado: true };
+  }
+
+  /**
+   * Mesma comparação dos dois lados: o identificador sem zeros à esquerda
+   * ("1" e "000001" são o mesmo CSC) e o código sem diferença de caixa.
+   */
+  private mesmoCsc(nfce: any, cscId: string, cscToken: string): boolean {
+    const idAtual = String(nfce?.IDTokenCscSEFAZ ?? '').trim();
+    const tokenAtual = String(nfce?.CscSEFAZ ?? '').trim();
+    return (
+      idAtual !== '' &&
+      Number(idAtual) === Number(cscId) &&
+      tokenAtual.toUpperCase() === cscToken.toUpperCase()
+    );
+  }
+
+  /** O registro da empresa dentro da resposta da consulta. */
+  private findCompanyRecord(payload: any, cnpj: string): any | null {
+    const queue = [payload];
+    let inspected = 0;
+
+    while (queue.length > 0 && inspected < 100) {
+      inspected++;
+      const current = queue.shift();
+
+      if (!current || typeof current !== 'object') continue;
+
+      if (Array.isArray(current)) {
+        queue.push(...current);
+        continue;
+      }
+
+      if (String(current.EmpCNPJ ?? '').replace(/\D/g, '') === cnpj) {
+        return current;
+      }
+
+      for (const value of Object.values(current)) {
+        if (value && typeof value === 'object') queue.push(value);
+      }
+    }
+
+    return null;
+  }
+
+  private semCsc(registro: any): any {
+    if (!registro) return registro;
+    const copia = JSON.parse(JSON.stringify(registro));
+    if (copia.Parametros?.NFCe) {
+      delete copia.Parametros.NFCe.IDTokenCscSEFAZ;
+      delete copia.Parametros.NFCe.CscSEFAZ;
+    }
+    return copia;
+  }
+
+  /** Caminhos em que dois JSON diferem, sem os valores. */
+  private camposAlterados(a: any, b: any, caminho = '$'): string[] {
+    if (a === b) return [];
+    const aObjeto = a !== null && typeof a === 'object';
+    const bObjeto = b !== null && typeof b === 'object';
+    if (!aObjeto || !bObjeto) return [caminho];
+
+    const chaves = new Set([...Object.keys(a), ...Object.keys(b)]);
+    return [...chaves].flatMap((chave) =>
+      this.camposAlterados(a[chave], b[chave], `${caminho}.${chave}`),
+    );
+  }
 }

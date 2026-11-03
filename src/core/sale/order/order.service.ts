@@ -1083,11 +1083,14 @@ export class OrderService {
         installmentTotal: 1,
         status: 'PENDING',
         dueAmount: downPayment,
+        // Sem data cadastrada vinha `new Date()`: a tela mostrava a entrada
+        // vencendo hoje, mudando de dia em dia, e escondia que a venda estava
+        // sem o vencimento que o faturamento exige.
         dueDate: quotationPayment.downPaymentDueDate
           ? new Date(quotationPayment.downPaymentDueDate).toLocaleDateString(
               'pt-BR',
             )
-          : new Date().toLocaleDateString('pt-BR'),
+          : null,
         paidAmount: 0,
         paidDate: null,
         financialType: 'DOWN_PAYMENT',

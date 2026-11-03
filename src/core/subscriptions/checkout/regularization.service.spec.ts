@@ -128,6 +128,47 @@ describe('RegularizationService', () => {
     });
   });
 
+  it('evolução que espera o pagamento: a regularização é dela, com o plano novo', async () => {
+    withOpenCharge('2099-01-10');
+    const ctx = await quoteService.getBillingContext();
+    quoteService.getBillingContext.mockResolvedValue({
+      ...ctx,
+      hasOverdue: false,
+      evolutionPending: true,
+      pendingEvolution: {
+        id: 'sub-lite',
+        customerId: 'cust-1',
+        cycle: 'MONTHLY',
+        billingType: 'PIX',
+        value: 230,
+        plan: { name: 'Atrupe Lite' },
+      },
+    });
+
+    const view: any = await service.view('company-1');
+
+    expect(view.reason).toBe('EVOLUTION_PENDING');
+    expect(view.subscription).toMatchObject({
+      id: 'sub-lite',
+      planName: 'Atrupe Lite',
+      valueCents: 23000,
+    });
+  });
+
+  it('contratação que espera o pagamento, mesmo vencida, não é mensalidade atrasada', async () => {
+    withOpenCharge('2026-01-10');
+    const ctx = await quoteService.getBillingContext();
+    quoteService.getBillingContext.mockResolvedValue({
+      ...ctx,
+      awaitingActivation: true,
+    });
+
+    const view: any = await service.view('company-1');
+
+    expect(view.reason).toBe('CHECKOUT_PENDING');
+    expect(view.chargeInFocus.asaasPaymentId).toBe('pay_1');
+  });
+
   it('reemite a vencida para hoje na forma escolhida, e pede o aceite de novo', async () => {
     withOpenCharge('2026-01-10', 'BOLETO');
     const today = new Date().toISOString().split('T')[0];

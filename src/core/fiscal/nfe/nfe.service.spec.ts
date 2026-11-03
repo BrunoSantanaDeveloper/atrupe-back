@@ -889,6 +889,79 @@ describe('NfeService', () => {
       });
     });
 
+    /**
+     * A tela esconde o botao de emitir quando a ordem ja tem nota, exceto se
+     * ela estiver em DRAFT/REJECTED/CANCELLED. Como a escolha era um `.find()`
+     * sem filtro nem ordenacao, uma ordem com nota cancelada + rascunho podia
+     * devolver a cancelada e o cliente ficava sem como emitir.
+     */
+    describe('qual nota da ordem e considerada existente', () => {
+      const nfeDaOrdem = (over = {}) => ({
+        id: 'nfe-x',
+        numero: 1,
+        serie: 1,
+        status: NfeStatus.DRAFT,
+        ambiente: 2,
+        chaveAcesso: null,
+        danfeUrl: null,
+        dataEmissao: null,
+        createdAt: new Date('2026-10-29T10:00:00Z'),
+        ...over,
+      });
+
+      const comNfes = (nfes) =>
+        prisma.quotation.findFirst.mockResolvedValue({
+          ...mockQuotation,
+          order: { ...mockOrder, nfes, nfeOrders: [] },
+        });
+
+      it('prefere a mais recente quando ha cancelada e rascunho', async () => {
+        comNfes([
+          nfeDaOrdem({
+            id: 'cancelada',
+            numero: 785,
+            status: NfeStatus.CANCELLED,
+            createdAt: new Date('2026-10-29T13:24:00Z'),
+          }),
+          nfeDaOrdem({
+            id: 'rascunho',
+            numero: 786,
+            status: NfeStatus.DRAFT,
+            createdAt: new Date('2026-10-29T14:02:00Z'),
+          }),
+        ]);
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.existingNfe.id).toBe('rascunho');
+      });
+
+      it('prefere a autorizada, que e a que impede nova emissao', async () => {
+        comNfes([
+          nfeDaOrdem({
+            id: 'rascunho',
+            status: NfeStatus.DRAFT,
+            createdAt: new Date('2026-10-29T14:02:00Z'),
+          }),
+          nfeDaOrdem({
+            id: 'autorizada',
+            status: NfeStatus.AUTHORIZED,
+            createdAt: new Date('2026-10-29T09:00:00Z'),
+          }),
+        ]);
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.existingNfe.id).toBe('autorizada');
+      });
+    });
+
     it('usa a descrição editada do item no lugar do nome do produto', async () => {
       prisma.quotation.findFirst.mockResolvedValue({
         ...mockQuotation,
@@ -1961,6 +2034,37 @@ describe('NfeService', () => {
       await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow(
         'NF-e rejeitada: Rejeicao: motivo especifico da SEFAZ',
       );
+    });
+
+    /**
+     * A 203 diz que o CNPJ/IE nao esta habilitado na SEFAZ: a providencia e do
+     * contador, fora do Atrupe, e o texto cru nao diz isso. A mensagem leva a
+     * orientacao, e e ela que tratarFalhaEmissao grava como motivo.
+     */
+    it('203 (emissor nao habilitado) aponta a providencia na SEFAZ', async () => {
+      invoicyApiService.emitNfe.mockResolvedValue([
+        {
+          Codigo: 100,
+          Documentos: [
+            {
+              Situacao: {
+                SitCodigo: 203,
+                SitDescricao:
+                  'Rejeicao: Emissor nao habilitado para emissao da NF-e',
+              },
+            },
+          ],
+        },
+      ]);
+
+      await expect(service.emit(mockCompanyId, mockEmitDto)).rejects.toThrow(
+        /Emissor nao habilitado.*O que fazer \(habilitação na SEFAZ, fora do Atrupe\)/,
+      );
+
+      const motivoGravado =
+        prisma.nfe.update.mock.calls.at(-1)[0].data.motivoRejeicao;
+      expect(motivoGravado).toContain('O que fazer (habilitação na SEFAZ');
+      expect(motivoGravado).toContain('contador');
     });
 
     /**

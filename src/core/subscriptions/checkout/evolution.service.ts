@@ -62,18 +62,22 @@ const DAY_MS = 86_400_000;
  * que a pessoa escolheu: chegam marcados como estão na assinatura em curso.
  * Do anual só se evolui para outro anual (regra do orçamento).
  *
- * A ordem dos passos no Asaas é a que nunca deixa duas cobranças correndo:
- * 1. reserva local, sob a trava da empresa;
- * 2. a cobrança nova no Asaas, com a primeira cobrança ajustada;
- * 3. a anterior encerrada no Asaas — as cobranças futuras dela apagadas antes;
- * 4. ativação local numa transação: a nova ACTIVE, a anterior CANCELED.
- * Falhando até o 3, a nova é desfeita e a reserva também; a anterior segue
- * cobrando como antes.
+ * Com algo a pagar, o plano novo espera o pagamento (regra de 20/10): a nova
+ * fica INACTIVE e a anterior segue valendo — e cobrando — até lá. Quem faz a
+ * troca é a confirmação do pagamento (SubscriptionBlockService
+ * .activateIfContractPaid), que encerra a anterior no Asaas e aqui. Nunca
+ * paga, a evolução é desfeita sem tocar na anterior. Os passos:
+ * 1. a anterior conferida no Asaas: com cobrança vencida, nada feito;
+ * 2. reserva local, sob a trava da empresa;
+ * 3. a cobrança nova no Asaas, com a primeira cobrança ajustada;
+ * 4. registro local numa transação, com a nova à espera do pagamento.
+ * Falhando o 3 ou o 4, a nova é desfeita e a reserva também.
  *
  * Crédito que cobre a primeira cobrança inteira (ou deixa menos que o mínimo
- * do Asaas) não gera cobrança: o ciclo coberto pelo crédito fica registrado
- * numa cobrança local de valor zero, e a nova começa a cobrar no ciclo
- * seguinte.
+ * do Asaas) não gera cobrança, e não há o que esperar: a troca é na hora. O
+ * ciclo coberto pelo crédito fica registrado numa cobrança local de valor
+ * zero, a anterior é encerrada no Asaas — as cobranças futuras dela apagadas
+ * antes — e a nova começa a cobrar no ciclo seguinte.
  */
 @Injectable()
 export class EvolutionService {
@@ -177,6 +181,10 @@ export class EvolutionService {
     const firstDueDate = chargesNow
       ? new Date(now.getTime() + FIRST_DUE_DAYS * DAY_MS)
       : addCalendarCycle(now, cycle);
+    // Com algo a pagar, a troca espera o pagamento; a anterior é conferida
+    // agora, antes de abrir a cobrança nova.
+    const awaitPayment = chargesNow;
+    if (awaitPayment) await this.previousCharges(current, now);
 
     // 1. Reserva
     const reserved = await this.reserve({
@@ -194,7 +202,7 @@ export class EvolutionService {
 
     let contract: GatewayContract | null = null;
     let previousClosed = false;
-    let activated: Awaited<ReturnType<EvolutionService['activate']>>;
+    let registered: Awaited<ReturnType<EvolutionService['register']>>;
     try {
       // 2. A cobrança nova, com o valor do plano novo
       contract = await openGatewayContract(this.asaasGateway, this.logger, {
@@ -209,12 +217,14 @@ export class EvolutionService {
         externalReference: reserved.id,
       });
 
-      // 3. A anterior deixa de cobrar
-      await this.closePrevious(current, now);
-      previousClosed = true;
+      // Coberta pelo crédito, a anterior deixa de cobrar já.
+      if (!awaitPayment) {
+        await this.closePrevious(current, now);
+        previousClosed = true;
+      }
 
-      // 4. Ativação. Uma segunda tentativa antes de desistir: daqui em diante
-      // desfazer já não devolve a assinatura anterior ao Asaas.
+      // Registro. Uma segunda tentativa antes de desistir: sem pagamento a
+      // esperar, desfazer já não devolve a assinatura anterior ao Asaas.
       const input = {
         user,
         dto,
@@ -232,12 +242,13 @@ export class EvolutionService {
         asaasCustomerId: customer.asaasCustomerId,
         meta,
         now,
+        awaitPayment,
       };
-      activated = await this.activate(input).catch((error) => {
+      registered = await this.register(input).catch((error) => {
         this.logger.warn(
-          `Ativação da evolução ${reserved.id} falhou; nova tentativa: ${error.message}`,
+          `Registro da evolução ${reserved.id} falhou; nova tentativa: ${error.message}`,
         );
-        return this.activate(input);
+        return this.register(input);
       });
     } catch (error) {
       if (previousClosed) {
@@ -272,11 +283,13 @@ export class EvolutionService {
         return null;
       });
 
-    const { payment, acceptance } = activated;
+    const { payment, acceptance } = registered;
     return {
       subscription: {
         id: reserved.id,
-        status: 'ACTIVE' as const,
+        // Com algo a pagar, o plano novo é liberado quando o pagamento for
+        // confirmado.
+        status: awaitPayment ? ('INACTIVE' as const) : ('ACTIVE' as const),
         planId: plan.id,
         planName: plan.name,
         cycle,
@@ -489,20 +502,14 @@ export class EvolutionService {
   }
 
   /**
-   * Passo 3: a cobrança anterior deixa de correr.
-   *
-   * As cobranças futuras que o Asaas já gerou são apagadas ANTES de encerrar a
-   * assinatura: com ela viva, apagar não tem ambiguidade. No parcelado não há
-   * assinatura a encerrar — só as parcelas ainda não pagas, como a renovação
-   * do ano seguinte, já criada. Quem responde se há cobrança em aberto é o
-   * Asaas: uma vencida que o banco não viu seria apagada junto, e isso seria
-   * perdoar a dívida.
+   * As cobranças da anterior no Asaas, que precisa estar em dia. Quem responde
+   * se há cobrança em aberto é o Asaas: uma vencida que o banco não viu seria
+   * apagada junto na troca, e isso seria perdoar a dívida.
    */
-  private async closePrevious(current: CurrentSubscription, now: Date) {
+  private async previousCharges(current: CurrentSubscription, now: Date) {
     // Atribuída à mão, teste, ou parcelado cujo ano o crédito pagou: não há
-    // cobrança no Asaas a encerrar.
-    if (!isBilledByGateway(current)) return;
-    const mode = billingModeOf(current);
+    // cobrança no Asaas.
+    if (!isBilledByGateway(current)) return [];
 
     const payments = await this.asaasGateway.getChargesOf(current);
     const today = now.toISOString().slice(0, 10);
@@ -519,6 +526,21 @@ export class EvolutionService {
           'Há uma cobrança em aberto. Regularize-a antes de evoluir o plano.',
       });
     }
+    return payments;
+  }
+
+  /**
+   * A cobrança anterior deixa de correr, na evolução que o crédito pagou.
+   *
+   * As cobranças futuras que o Asaas já gerou são apagadas ANTES de encerrar a
+   * assinatura: com ela viva, apagar não tem ambiguidade. No parcelado não há
+   * assinatura a encerrar — só as parcelas ainda não pagas, como a renovação
+   * do ano seguinte, já criada.
+   */
+  private async closePrevious(current: CurrentSubscription, now: Date) {
+    if (!isBilledByGateway(current)) return;
+    const mode = billingModeOf(current);
+    const payments = await this.previousCharges(current, now);
 
     const deleted: string[] = [];
     try {
@@ -543,8 +565,12 @@ export class EvolutionService {
     }
   }
 
-  /** Passo 4: a ativação local, numa transação só. */
-  private async activate(input: {
+  /**
+   * O registro local, numa transação só. Esperando o pagamento, a nova segue
+   * INACTIVE e a anterior, intacta; coberta pelo crédito, a nova entra no
+   * lugar da anterior já.
+   */
+  private async register(input: {
     user: ContractingUser;
     dto: EvolutionDto;
     quote: QuoteResult;
@@ -561,6 +587,7 @@ export class EvolutionService {
     asaasCustomerId: string;
     meta: RequestMeta;
     now: Date;
+    awaitPayment: boolean;
   }) {
     const {
       user,
@@ -588,34 +615,36 @@ export class EvolutionService {
             billingMode: contract.billingMode,
             installmentCount: installment ? input.installmentCount : null,
             nextDueDate: contract.nextDueDate,
-            status: 'ACTIVE',
+            ...(input.awaitPayment ? {} : { status: 'ACTIVE' as const }),
             contractedAt: now,
           },
         });
 
-        await tx.subscription.update({
-          where: { id: current.id },
-          data: { status: 'CANCELED', endedReason: 'EVOLVED' },
-        });
-        // As cobranças futuras da anterior foram apagadas no Asaas.
-        await tx.payment.updateMany({
-          where: { subscriptionId: current.id, status: 'PENDING' },
-          data: { status: 'CANCELED' },
-        });
-        await tx.subscriptionHistory.create({
-          data: {
-            subscriptionId: current.id,
-            action: 'EVOLVED',
-            description: `Assinatura substituída pela evolução para o ${input.planName}`,
-            changes: {
-              before: { status: 'ACTIVE' },
-              after: { status: 'CANCELED' },
+        if (!input.awaitPayment) {
+          await tx.subscription.update({
+            where: { id: current.id },
+            data: { status: 'CANCELED', endedReason: 'EVOLVED' },
+          });
+          // As cobranças futuras da anterior foram apagadas no Asaas.
+          await tx.payment.updateMany({
+            where: { subscriptionId: current.id, status: 'PENDING' },
+            data: { status: 'CANCELED' },
+          });
+          await tx.subscriptionHistory.create({
+            data: {
+              subscriptionId: current.id,
+              action: 'EVOLVED',
+              description: `Assinatura substituída pela evolução para o ${input.planName}`,
+              changes: {
+                before: { status: 'ACTIVE' },
+                after: { status: 'CANCELED' },
+              },
+              metadata: { newSubscriptionId: reservedId },
+              createdBy: user.userId,
+              createdByName: sessionUser.name,
             },
-            metadata: { newSubscriptionId: reservedId },
-            createdBy: user.userId,
-            createdByName: sessionUser.name,
-          },
-        });
+          });
+        }
 
         const [payment] = await recordContractCharges(tx, this.asaasGateway, {
           subscriptionId: reservedId,
@@ -632,10 +661,12 @@ export class EvolutionService {
           data: {
             subscriptionId: reservedId,
             action: 'EVOLUTION_CONTRACTED',
-            description: chargedNow
-              ? `Evolução do ${current.plan.name} para o ${input.planName} registrada; acesso liberado com o pagamento em aberto`
+            description: input.awaitPayment
+              ? `Evolução do ${current.plan.name} para o ${input.planName} registrada; o ${input.planName} é liberado com a confirmação do pagamento`
               : `Evolução do ${current.plan.name} para o ${input.planName} registrada; o crédito cobriu o primeiro ciclo`,
             metadata: {
+              // A marca que a liberação pelo pagamento procura.
+              ...(input.awaitPayment ? { accessAfterPayment: true } : {}),
               fromSubscriptionId: current.id,
               fromPlan: current.plan.name,
               cycle: input.cycle,

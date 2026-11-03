@@ -411,12 +411,40 @@ export function transformOrderPaymentConditions(
   };
 }
 
+/** Marca as linhas da previa como canceladas, sem mexer no resto. */
+function marcarLinhasCanceladas(financialTableData: any) {
+  const marcar = (linhas: any[]) =>
+    (linhas || []).map((linha) => ({ ...linha, status: 'CANCELED' }));
+
+  return {
+    ...financialTableData,
+    payment: marcar(financialTableData?.payment),
+    commission: marcar(financialTableData?.commission),
+    delivery: marcar(financialTableData?.delivery),
+  };
+}
+
 export function transformOrderFinancial(
   receivables: any[],
   financialTableData: any,
+  orderStatus?: string,
 ) {
+  const faturado = receivables.length > 0;
+  const cancelada = orderStatus === 'CANCELED';
+
+  // Sem recebivel, a tabela abaixo e uma previa montada a partir do
+  // orcamento, nao cobranca de verdade. Numa O.S. cancelada ela aparecia
+  // como 'Faturamento Pendente' com parcelas 'Pendente', prometendo um
+  // recebimento que nao existe e nunca vai existir.
+  if (!faturado && cancelada) {
+    return {
+      status: 'CANCELED',
+      ...marcarLinhasCanceladas(financialTableData),
+    };
+  }
+
   return {
-    status: receivables.length > 0 ? 'BILLED' : 'BILLING_PENDING',
+    status: faturado ? 'BILLED' : 'BILLING_PENDING',
     ...financialTableData,
   };
 }
@@ -424,6 +452,7 @@ export function transformOrderFinancial(
 export function transformOrderQuotation(
   quotation: QuotationRaw,
   financialTableData: any,
+  orderStatus?: string,
 ) {
   return {
     id: quotation.id,
@@ -450,6 +479,7 @@ export function transformOrderQuotation(
     financial: transformOrderFinancial(
       quotation.receivable,
       financialTableData,
+      orderStatus,
     ),
   };
 }
@@ -472,7 +502,11 @@ export function transformOrderToResponse(
     cancelReason: (order as any).cancelReason ?? null,
     deliveredAt: order.deliveredAt,
     status: order.status,
-    quotation: transformOrderQuotation(order.quotation, financialTableData),
+    quotation: transformOrderQuotation(
+      order.quotation,
+      financialTableData,
+      order.status,
+    ),
     nfes: order.nfes || [],
     nfces: order.nfces || [],
     nfses: order.nfses || [],

@@ -59,6 +59,10 @@ import {
 } from '../utils/ibs-cbs-nfe.util';
 import { IcmsAliquotaInternaService } from '../shared/icms-aliquota-interna.service';
 import {
+  mensagemComOrientacao,
+  orientacaoRejeicaoFiscal,
+} from '../utils/orientacao-rejeicao.util';
+import {
   EmitNfeDto,
   EmitNfeFromOrderDto,
   CancelNfeDto,
@@ -449,10 +453,25 @@ export class NfeService {
     const activeEnvironment =
       this.fiscalCredentialResolver.resolveEnvironmentFromConfig(config, 'NFE');
     const activeEnvironmentNumber = activeEnvironment === 'PRODUCAO' ? 1 : 2;
-    const existingNfe = [
+    const nfesDaOrdem = [
       ...(quotation.order.nfes || []),
       ...(quotation.order.nfeOrders || []).map((item) => item.nfe),
-    ].find((nfe) => nfe && nfe.ambiente === activeEnvironmentNumber);
+    ].filter((nfe) => nfe && nfe.ambiente === activeEnvironmentNumber);
+
+    // A nota "existente" da ordem e a que de fato impede uma nova emissao:
+    // autorizada ou com CC-e. Sem esse criterio o `.find()` devolvia a
+    // primeira linha que o banco retornasse, em ordem arbitraria — e uma nota
+    // CANCELADA fazia a tela esconder o botao de emitir, porque o cabecalho so
+    // mostra a barra de acoes para DRAFT, REJECTED ou nenhuma nota. Ordem com
+    // mais de uma NF-e e o caso comum: cancelar e refazer gera outra linha.
+    const nfesOrdenadas = [...nfesDaOrdem].sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    const existingNfe =
+      nfesOrdenadas.find((nfe) => EMITIDA_NFE_STATUSES.includes(nfe.status)) ??
+      // Senao, a mais recente: e o estado em que o usuario realmente parou.
+      nfesOrdenadas[0];
 
     return {
       // Metadados
@@ -3000,6 +3019,14 @@ export class NfeService {
 
     if (!isAuthorized) {
       const orientacao = this.getRejectionHint(situacao?.SitCodigo);
+      // Recusa cuja providência está fora da nota (habilitação, situação
+      // cadastral). Vai na mensagem, e é ela que tratarFalhaEmissao grava
+      // como motivo — por isso aparece também no modal de motivo.
+      const providencia = orientacaoRejeicaoFiscal({
+        origem: 'SEFAZ',
+        codigo: situacao?.SitCodigo,
+        modelo: 'NF-e',
+      });
       // Resposta CONCLUSIVA da SEFAZ: a nota nao foi autorizada, entao o
       // numero continua livre. Devolver aqui e o unico ponto seguro — no
       // catch abaixo cai tambem falha de transporte, onde a nota PODE ter
@@ -3007,8 +3034,11 @@ export class NfeService {
       await this.releaseRejectedNfeNumber(config.id, environment, numero);
 
       throw new BadRequestException(
-        `NF-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}` +
-          (orientacao ? ` — ${orientacao}` : ''),
+        mensagemComOrientacao(
+          `NF-e rejeitada: ${situacao?.SitDescricao || 'Motivo desconhecido'}` +
+            (orientacao ? ` — ${orientacao}` : ''),
+          providencia,
+        ),
       );
     }
 
