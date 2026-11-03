@@ -82,7 +82,13 @@ export function planAction(
   if (!rule.from.includes(task.status)) {
     return { ok: false, message: `Não dá para ${rule.verb} neste estado` };
   }
-  if ((action === 'START' || action === 'RESUME') && task.blocked) {
+  // Concluir a etapa que nem começou também espera a anterior: sem controle
+  // de tempo (GP-47) é o único botão, e a fila pulava a ordem (03/11/2026)
+  const skipsAhead = action === 'FINISH' && task.status === 'NOT_STARTED';
+  if (
+    (action === 'START' || action === 'RESUME' || skipsAhead) &&
+    task.blocked
+  ) {
     return { ok: false, message: `Esta etapa espera ${task.blockedBy}` };
   }
   const base = {

@@ -105,6 +105,25 @@ describe('planAction: 6 estados × 6 ações (GP-28)', () => {
     },
   );
 
+  it('FINISH recusa a etapa bloqueada que nem começou', () => {
+    const plan = planAction(
+      'FINISH',
+      input('NOT_STARTED', { blocked: true, blockedBy: 'Corte CNC' }),
+    );
+    expect(plan).toEqual({
+      ok: false,
+      message: 'Esta etapa espera Corte CNC',
+    });
+  });
+
+  it('FINISH conclui a etapa já começada mesmo bloqueada depois', () => {
+    const plan = planAction(
+      'FINISH',
+      input('IN_PROGRESS', { blocked: true, blockedBy: 'Corte CNC' }),
+    );
+    expect(plan.ok && plan.status).toBe('DONE');
+  });
+
   it('concluir uma etapa do meio passa para a seguinte, sem agenda (GP-14)', () => {
     const plan = planAction(
       'FINISH',
