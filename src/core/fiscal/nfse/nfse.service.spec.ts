@@ -1968,5 +1968,108 @@ describe('NfseService', () => {
 
       expect(result.url).toBe('https://invoicy.com/pdf/123');
     });
+
+    // DocPDFDownload aponta para uma pagina do portal do InvoiCy (HTML +
+    // reCAPTCHA), nao para o arquivo: aberta pelo navegador numa aba criada
+    // por script, ela nao entregava PDF nenhum. Os bytes vem da consulta.
+    it('busca os bytes do PDF no provedor', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        pdfUrl: 'https://invoicy.com/pdf/123',
+      });
+      const pdf = Buffer.from('%PDF-1.4 conteudo');
+      invoicyApiService.consultNfse.mockResolvedValue([
+        { Documentos: [{ DocPDFBase64: pdf.toString('base64') }] },
+      ]);
+
+      const result = await service.getPdfUrl(mockNfseId, mockCompanyId);
+
+      expect(invoicyApiService.consultNfse).toHaveBeenCalledWith(
+        mockCompanyId,
+        mockNfse.rpsNumero,
+        mockNfse.rpsNumero,
+        mockNfse.rpsSerie,
+        mockNfse.ambiente,
+        undefined,
+        { pdfBase64: true },
+      );
+      expect(Buffer.from(result.pdfBase64, 'base64').toString()).toBe(
+        '%PDF-1.4 conteudo',
+      );
+    });
+
+    it('ignora retorno que nao e PDF e cai no link do portal', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        pdfUrl: 'https://invoicy.com/pdf/123',
+      });
+      invoicyApiService.consultNfse.mockResolvedValue([
+        {
+          Documentos: [
+            {
+              DocPDFBase64: Buffer.from('<html>erro</html>').toString('base64'),
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getPdfUrl(mockNfseId, mockCompanyId);
+
+      expect(result.pdfBase64).toBeNull();
+      expect(result.url).toBe('https://invoicy.com/pdf/123');
+    });
+
+    it('falha do provedor nao derruba a abertura do PDF', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        pdfUrl: 'https://invoicy.com/pdf/123',
+      });
+      invoicyApiService.consultNfse.mockRejectedValue(new Error('timeout'));
+
+      const result = await service.getPdfUrl(mockNfseId, mockCompanyId);
+
+      expect(result.pdfBase64).toBeNull();
+      expect(result.url).toBe('https://invoicy.com/pdf/123');
+    });
+  });
+
+  describe('getXml', () => {
+    // O provedor devolve DocXMLBase64 e e' assim que fica gravado. A API
+    // devolvia a string crua, e o arquivo salvo pelo navegador abria com
+    // "Start tag expected, '<' not found".
+    it('decodifica o XML gravado em base64', async () => {
+      const xml = '<?xml version="1.0"?><NFSe><numero>1</numero></NFSe>';
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        xmlRetorno: Buffer.from(xml).toString('base64'),
+      });
+
+      const result = await service.getXml(mockNfseId, mockCompanyId);
+
+      expect(result.xml).toBe(xml);
+    });
+
+    it('devolve como esta o XML ja gravado em texto', async () => {
+      const xml = '<NFSe><numero>1</numero></NFSe>';
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        xmlRetorno: xml,
+      });
+
+      const result = await service.getXml(mockNfseId, mockCompanyId);
+
+      expect(result.xml).toBe(xml);
+    });
+
+    it('nota sem XML responde 404', async () => {
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...mockNfse,
+        xmlRetorno: null,
+      });
+
+      await expect(service.getXml(mockNfseId, mockCompanyId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 });

@@ -534,6 +534,10 @@ export class InvoicyApiService {
    *
    * Layout: migrate-company/integracao-InvoiCy-BR, "Consulta de documentos"
    * (Consulta Por Faixa Número.xml / get_consulta.txt).
+   *
+   * `opcoes.pdfBase64` pede o PDF da nota em base64 (DocPDFBase64). O padrão é
+   * não pedir, porque o retorno fica alguns KB maior e a reconciliação de
+   * status não usa o PDF.
    */
   async consultNfse(
     companyId: string,
@@ -542,6 +546,7 @@ export class InvoicyApiService {
     serie: string,
     ambiente?: number,
     invoicyConfigId?: string,
+    opcoes?: { pdfBase64?: boolean },
   ): Promise<InvoicyResponse[]> {
     this.logger.log(
       `Consultando NFS-e RPS ${rpsNumeroInicial}-${rpsNumeroFinal}/${serie} para empresa ${companyId}`,
@@ -570,7 +575,7 @@ export class InvoicyApiService {
       DocumentosResumo: 'N',
       ParmSituacao: 'S',
       ParmEventos: 'N',
-      ParmPDFBase64: 'N',
+      ParmPDFBase64: opcoes?.pdfBase64 ? 'S' : 'N',
       ParmPDFLink: 'S',
       ParmXMLCompleto: 'S',
       ParmXMLLink: 'N',

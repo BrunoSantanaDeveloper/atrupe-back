@@ -2771,15 +2771,96 @@ export class NfseService {
     };
   }
 
+  /**
+   * Devolve o PDF da NFS-e, em bytes quando o provedor os entrega.
+   *
+   * `pdfUrl` (DocPDFDownload) não é um PDF: é uma página do portal do InvoiCy
+   * (HTML + reCAPTCHA) que monta o download no navegador. Aberta numa aba
+   * criada por script, ela não baixava nada — "Ver PDF" parecia não fazer
+   * efeito nenhum. O link continua indo como último recurso, mas o caminho
+   * normal passa a ser o mesmo da DANFE da NF-e: os bytes vindos do provedor.
+   */
   async getPdfUrl(id: string, companyId: string) {
     const nfse = await this.findById(id, companyId);
+    const pdf = await this.resolveNfsePdf(nfse);
 
-    if (!nfse.pdfUrl) {
-      // TODO: Buscar PDF da API do Invoicy se não estiver armazenado
+    if (!pdf && !nfse.pdfUrl) {
       throw new NotFoundException('PDF não disponível para esta NFS-e');
     }
 
-    return { url: nfse.pdfUrl };
+    return {
+      pdfBase64: pdf ? pdf.toString('base64') : null,
+      url: nfse.pdfUrl || null,
+    };
+  }
+
+  /**
+   * Busca o PDF da nota no provedor (ParmPDFBase64=S) e valida que é um PDF.
+   *
+   * Nunca lança: sem os bytes o chamador ainda tem o link do portal, e um PDF
+   * indisponível não pode derrubar uma operação que deu certo.
+   *
+   * A consulta tem 45s de timeout e ainda tenta de novo quando falha — esperar
+   * tudo isso deixaria o botão "Ver PDF" girando por minutos. Passado o prazo
+   * curto daqui, a resposta vai pelo link e a consulta morre sozinha.
+   */
+  private readonly PDF_LOOKUP_TIMEOUT_MS = 12000;
+
+  private async resolveNfsePdf(nfse: {
+    id: string;
+    companyId: string;
+    rpsNumero: number;
+    rpsSerie: string;
+    ambiente: number;
+    invoicyConfigId?: string | null;
+  }): Promise<Buffer | null> {
+    let timer: NodeJS.Timeout | undefined;
+
+    try {
+      const consulta = this.invoicyApiService.consultNfse(
+        nfse.companyId,
+        nfse.rpsNumero,
+        nfse.rpsNumero,
+        nfse.rpsSerie,
+        nfse.ambiente,
+        nfse.invoicyConfigId ?? undefined,
+        { pdfBase64: true },
+      );
+      // Marca a promessa como tratada: se ela falhar depois do prazo, a falha
+      // não vira unhandled rejection.
+      consulta.catch(() => undefined);
+
+      const responses = await Promise.race([
+        consulta,
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), this.PDF_LOOKUP_TIMEOUT_MS);
+        }),
+      ]);
+
+      if (!responses) {
+        this.logger.warn(
+          `Consulta do PDF da NFS-e ${nfse.id} passou de ${this.PDF_LOOKUP_TIMEOUT_MS}ms; ` +
+            'respondendo com o link do portal.',
+        );
+        return null;
+      }
+
+      const base64 = responses?.[0]?.Documentos?.[0]?.DocPDFBase64;
+      if (!base64) return null;
+
+      const pdf = Buffer.from(
+        base64.replace(/^data:application\/pdf;base64,/i, ''),
+        'base64',
+      );
+      return pdf.subarray(0, 5).toString('ascii') === '%PDF-' ? pdf : null;
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel obter o PDF da NFS-e ${nfse.id} no provedor: ${error.message}`,
+      );
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async getXml(id: string, companyId: string) {
@@ -2789,7 +2870,25 @@ export class NfseService {
       throw new NotFoundException('XML não disponível para esta NFS-e');
     }
 
-    return { xml: nfse.xmlRetorno };
+    return { xml: this.decodeXmlRetorno(nfse.xmlRetorno) };
+  }
+
+  /**
+   * O provedor devolve o XML em base64 (`DocXMLBase64`) e é assim que ele fica
+   * gravado em `xmlRetorno`. A API devolvia a string crua, então o arquivo
+   * salvo pelo navegador era base64 com extensão .xml: todo download abria com
+   * "Start tag expected, '<' not found". NF-e e NFC-e decodificam na gravação;
+   * aqui é na leitura, porque as notas já emitidas estão gravadas em base64.
+   *
+   * Tolerante nas duas pontas: XML já em texto passa direto, e conteúdo que
+   * não decodifica para XML volta como veio em vez de virar lixo binário.
+   */
+  private decodeXmlRetorno(valor: string): string {
+    const texto = valor.trim();
+    if (texto.startsWith('<')) return valor;
+
+    const decodificado = Buffer.from(texto, 'base64').toString('utf-8');
+    return decodificado.trimStart().startsWith('<') ? decodificado : valor;
   }
 
   async sendAuthorizedEmail(id: string, companyId: string) {
@@ -2856,6 +2955,19 @@ export class NfseService {
       currency: 'BRL',
     });
 
+    // A ação se chama "Enviar PDF/XML por e-mail" e não anexava nenhum dos
+    // dois: o XML ficava de fora (hasXml fixo em false) e o PDF ia só como
+    // link. O XML segue anexado como na NF-e, já decodificado.
+    const attachments = nfse.xmlRetorno
+      ? [
+          {
+            filename: `NFSe_${nfse.numero}_${nfse.serie}.xml`,
+            content: this.decodeXmlRetorno(nfse.xmlRetorno),
+            contentType: 'application/xml',
+          },
+        ]
+      : [];
+
     await this.mailService.sendEmail(
       recipients,
       `NFS-e ${nfse.numero}/${nfse.serie} autorizada`,
@@ -2869,9 +2981,9 @@ export class NfseService {
         valorTotal,
         danfeUrl: nfse.pdfUrl || '',
         hasDanfe: !!nfse.pdfUrl,
-        hasXml: false,
+        hasXml: attachments.length > 0,
       },
-      [],
+      attachments,
     );
 
     await this.prisma.nfse.update({

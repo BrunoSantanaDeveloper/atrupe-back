@@ -131,12 +131,22 @@ export class NfseEventsService {
   }
 
   /**
-   * Obtém XML de retorno
+   * Obtém XML de retorno, já fora do base64 em que o provedor o devolve
+   * (ver NfseService.getXml, que é o caminho usado pela rota).
    */
   getXml(nfse: any): { xml: string } {
     if (!nfse.xmlRetorno) {
       throw new NotFoundException('XML não disponível para esta NFS-e');
     }
-    return { xml: nfse.xmlRetorno };
+
+    const texto = String(nfse.xmlRetorno).trim();
+    if (texto.startsWith('<')) return { xml: nfse.xmlRetorno };
+
+    const decodificado = Buffer.from(texto, 'base64').toString('utf-8');
+    return {
+      xml: decodificado.trimStart().startsWith('<')
+        ? decodificado
+        : nfse.xmlRetorno,
+    };
   }
 }
