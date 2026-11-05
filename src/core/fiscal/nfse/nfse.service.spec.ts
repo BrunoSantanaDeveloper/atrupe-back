@@ -987,15 +987,15 @@ describe('NfseService', () => {
        * sublimite, que o MEI nao tem.
        */
       /**
-       * A v9 do layout (16/10/2026) tirou a condicao "informar quando
-       * opSimpNac = 2, 3 ou 4" do regApIBSCBSSN, e o suporte do provedor
-       * pediu o envio conforme a v9. Fora do Simples vai 3 — IBS e CBS
-       * apurados pelo regime regular.
+       * Fora do Simples o campo nao vai: enviado (RPS 106, 107 e 108), o
+       * provedor o escreve dentro de <regTrib> e o ADN recusa com E1235
+       * ("expected regApTribSN, regEspTrib"). O suporte do provedor pediu a
+       * remocao em 04/11/2026, depois de ter pedido o envio em 23/10.
        */
-      it('declara apuracao pelo regime regular fora do Simples', async () => {
+      it('nao declara regime de apuracao do Simples fora do Simples', async () => {
         await emitirCom({ emitCrt: 3, regimeEspecialTributacao: null });
         const rps = regimeEnviado();
-        expect(rps.regApIBSCBSSN).toBe(3);
+        expect(rps).not.toHaveProperty('regApIBSCBSSN');
         expect(rps.OptSN).toBe(2);
       });
 

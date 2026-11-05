@@ -1539,6 +1539,7 @@ export class NfseService {
       valorDeducoes,
       regimeEspecial,
       indicadorOperacao,
+      optanteSimples,
       regimeApuracaoIbsCbs,
       valoresIbsCbs,
       omitirAliquotaIss,
@@ -1682,19 +1683,22 @@ export class NfseService {
             // regApIBSCBSSN: 1 = IBS e CBS apurados pelo SN, 2 = CBS pelo SN e
             // IBS regular, 3 = ambos pelo regime regular.
             //
-            // Vai sempre, inclusive fora do Simples (com 3, que e' a situacao
-            // de quem apura tudo pelo regime regular). A v8 condicionava o
-            // campo a "opSimpNac (OptSN) = 2, 3 ou 4", frase ambigua que nos
-            // fez omiti-lo; a **v9 (16/10/2026) removeu essa condicao**, e o
-            // suporte do provedor, no ticket 49872934516, pediu o envio de
-            // finNFSe e regApIBSCBSSN conforme a v9.
+            // So' para optante do Simples, e este vaivem esta' documentado de
+            // proposito para ninguem refazer:
             //
-            // Historico: enviar o campo em 20/10 (Fenix, RPS 106 e 107) fez o
-            // provedor escreve-lo dentro de <regTrib>, onde o schema 1.01 do
-            // ADN so' aceita regApTribSN e regEspTrib — E1235. Se a rejeicao
-            // voltar igual, o problema nao esta' no nosso envio: esta' no
-            // gerador do provedor emitindo campo da NT 009 num DPS 1.01.
-            regApIBSCBSSN: regimeApuracaoIbsCbs,
+            // - v8 do layout condicionava a "opSimpNac (OptSN) = 2, 3 ou 4";
+            // - 23/10: o suporte (ticket 49872934516) mandou enviar conforme a
+            //   v9, que tirou essa condicao — passamos a enviar sempre
+            //   (405d648);
+            // - 23/10, RPS 108: o provedor escreveu <regApIBSCBSSN> dentro de
+            //   <regTrib> e o ADN recusou (E1235, "expected regApTribSN,
+            //   regEspTrib");
+            // - 04/11: o mesmo suporte pediu para remover a tag. Como quem
+            //   monta o DPS e' o gerador deles, remover do nosso RPS e' o que
+            //   faz a tag sumir — e para optante o gerador ja' nao a escrevia
+            //   (as notas da Clapp e da Armazem sao autorizadas mandando o
+            //   campo), entao o corte fica so' fora do Simples.
+            ...(optanteSimples ? { regApIBSCBSSN: regimeApuracaoIbsCbs } : {}),
             // Campos da Reforma Tributária (Layout NFS-e RT v8). Omitidos
             // quando não informados — a nota continua saindo como antes.
             // Todos moram no grupo <IBSCBS> da DPS, que só é válido com
