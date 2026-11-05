@@ -38,3 +38,42 @@ export const INF_CPL_MAX_LENGTH = 5000;
 export function sanitizeInfCpl(input?: string | null): string {
   return sanitizeFiscalText(input).slice(0, INF_CPL_MAX_LENGTH);
 }
+
+/**
+ * Deixa todo texto de um payload fiscal valido para o schema da NF-e.
+ *
+ * Os tipos string do leiaute usam o padrao
+ * `[!-y]{1}[ -y]{0,}[!-y]{1}|[!-y]{1}`: espaco no comeco ou no fim reprova, e
+ * caractere de controle tambem. Dado vindo de migracao costuma trazer esses
+ * espacos, e a SEFAZ responde com um SAXParseException que aponta a coluna do
+ * XML — nunca o campo —, o que torna o diagnostico caro.
+ *
+ * Normalizar o payload inteiro de uma vez cobre tambem os campos que ninguem
+ * lembraria de tratar um a um.
+ *
+ * Espaco no MEIO do texto e permitido pelo padrao e fica intacto: colapsar
+ * mudaria o dado sem necessidade.
+ */
+export function normalizeFiscalStrings<T>(valor: T): T {
+  if (typeof valor === 'string') {
+    // eslint-disable-next-line no-control-regex
+    return valor.replace(/[\x00-\x1F\x7F]/g, '').trim() as unknown as T;
+  }
+
+  if (Array.isArray(valor)) {
+    return valor.map((item) => normalizeFiscalStrings(item)) as unknown as T;
+  }
+
+  // Date vira string na serializacao; percorrer suas propriedades a destruiria.
+  if (valor instanceof Date) return valor;
+
+  if (valor && typeof valor === 'object') {
+    const saida: Record<string, unknown> = {};
+    for (const [chave, item] of Object.entries(valor)) {
+      saida[chave] = normalizeFiscalStrings(item);
+    }
+    return saida as unknown as T;
+  }
+
+  return valor;
+}

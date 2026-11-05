@@ -1,6 +1,7 @@
 import {
   INF_CPL_MAX_LENGTH,
   sanitizeFiscalText,
+  normalizeFiscalStrings,
   sanitizeInfCpl,
 } from './fiscal-text.util';
 
@@ -59,5 +60,48 @@ describe('sanitizeInfCpl', () => {
 
   it('limpa antes de truncar', () => {
     expect(sanitizeInfCpl('  Pedido' + TAB + '4821  ')).toBe('Pedido 4821');
+  });
+});
+
+/**
+ * O caso real: cliente migrado com Inscricao Municipal "630041430 " — espaco no
+ * fim. O schema da NF-e reprovou e a SEFAZ devolveu um SAXParseException com a
+ * coluna do XML, sem dizer o campo.
+ */
+describe('normalizeFiscalStrings', () => {
+  it('tira espaco das pontas de qualquer texto do payload', () => {
+    const payload = {
+      emit: { IM: '630041430 ', xNome: '  SPARTA CVL LTDA' },
+    };
+
+    expect(normalizeFiscalStrings(payload)).toEqual({
+      emit: { IM: '630041430', xNome: 'SPARTA CVL LTDA' },
+    });
+  });
+
+  it('preserva espaco no meio, que o padrao permite', () => {
+    expect(normalizeFiscalStrings({ x: 'RUA DAS  FLORES' })).toEqual({
+      x: 'RUA DAS  FLORES',
+    });
+  });
+
+  it('percorre listas aninhadas', () => {
+    const payload = { det: [{ prod: { xProd: 'Adesivo ' } }] };
+
+    expect(normalizeFiscalStrings(payload)).toEqual({
+      det: [{ prod: { xProd: 'Adesivo' } }],
+    });
+  });
+
+  it('nao mexe em numero, booleano, nulo nem indefinido', () => {
+    const payload = { n: 14, b: true, z: null, u: undefined };
+
+    expect(normalizeFiscalStrings(payload)).toEqual(payload);
+  });
+
+  it('mantem Date intacta', () => {
+    const data = new Date('2026-11-05T10:00:00Z');
+
+    expect(normalizeFiscalStrings({ d: data }).d).toBe(data);
   });
 });

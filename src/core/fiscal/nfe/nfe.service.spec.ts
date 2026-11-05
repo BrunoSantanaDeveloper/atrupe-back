@@ -2111,6 +2111,46 @@ describe('NfeService', () => {
       });
     });
 
+    /**
+     * Cliente migrado trouxe a Inscricao Municipal como "630041430 ". O
+     * schema da NF-e proibe espaco nas pontas e a rejeicao vinha como
+     * SAXParseException apontando a coluna do XML, sem dizer o campo.
+     */
+    describe('texto vindo de dado migrado', () => {
+      const enviado = () =>
+        invoicyApiService.emitNfe.mock.calls[0][1][0].Documento;
+
+      const comEmpresa = (over) =>
+        invoicyService.getConfig.mockResolvedValue({
+          ...mockConfig,
+          company: { ...mockConfig.company, ...over },
+        });
+
+      it('tira o espaco do fim da inscricao municipal', async () => {
+        comEmpresa({ municipalRegistration: '630041430 ' });
+
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(enviado().emit.IM).toBe('630041430');
+      });
+
+      it('omite a inscricao municipal quando ela e so espaco', async () => {
+        comEmpresa({ municipalRegistration: '   ' });
+
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(enviado().emit.IM).toBeUndefined();
+      });
+
+      it('tira o espaco das pontas da razao social', async () => {
+        comEmpresa({ legalName: '  SPARTA CVL LTDA  ' });
+
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(enviado().emit.xNome).toBe('SPARTA CVL LTDA');
+      });
+    });
+
     it('should handle Invoicy failure', async () => {
       invoicyApiService.emitNfe.mockResolvedValue([
         { Codigo: 225, Descricao: 'Rejeitado pela SEFAZ' },

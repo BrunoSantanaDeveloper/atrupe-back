@@ -27,7 +27,11 @@ import {
 import { fetchCepData } from '../utils/cep.util';
 import { getTPag } from '../utils/payment-method-map';
 import { resolveCommercialQuantity } from '../utils/commercial-quantity.util';
-import { sanitizeInfCpl } from '../utils/fiscal-text.util';
+import {
+  normalizeFiscalStrings,
+  sanitizeFiscalText,
+  sanitizeInfCpl,
+} from '../utils/fiscal-text.util';
 import {
   parseProjectDayBoundary,
   toProjectDateKey,
@@ -2570,7 +2574,12 @@ export class NfeService {
             CNPJ_emit: (config.company.cnpj || '').replace(/\D/g, ''),
             xNome: config.company.legalName || '',
             IE: (config.company.stateRegistration || '').replace(/\D/g, ''),
-            IM: config.company.municipalRegistration || undefined,
+            // IM com espaco sobrando (comum em dado migrado) reprovava no
+            // schema; so espacos vira vazio, que tambem reprova, e o campo e
+            // opcional — entao sai do payload.
+            IM:
+              sanitizeFiscalText(config.company.municipalRegistration) ||
+              undefined,
             CRT: config.emitCrt || 1,
             enderEmit: {
               xLgr: config.company.address.street || '',
@@ -2800,7 +2809,10 @@ export class NfeService {
       }
 
       return {
-        invoicyRequest,
+        // Normaliza o payload inteiro: espaco nas pontas e caractere de
+        // controle reprovam no schema da NF-e, e um campo esquecido custa
+        // uma rejeicao ilegivel para o cliente.
+        invoicyRequest: normalizeFiscalStrings(invoicyRequest),
         impostosCalculados,
         resolvedCfops,
         tipoDocumento,
