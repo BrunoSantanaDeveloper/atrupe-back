@@ -420,6 +420,11 @@ export class NfseService {
       valorDeducoes: 0,
       aliquotaIss: config.aliquotaIss || 0,
       issRetido: false,
+      // Padrão do emissor para o Indicador de Operação. A tela precisa dele
+      // para saber se o cIndOp já está resolvido quando o serviço tem CST
+      // IBS/CBS — sem isso ela pediria um campo que a nota já teria.
+      indicadorOperacaoPadrao:
+        (config as any).indicadorOperacaoNfse?.trim() || null,
     };
   }
 
@@ -1274,11 +1279,59 @@ export class NfseService {
     };
   }
 
+  /**
+   * O que a prefeitura passa a exigir quando o grupo IBS/CBS vai na nota.
+   *
+   * Declarado o grupo (CST + classificação), o Ambiente Nacional cobra também
+   * o item da NBS (E0322) e o Indicador de Operação (E0860). Nenhum dos dois
+   * era pedido em lugar nenhum: a Fenix descobriu os dois por tentativa e
+   * erro, uma emissão recusada para cada. Como a recusa só aparece depois de
+   * consumir um número de RPS, é melhor barrar antes de transmitir.
+   *
+   * Vale para quem declara o grupo. Serviço sem CST continua emitindo como
+   * sempre — é o caso da maioria da base hoje.
+   */
+  private bloqueiosDoGrupoIbsCbs(dto: EmitNfseDto, config: any): string[] {
+    if (!(dto.cstIbsCbs && dto.codClassificacao)) return [];
+
+    const bloqueios: string[] = [];
+    const preenchido = (valor?: string | null) => Boolean(valor?.trim());
+
+    // O cIndOp da emissão cai no padrão do emissor; só falta de verdade
+    // quando nenhum dos dois existe.
+    if (!preenchido(dto.cIndOp) && !preenchido(config?.indicadorOperacaoNfse)) {
+      bloqueios.push(
+        'Informe o Indicador de Operação (cIndOp): ele é obrigatório quando o serviço tem CST IBS/CBS. ' +
+          'Preencha em Campos adicionais na emissão ou cadastre o padrão do emissor em Configurações > Nota Fiscal > Reforma Tributária.',
+      );
+    }
+
+    // O payload usa o NBS do item e, sem ele, o do serviço: um item sem NBS
+    // nenhum é o que a prefeitura recusa.
+    const itens = dto.itens ?? [];
+    const todoItemTemNbs =
+      itens.length > 0 && itens.every((item) => preenchido(item.nbs));
+    if (!preenchido(dto.nbs) && !todoItemTemNbs) {
+      bloqueios.push(
+        'Informe o código NBS: ele é obrigatório quando o serviço tem CST IBS/CBS. ' +
+          'Cadastre o NBS em Configurações > Nota Fiscal > Lista de Serviços.',
+      );
+    }
+
+    return bloqueios;
+  }
+
   async emit(companyId: string, dto: EmitNfseDto) {
     const { config, environment } = await this.resolveNfseEmissionContext(
       companyId,
       dto,
     );
+
+    const bloqueios = this.bloqueiosDoGrupoIbsCbs(dto, config);
+    if (bloqueios.length > 0) {
+      throw new BadRequestException(bloqueios.join(' '));
+    }
+
     const valores = this.computeNfseValores(dto, config);
     const { valorServicos, valorDeducoes, baseCalculo, aliquotaIss, valorIss } =
       valores;
@@ -1977,9 +2030,13 @@ export class NfseService {
       );
     }
 
+    // Os mesmos bloqueios que a emissão aplica: a conferência é onde eles
+    // precisam aparecer, antes de consumir um número de RPS.
+    const bloqueios = this.bloqueiosDoGrupoIbsCbs(dto, config);
+
     return {
-      podeEmitir: true,
-      bloqueios: [],
+      podeEmitir: bloqueios.length === 0,
+      bloqueios,
       avisos,
       documento: {
         modelo: 'NFSE',

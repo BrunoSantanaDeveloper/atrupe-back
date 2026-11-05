@@ -516,8 +516,13 @@ describe('NfseService', () => {
       };
 
       // cIndOp mora no grupo IBSCBS, que so' e' valido com os valores: os
-      // testes informam CST e cClassTrib como o cadastro faz.
-      const grupo = { cstIbsCbs: '000', codClassificacao: '000001' };
+      // testes informam CST e cClassTrib como o cadastro faz. O NBS vai
+      // junto porque, declarado o grupo, a prefeitura passa a exigi-lo.
+      const grupo = {
+        cstIbsCbs: '000',
+        codClassificacao: '000001',
+        nbs: '121012200',
+      };
 
       it('usa o padrao do emissor quando a emissao nao informa', async () => {
         await comIndicadorPadrao('100301');
@@ -577,6 +582,100 @@ describe('NfseService', () => {
         });
 
         expect(rpsEnviado()).not.toHaveProperty('cIndOp');
+      });
+    });
+
+    /**
+     * Declarado o grupo IBS/CBS, a prefeitura cobra o item da NBS (E0322) e o
+     * Indicador de Operação (E0860). A Fenix descobriu os dois na recusa, uma
+     * emissão queimada para cada — barrar antes evita gastar número de RPS.
+     */
+    describe('exigencias do grupo IBS/CBS', () => {
+      const dtoComIbsCbs = (extras: Record<string, any> = {}) =>
+        ({
+          tomador: {
+            cnpj: '12345678901234',
+            razaoSocial: 'Cliente Teste LTDA',
+            endereco: 'Avenida Paulista',
+            numero: '1000',
+            bairro: 'Bela Vista',
+            cep: '01310100',
+            codigoMunicipio: '3550308',
+          },
+          codigoServico: '1.05',
+          codigoMunicipio: '4314902',
+          discriminacao: 'teste',
+          valorServicos: 100,
+          aliquotaIss: 2,
+          naturezaOperacao: 1,
+          cstIbsCbs: '000',
+          codClassificacao: '000001',
+          ...extras,
+        }) as any;
+
+      it('barra a emissao sem Indicador de Operacao e sem NBS', async () => {
+        await expect(
+          service.emit(mockCompanyId, dtoComIbsCbs()),
+        ).rejects.toThrow(/Indicador de Operação[\s\S]*NBS/);
+
+        expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
+        expect(prisma.nfse.create).not.toHaveBeenCalled();
+      });
+
+      it('o padrao do emissor resolve o Indicador de Operacao', async () => {
+        const configBase = await mockInvoicyService.getConfig();
+        mockInvoicyService.getConfig.mockResolvedValue({
+          ...configBase,
+          indicadorOperacaoNfse: '100301',
+        });
+        mockInvoicyApiService.emitNfse.mockResolvedValue(mockInvoicyResponse);
+
+        await service.emit(mockCompanyId, dtoComIbsCbs({ nbs: '121012200' }));
+
+        expect(invoicyApiService.emitNfse).toHaveBeenCalled();
+      });
+
+      it('NBS no item dispensa o do servico', async () => {
+        mockInvoicyApiService.emitNfse.mockResolvedValue(mockInvoicyResponse);
+
+        await service.emit(
+          mockCompanyId,
+          dtoComIbsCbs({
+            cIndOp: '100301',
+            itens: [
+              {
+                codigo: '1',
+                descricao: 'servico',
+                quantidade: 1,
+                valorUnitario: 100,
+                nbs: '121012200',
+              },
+            ],
+          }),
+        );
+
+        expect(invoicyApiService.emitNfse).toHaveBeenCalled();
+      });
+
+      // A base de hoje: quase todo serviço não tem CST. Esses não podem ser
+      // barrados por campos que a prefeitura só cobra de quem declara o grupo.
+      it('servico sem CST continua emitindo sem NBS nem cIndOp', async () => {
+        mockInvoicyApiService.emitNfse.mockResolvedValue(mockInvoicyResponse);
+
+        await service.emit(
+          mockCompanyId,
+          dtoComIbsCbs({ cstIbsCbs: undefined, codClassificacao: undefined }),
+        );
+
+        expect(invoicyApiService.emitNfse).toHaveBeenCalled();
+      });
+
+      it('a previa reprova a nota com o mesmo motivo', async () => {
+        const previa = await service.preview(mockCompanyId, dtoComIbsCbs());
+
+        expect(previa.podeEmitir).toBe(false);
+        expect(previa.bloqueios.join(' ')).toMatch(/Indicador de Operação/);
+        expect(previa.bloqueios.join(' ')).toMatch(/NBS/);
       });
     });
 
@@ -846,7 +945,9 @@ describe('NfseService', () => {
         orderId: mockOrderId,
         codigoServico: '1.05',
         discriminacao: 'Serviço de consultoria em TI',
-      });
+        // Obrigatorio junto do grupo IBS/CBS (E0860).
+        cIndOp: '100301',
+      } as any);
 
       const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
       const servico = documentos[0].Documento.RPS[0].Servico;
@@ -1179,7 +1280,8 @@ describe('NfseService', () => {
         orderId: mockOrderId,
         codigoServico: '1.05',
         discriminacao: 'Serviço de consultoria em TI',
-      });
+        cIndOp: '100301',
+      } as any);
 
       const [, documentos] = invoicyApiService.emitNfse.mock.calls.at(-1);
       const rps = documentos[0].Documento.RPS[0];
@@ -1214,6 +1316,7 @@ describe('NfseService', () => {
         // nao vao (a DPS sairia com <IBSCBS> sem <valores>).
         cstIbsCbs: '000',
         codClassificacao: '000001',
+        nbs: '121012200',
         cIndOp: '100301',
         indFinal: 0,
         indDest: 0,
@@ -1312,6 +1415,8 @@ describe('NfseService', () => {
           naturezaOperacao: 1,
           cstIbsCbs: '000',
           codClassificacao: '000001',
+          nbs: '121012200',
+          cIndOp: '100301',
           tpOper: 3,
         } as any);
 
@@ -1326,6 +1431,8 @@ describe('NfseService', () => {
           discriminacao: 'Servico de consultoria em TI',
           cstIbsCbs: '000',
           codClassificacao: '000001',
+          nbs: '121012200',
+          cIndOp: '100301',
           tpOper: 3,
         } as any);
 
