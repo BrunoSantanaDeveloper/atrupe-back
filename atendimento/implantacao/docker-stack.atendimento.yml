@@ -1,0 +1,145 @@
+# Atendimento no WhatsApp (kit whatsapp-support 1.0.0): Chatwoot, Postgres, Redis e o robô, no mesmo
+# Swarm e atrás do mesmo Traefik da API. Adaptado de atendimento/modelos/implantacao/compose.yml.
+# Quem implanta é o implantar.sh, nesta pasta (ele constrói a imagem do robô e prepara o banco).
+#
+#   https://atendimento.atrupe.com.br         painel do Chatwoot
+#   https://atendimento.atrupe.com.br/robo/   o robô (o Chatwoot avisa em /robo/chatwoot)
+#
+# Os nomes na rede interna têm o prefixo "atendimento-" de propósito: o Chatwoot e o robô também ficam na
+# atrupe_network (a do Traefik e da API), onde "postgres" ou "redis" poderiam achar os serviços da API.
+# Rota não oficial (OpenWA): fora deste stack; ver atendimento/modelos/implantacao.
+
+version: '3.8'
+
+x-chatwoot-env: &chatwoot-env
+  NODE_ENV: production
+  RAILS_ENV: production
+  INSTALLATION_ENV: docker
+
+x-deploy: &deploy
+  replicas: 1
+  placement:
+    constraints:
+      - node.role == manager
+  restart_policy:
+    condition: on-failure
+    delay: 10s
+    window: 120s
+
+services:
+  chatwoot-rails:
+    image: chatwoot/chatwoot:v4.19.1-ce
+    env_file: /home/ubuntu/atendimento/chatwoot.env
+    environment: *chatwoot-env
+    entrypoint: docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    volumes:
+      - chatwoot_storage:/app/storage
+    networks:
+      interno:
+        aliases:
+          - atendimento-chatwoot
+      atrupe_network:
+        aliases:
+          - atendimento-chatwoot
+    deploy:
+      <<: *deploy
+      resources:
+        limits:
+          memory: 1536M
+        reservations:
+          memory: 768M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=atrupe_network"
+        - "traefik.http.routers.atendimento.rule=Host(`atendimento.atrupe.com.br`)"
+        - "traefik.http.routers.atendimento.entrypoints=websecure"
+        - "traefik.http.routers.atendimento.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.atendimento.priority=1"
+        - "traefik.http.routers.atendimento.service=atendimento"
+        - "traefik.http.services.atendimento.loadbalancer.server.port=3000"
+        - "traefik.http.services.atendimento.loadbalancer.passhostheader=true"
+        - "traefik.http.middlewares.sslheader-atendimento.headers.customrequestheaders.X-Forwarded-Proto=https"
+        - "traefik.http.routers.atendimento.middlewares=sslheader-atendimento@docker"
+
+  chatwoot-sidekiq:
+    image: chatwoot/chatwoot:v4.19.1-ce
+    env_file: /home/ubuntu/atendimento/chatwoot.env
+    environment: *chatwoot-env
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    volumes:
+      - chatwoot_storage:/app/storage
+    networks:
+      - interno
+    deploy:
+      <<: *deploy
+      resources:
+        limits:
+          memory: 1024M
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    env_file: /home/ubuntu/atendimento/chatwoot.env
+    environment:
+      POSTGRES_DB: chatwoot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      interno:
+        aliases:
+          - atendimento-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d chatwoot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      <<: *deploy
+
+  redis:
+    image: redis:7-alpine
+    env_file: /home/ubuntu/atendimento/chatwoot.env
+    command: ["sh", "-c", "redis-server --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis_data:/data
+    networks:
+      interno:
+        aliases:
+          - atendimento-redis
+    deploy:
+      <<: *deploy
+
+  robo:
+    image: ${ATENDIMENTO_ROBO_IMAGE:-atrupe/atendimento-robo:kit-1.0.0}
+    env_file: /home/ubuntu/atendimento/robo.env
+    networks:
+      - interno
+      - atrupe_network
+    deploy:
+      <<: *deploy
+      resources:
+        limits:
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=atrupe_network"
+        - "traefik.http.routers.atendimento-robo.rule=Host(`atendimento.atrupe.com.br`) && PathPrefix(`/robo`)"
+        - "traefik.http.routers.atendimento-robo.entrypoints=websecure"
+        - "traefik.http.routers.atendimento-robo.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.atendimento-robo.priority=100"
+        - "traefik.http.routers.atendimento-robo.service=atendimento-robo"
+        - "traefik.http.middlewares.atendimento-robo-prefixo.stripprefix.prefixes=/robo"
+        - "traefik.http.routers.atendimento-robo.middlewares=atendimento-robo-prefixo@docker"
+        - "traefik.http.services.atendimento-robo.loadbalancer.server.port=8080"
+
+networks:
+  interno:
+    driver: overlay
+    attachable: true
+  atrupe_network:
+    external: true
+
+volumes:
+  chatwoot_storage:
+  postgres_data:
+  redis_data:
