@@ -522,6 +522,92 @@ describe('AtendimentoService', () => {
     });
   });
 
+  describe('conexão não oficial (OpenWA)', () => {
+    beforeEach(() => {
+      Object.assign(process.env, {
+        OPENWA_URL: 'http://atendimento-openwa:2785',
+        OPENWA_PUBLIC_URL: 'https://wa.atrupe.com.br',
+        OPENWA_API_KEY: 'chave',
+      });
+    });
+
+    it('cada conexão usa uma sessão nova, e o estado mostra o QR da última', async () => {
+      const { service, kit, data } = makeService({
+        store: makeStore({
+          state: { account_id: 7, bot_token: 'bot', service_token: 's' },
+        }),
+      });
+      const names: string[] = [];
+      kit.provision.connectOpenWA.mockImplementation(
+        async ({ state, input }) => {
+          names.push(input.sessionName);
+          return {
+            state: {
+              ...state,
+              inboxes: [
+                ...(state.inboxes ?? []),
+                {
+                  id: names.length,
+                  route: 'nao_oficial',
+                  session_id: `s${names.length}`,
+                },
+              ],
+            },
+          };
+        },
+      );
+      kit.provision.whatsappStatus.mockResolvedValue({
+        status: 'qr_ready',
+        qrCode: 'data:image/png;base64,QR',
+      });
+
+      expect(
+        (await service.connectWhatsapp(superadmin, { route: 'nao_oficial' }))
+          .status,
+      ).toBe(200);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      await service.connectWhatsapp(superadmin, { route: 'nao_oficial' });
+
+      expect(names).toHaveLength(2);
+      expect(names[0]).not.toBe(names[1]);
+      for (const name of names) {
+        expect(name).toMatch(/^atendimento-plataforma-[a-z0-9]+$/);
+        expect(name.length).toBeLessThanOrEqual(50);
+      }
+      expect(kit.provision.connectOpenWA).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            relayEmail: 'repasse+plataforma@atrupe.com.br',
+            chatwootPublicUrl: 'https://atendimento.atrupe.com.br',
+            openwaUrl: 'http://atendimento-openwa:2785',
+            openwaPublicUrl: 'https://wa.atrupe.com.br',
+          }),
+        }),
+      );
+
+      const status = await service.whatsapp(superadmin);
+      expect(status.body).toEqual({
+        connected: false,
+        route: 'nao_oficial',
+        status: 'qr_ready',
+        qrCode: 'data:image/png;base64,QR',
+      });
+      expect(kit.provision.whatsappStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 's2' }),
+      );
+      expect(data.state.inboxes).toHaveLength(2);
+    });
+
+    it('só o superadmin conecta o número', async () => {
+      const { service, kit } = makeService();
+      expect(
+        (await service.connectWhatsapp(outsider, { route: 'nao_oficial' }))
+          .status,
+      ).toBe(403);
+      expect(kit.provision.connectOpenWA).not.toHaveBeenCalled();
+    });
+  });
+
   it('a conferência diária usa os superadmins ativos como equipe', async () => {
     const { service, kit, store } = makeService({
       store: makeStore({ state: { account_id: 7, staff: { 'u-velho': 5 } } }),

@@ -4,10 +4,10 @@
 #
 #   https://atendimento.atrupe.com.br         painel do Chatwoot
 #   https://atendimento.atrupe.com.br/robo/   o robô (o Chatwoot avisa em /robo/chatwoot)
+#   https://wa.atrupe.com.br/api/             o OpenWA (conexão não oficial pelo WhatsApp Web)
 #
 # Os nomes na rede interna têm o prefixo "atendimento-" de propósito: o Chatwoot e o robô também ficam na
 # atrupe_network (a do Traefik e da API), onde "postgres" ou "redis" poderiam achar os serviços da API.
-# Rota não oficial (OpenWA): fora deste stack; ver atendimento/modelos/implantacao.
 
 version: '3.8'
 
@@ -132,6 +132,42 @@ services:
         - "traefik.http.routers.atendimento-robo.middlewares=atendimento-robo-prefixo@docker"
         - "traefik.http.services.atendimento-robo.loadbalancer.server.port=8080"
 
+  # Rota não oficial: o número conectado como um aparelho do WhatsApp Web (QR), com o plugin
+  # chatwoot-adapter, que o servidor do Atrupe instala pela API. Só /api fica público (protegido pela
+  # API_MASTER_KEY e pelos avisos assinados do Chatwoot); o painel do OpenWA não é exposto.
+  openwa:
+    image: ghcr.io/rmyndharis/openwa:0.29.1
+    env_file: /home/ubuntu/atendimento/openwa.env
+    volumes:
+      - openwa_data:/app/data
+      # O Chromium do whatsapp-web.js precisa de mais que os 64 MB padrão de /dev/shm.
+      - type: tmpfs
+        target: /dev/shm
+        tmpfs:
+          size: 268435456
+    networks:
+      interno:
+        aliases:
+          - atendimento-openwa
+      atrupe_network:
+        aliases:
+          - atendimento-openwa
+    deploy:
+      <<: *deploy
+      resources:
+        limits:
+          memory: 1536M
+        reservations:
+          memory: 512M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=atrupe_network"
+        - "traefik.http.routers.atendimento-wa.rule=Host(`wa.atrupe.com.br`) && PathPrefix(`/api`)"
+        - "traefik.http.routers.atendimento-wa.entrypoints=websecure"
+        - "traefik.http.routers.atendimento-wa.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.atendimento-wa.service=atendimento-wa"
+        - "traefik.http.services.atendimento-wa.loadbalancer.server.port=2785"
+
 networks:
   interno:
     driver: overlay
@@ -143,3 +179,4 @@ volumes:
   chatwoot_storage:
   postgres_data:
   redis_data:
+  openwa_data:

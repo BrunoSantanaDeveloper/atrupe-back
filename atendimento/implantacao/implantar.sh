@@ -3,8 +3,9 @@
 #
 #   cd /home/ubuntu/atrupe-back && bash atendimento/implantacao/implantar.sh
 #
-# Pré-requisitos (LEIA-ME.md, nesta pasta): DNS de atendimento.atrupe.com.br apontando para o servidor e
-# os arquivos /home/ubuntu/atendimento/chatwoot.env e robo.env, com os segredos (nunca no git).
+# Pré-requisitos (LEIA-ME.md, nesta pasta): DNS de atendimento.atrupe.com.br e wa.atrupe.com.br apontando
+# para o servidor e os arquivos /home/ubuntu/atendimento/chatwoot.env, robo.env e openwa.env, com os
+# segredos (nunca no git).
 #
 # O que faz, nesta ordem, e pode rodar de novo sem estragar nada:
 #   1. constrói a imagem do robô a partir de atendimento/base/bot (a versão do kit vai na tag);
@@ -21,7 +22,7 @@ CHATWOOT_IMAGE=chatwoot/chatwoot:v4.19.1-ce
 KIT_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$KIT_DIR/kit.json" | head -1)"
 export ATENDIMENTO_ROBO_IMAGE="atrupe/atendimento-robo:kit-${KIT_VERSION}"
 
-for file in chatwoot.env robo.env; do
+for file in chatwoot.env robo.env openwa.env; do
   if [ ! -s "$ENV_DIR/$file" ]; then
     echo "Falta $ENV_DIR/$file (veja atendimento/implantacao/LEIA-ME.md)." >&2
     exit 1
@@ -66,6 +67,7 @@ docker service update --force --quiet "${STACK}_chatwoot-rails" >/dev/null
 docker service update --force --quiet "${STACK}_chatwoot-sidekiq" >/dev/null
 wait_for_service "${STACK}_chatwoot-rails" 300
 wait_for_service "${STACK}_robo" 120
+wait_for_service "${STACK}_openwa" 180
 
 echo "4/4 Marca e tema do Atrupe no Chatwoot"
 run_chatwoot \
@@ -74,4 +76,4 @@ run_chatwoot \
   -v "$KIT_DIR/gerado:/kit/gerado:ro" \
   "$CHATWOOT_IMAGE" bundle exec rails runner /kit/apply-config.rb
 
-echo "Pronto: https://atendimento.atrupe.com.br (robô em /robo/health)."
+echo "Pronto: https://atendimento.atrupe.com.br (robô em /robo/health, OpenWA em https://wa.atrupe.com.br/api/health)."

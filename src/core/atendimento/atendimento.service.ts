@@ -583,7 +583,9 @@ export class AtendimentoService {
       platformToken: env.platformToken(),
       state,
       input: {
-        sessionName: `atendimento-${PLATFORM_TENANT}`,
+        // Nome novo a cada conexão: reconectar (QR vencido, celular que
+        // saiu) cria outra sessão, e o OpenWA recusa nome repetido.
+        sessionName: `atendimento-${PLATFORM_TENANT}-${Date.now().toString(36)}`,
         relayEmail: `repasse+${PLATFORM_TENANT}@${env.serviceEmailDomain()}`,
         chatwootPublicUrl: env.chatwootPublicUrl(),
         openwaUrl: env.openwaUrl(),
