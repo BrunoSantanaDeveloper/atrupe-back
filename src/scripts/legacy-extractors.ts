@@ -273,6 +273,55 @@ export const SUPPLIER_EXTRACTOR: LegacyExtractor = {
   }),
 };
 
+/**
+ * Unidade comercial do serviço ou, sem ela, a mais usada nos itens de venda do
+ * produto.
+ *
+ * Foi a única fonte da unidade até 11/2026 e só servia quando o item de venda
+ * guardava o m²: na base da Terabyte todo item diz "UN", inclusive os 1.773
+ * vendidos com largura e comprimento, e os 70 produtos por m² entraram como
+ * unidade avulsa ou sem unidade. Continua como reserva de `PRODUCT_UNIT_SQL` e
+ * é o que o reparo das contas já migradas usa para saber o que a carga gravou.
+ */
+export const LEGACY_SALE_UNIT_SQL = (
+  base: string,
+  productAlias: string,
+  serviceAlias: string,
+) => `
+  COALESCE(NULLIF(${serviceAlias}.ser_un_comercial, ''),
+    (SELECT i.vendaitem_un_com
+       FROM ${base}.sales_venda_item i
+      WHERE i.vendaitem_fkidproduto = ${productAlias}.idproduto
+        AND i.fkidtipovendaitem = ${REAL_ITEM_TYPE}
+        AND i.vendaitem_un_com <> ''
+      GROUP BY i.vendaitem_un_com
+      ORDER BY COUNT(*) DESC
+      LIMIT 1))
+`;
+
+/**
+ * Unidade em que o legado cobra o produto.
+ *
+ * Quem a define é o tipo de cálculo (`fkidtipocalculo`, no produto e no
+ * serviço), que aponta para a tabela de unidades comerciais
+ * `ven_servico_un_com`: 1 UN, 2 M2, 3 KG, 4 LT, 5 M, 6 HH, 7 KM. A unidade do
+ * item de venda é a da nota e quase sempre diz "UN", mesmo no produto por m².
+ * Nas oito bases migradas até 11/2026 o tipo do produto e o do serviço nunca
+ * divergiram; o do produto vem primeiro.
+ */
+export const PRODUCT_UNIT_SQL = (
+  base: string,
+  productAlias: string,
+  serviceAlias: string,
+) => `
+  COALESCE(
+    (SELECT NULLIF(u.uncom, '') FROM ${base}.ven_servico_un_com u
+      WHERE u.iduncom = ${productAlias}.fkidtipocalculo),
+    (SELECT NULLIF(u.uncom, '') FROM ${base}.ven_servico_un_com u
+      WHERE u.iduncom = ${serviceAlias}.fkidtipocalculo),
+    ${LEGACY_SALE_UNIT_SQL(base, productAlias, serviceAlias)})
+`;
+
 export const PRODUCT_EXTRACTOR: LegacyExtractor = {
   entity: 'product',
   label: 'Produtos',
@@ -283,19 +332,12 @@ export const PRODUCT_EXTRACTOR: LegacyExtractor = {
       p.descricao               AS descricao,
       s.setor                   AS setor,
       cat.categoria             AS grupo,
-      -- A unidade quase nunca está no cadastro do serviço (73 de 81 vazias no
-      -- piloto); quem a guarda é o item de venda. Sem isso todo produto entra
-      -- como unidade avulsa, e área vira "UN".
-      COALESCE(NULLIF(sv.ser_un_comercial, ''),
-        (SELECT i.vendaitem_un_com
-           FROM ${base}.sales_venda_item i
-          WHERE i.vendaitem_fkidproduto = p.idproduto
-            AND i.fkidtipovendaitem = ${REAL_ITEM_TYPE}
-            AND i.vendaitem_un_com <> ''
-          GROUP BY i.vendaitem_un_com
-          ORDER BY COUNT(*) DESC
-          LIMIT 1)) AS unidadeMedida,
-      sv.valor                  AS valorUnitario
+      ${PRODUCT_UNIT_SQL(base, 'p', 'sv')} AS unidadeMedida,
+      sv.valor                  AS valorUnitario,
+      -- Produto fora de linha continua no legado porque as vendas antigas
+      -- apontam para ele. Sem o status, ele entrava ativo e aparecia ao lado
+      -- do que substituiu, como se fosse duplicado.
+      p.fkidstatus              AS ativo
     FROM ${base}.est_produto p
     LEFT JOIN ${base}.emp_setor s             ON s.idsetor = p.fkidsetor
     LEFT JOIN ${base}.est_produto_categoria cat ON cat.idcategoria = p.fkidcategoria
@@ -310,6 +352,8 @@ export const PRODUCT_EXTRACTOR: LegacyExtractor = {
     grupo: text(row.grupo),
     unidadeMedida: text(row.unidadeMedida),
     valorUnitario: text(row.valorUnitario),
+    // fkidstatus: 1 = ativo
+    ativo: toSimNao(row.ativo),
   }),
 };
 

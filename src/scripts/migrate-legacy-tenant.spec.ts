@@ -3,6 +3,7 @@ import {
   onlyDigits,
   prepareReferences,
   prepareStep,
+  unitBreakdown,
 } from './migrate-legacy-tenant';
 import { EXTRACTORS } from './legacy-extractors';
 import { QUOTATION_IMPORT_SCHEMA } from '../core/import/schemas/quotation-import.schema';
@@ -247,6 +248,7 @@ describe('PRODUCT_EXTRACTOR', () => {
     grupo: 'Material de Impressão',
     unidadeMedida: '',
     valorUnitario: '18.87',
+    ativo: 1,
   };
 
   it('usa o código já desambiguado pela consulta', () => {
@@ -255,6 +257,14 @@ describe('PRODUCT_EXTRACTOR', () => {
     expect(row.codigo).toBe('WBRV-47');
     expect(row.setor).toBe('Impressão');
     expect(row.valorUnitario).toBe('18.87');
+  });
+
+  it('traz o produto fora de linha como inativo', () => {
+    // Na Terabyte, "Banner Papel A1" estava inativo no legado, entrou ativo e
+    // apareceu ao lado do "Banner Papel" como se fosse duplicado.
+    expect(PRODUCT_EXTRACTOR.map(legacyRow).ativo).toBe('SIM');
+    expect(PRODUCT_EXTRACTOR.map({ ...legacyRow, ativo: 0 }).ativo).toBe('NAO');
+    expect(PRODUCT_EXTRACTOR.sql('acn_1')).toContain('p.fkidstatus');
   });
 
   it('deriva código único apenas quando o original repete', () => {
@@ -652,14 +662,43 @@ describe('idempotência das vendas', () => {
 });
 
 describe('unidade de medida do produto', () => {
-  it('cai para a unidade do item de venda quando o serviço não a informa', () => {
-    // No piloto, 73 dos 81 serviços não têm unidade cadastrada; quem a guarda
-    // é o item de venda. Sem isso, produto vendido em m² entrava como unidade.
+  it('tira a unidade do tipo de cálculo do produto, depois do serviço', () => {
+    // O item de venda guarda a unidade da nota, que na Terabyte é "UN" até
+    // no banner vendido por m². Quem diz como o legado cobra é o tipo de
+    // cálculo, que aponta para a tabela de unidades comerciais.
+    const sql = PRODUCT_EXTRACTOR.sql('acn_1');
+
+    const doProduto = sql.indexOf('= p.fkidtipocalculo');
+    const doServico = sql.indexOf('= sv.fkidtipocalculo');
+    const daVenda = sql.indexOf('ser_un_comercial');
+
+    expect(sql).toContain('acn_1.ven_servico_un_com');
+    expect(doProduto).toBeGreaterThan(-1);
+    expect(doServico).toBeGreaterThan(doProduto);
+    expect(daVenda).toBeGreaterThan(doServico);
+  });
+
+  it('cai para a unidade do serviço e do item de venda sem tipo de cálculo', () => {
+    // Tipo de cálculo zerado não casa com a tabela de unidades: vale a regra
+    // anterior, que no piloto achava o m² no item de venda.
     const sql = PRODUCT_EXTRACTOR.sql('acn_1');
 
     expect(sql).toContain("NULLIF(sv.ser_un_comercial, '')");
     expect(sql).toContain('i.vendaitem_un_com');
     expect(sql).toContain('ORDER BY COUNT(*) DESC');
+  });
+});
+
+describe('unitBreakdown', () => {
+  it('conta os produtos por unidade, da mais usada para a menos', () => {
+    expect(
+      unitBreakdown([
+        { unidadeMedida: 'UN' },
+        { unidadeMedida: 'M2' },
+        { unidadeMedida: 'un' },
+        { unidadeMedida: '' },
+      ]),
+    ).toBe('UN 2 · M2 1 · sem unidade 1');
   });
 });
 
@@ -856,6 +895,102 @@ describe('prepareStep', () => {
 
     expect(prep.adopted).toBe(2);
     expect(prep.notes.join(' ')).toMatch(/não têm item cadastrado.*30/s);
+  });
+
+  it('na conta criada para a migração, tira os exemplos de linha antes da carga', async () => {
+    // Na Terabyte, o exemplo "Banner" ficou no lugar do "Banner" do legado com
+    // o preço de exemplo, e o código ADREC do exemplo impediu a carga de criar
+    // o "Adesivo Jateado + Recortes".
+    const exemplos = [
+      { id: 'ex-1', code: 'ADREC' },
+      { id: 'ex-2', code: 'PNFLT' },
+    ];
+    const retire = jest.fn().mockResolvedValue(['ADREC → ADREC-EXEMPLO']);
+    const adocoes = jest
+      .fn()
+      .mockResolvedValue({ adopted: [], withoutItem: [] });
+    const service = internals({
+      findExampleProducts: jest.fn().mockResolvedValue(exemplos),
+      retireExampleProducts: retire,
+      findProductAdoptions: adocoes,
+    });
+
+    const prep = await prepareStep(
+      service,
+      etapa('product'),
+      [{ codigo: 'ADREC', unidadeMedida: 'M2', ativo: 'SIM' }],
+      'company-1',
+      false,
+      true,
+    );
+
+    expect(retire).toHaveBeenCalledWith('company-1', exemplos, ['ADREC']);
+    expect(adocoes).toHaveBeenCalledWith(
+      expect.any(Array),
+      'company-1',
+      new Set(['ex-1', 'ex-2']),
+    );
+    expect(prep.notes.join(' ')).toMatch(
+      /2 produto\(s\) de exemplo da conta inativados.*ADREC → ADREC-EXEMPLO/,
+    );
+  });
+
+  it('na simulação, só avisa dos exemplos que sairão de linha', async () => {
+    const retire = jest.fn();
+    const service = internals({
+      findExampleProducts: jest
+        .fn()
+        .mockResolvedValue([{ id: 'ex-1', code: 'PNFLT' }]),
+      retireExampleProducts: retire,
+    });
+
+    const prep = await prepareStep(
+      service,
+      etapa('product'),
+      [],
+      'company-1',
+      true,
+      true,
+    );
+
+    expect(retire).not.toHaveBeenCalled();
+    expect(prep.notes.join(' ')).toMatch(
+      /1 produto\(s\) de exemplo.*serão inativados/,
+    );
+  });
+
+  it('na conta que já estava em uso, os exemplos são do cliente', async () => {
+    const procura = jest.fn();
+
+    await prepareStep(
+      internals({ findExampleProducts: procura }),
+      etapa('product'),
+      [],
+      'company-1',
+      false,
+      false,
+    );
+
+    expect(procura).not.toHaveBeenCalled();
+  });
+
+  it('mostra na simulação as unidades e os produtos que entram inativos', async () => {
+    // Unidade errada não reprova linha nenhuma: a contagem é o que deixa o
+    // operador ver, antes de gravar, uma gráfica sem nenhum produto por m².
+    const prep = await prepareStep(
+      internals(),
+      etapa('product'),
+      [
+        { unidadeMedida: 'UN', ativo: 'SIM' },
+        { unidadeMedida: 'M2', ativo: 'NAO' },
+        { unidadeMedida: 'UN', ativo: 'NAO' },
+      ],
+      'company-1',
+      true,
+    );
+
+    expect(prep.notes).toContain('Unidades: UN 2 · M2 1.');
+    expect(prep.notes.join(' ')).toMatch(/2 produto\(s\) inativo\(s\)/);
   });
 
   it('manda o histórico para série separada quando a conta tem documentos', async () => {

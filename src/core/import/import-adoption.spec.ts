@@ -99,6 +99,92 @@ describe('ImportService — conta já em uso', () => {
       expect(resultado.adopted).toEqual(['30']);
       expect(resultado.withoutItem).toEqual(['30']);
     });
+
+    it('não conta o exemplo que a carga vai inativar', async () => {
+      const db = prisma([
+        { id: 'ex-1', code: '10', legacyId: null, items: [{ id: 'i1' }] },
+      ]);
+
+      const resultado = await build(db).findProductAdoptions(
+        linhas,
+        'company-1',
+        new Set(['ex-1']),
+      );
+
+      expect(resultado.adopted).toEqual([]);
+    });
+  });
+
+  /**
+   * Conta criada só para a migração: os exemplos saem de linha antes da
+   * carga, e o que ocupa o código de um produto do legado libera o código.
+   */
+  describe('produtos de exemplo', () => {
+    it('acha só o exemplo sem vínculo e fora de documento', async () => {
+      const db = {
+        product: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'p1',
+              code: 'ADREC',
+              name: 'Adesivo Recorte',
+              isStandard: true,
+            },
+            { id: 'p2', code: 'BANNER', name: 'Banner', isStandard: false },
+            {
+              id: 'p3',
+              code: 'PLC',
+              name: 'Placa do cliente',
+              isStandard: false,
+            },
+          ]),
+        },
+      };
+
+      const exemplos = await build(db).findExampleProducts('company-1');
+
+      expect(exemplos.map((e: any) => e.id)).toEqual(['p1', 'p2']);
+      expect(db.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            companyId: 'company-1',
+            isImported: false,
+            legacyId: null,
+            quotationProduct: { none: {} },
+          },
+        }),
+      );
+    });
+
+    it('inativa os exemplos e libera o código que o legado usa', async () => {
+      const db = {
+        product: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue([{ code: 'ADREC' }, { code: 'PNFLT' }]),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      };
+
+      const renomeados = await build(db).retireExampleProducts(
+        'company-1',
+        [
+          { id: 'p1', code: 'ADREC' },
+          { id: 'p2', code: 'PNFLT' },
+        ],
+        ['ADREC', 'BAN06'],
+      );
+
+      expect(renomeados).toEqual(['ADREC → ADREC-EXEMPLO']);
+      expect(db.product.update).toHaveBeenCalledWith({
+        where: { id: 'p1' },
+        data: { isActive: false, code: 'ADREC-EXEMPLO' },
+      });
+      expect(db.product.update).toHaveBeenCalledWith({
+        where: { id: 'p2' },
+        data: { isActive: false },
+      });
+    });
   });
 
   describe('findProductToAdoptByName', () => {
@@ -120,14 +206,16 @@ describe('ImportService — conta já em uso', () => {
       expect(achado).toEqual({ id: 'p1' });
     });
 
-    it('só considera produto ainda sem vínculo com o legado', async () => {
+    it('só considera produto ativo e ainda sem vínculo com o legado', async () => {
+      // Inativo é o que o cliente tirou de linha — e o exemplo que a carga
+      // tira de linha numa conta criada para a migração.
       const db = prisma([]);
 
       await build(db).findProductToAdoptByName('Banner', 'company-1');
 
       expect(db.product.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { companyId: 'company-1', legacyId: null },
+          where: { companyId: 'company-1', legacyId: null, isActive: true },
         }),
       );
     });
