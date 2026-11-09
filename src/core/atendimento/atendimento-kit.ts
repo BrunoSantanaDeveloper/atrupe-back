@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'path';
 import { pathToFileURL } from 'url';
 
 import type * as BotContract from '../../../atendimento/base/server/bot-contract.mjs';
+import type * as Health from '../../../atendimento/base/server/health.mjs';
 import type * as Provision from '../../../atendimento/base/server/provision.mjs';
 import type * as Phone from '../../../atendimento/base/shared/phone.mjs';
 import type * as Report from '../../../atendimento/base/shared/report.mjs';
@@ -27,6 +28,7 @@ export type AtendimentoKit = {
   report: typeof Report;
   contract: typeof BotContract;
   provision: typeof Provision;
+  health: typeof Health;
   phone: typeof Phone;
 };
 
@@ -69,13 +71,15 @@ export function loadAtendimentoKit(): Promise<AtendimentoKit> {
       load<typeof Report>('shared/report.mjs'),
       load<typeof BotContract>('server/bot-contract.mjs'),
       load<typeof Provision>('server/provision.mjs'),
+      load<typeof Health>('server/health.mjs'),
       load<typeof Phone>('shared/phone.mjs'),
     ])
-      .then(([settings, report, contract, provision, phone]) => ({
+      .then(([settings, report, contract, provision, health, phone]) => ({
         settings,
         report,
         contract,
         provision,
+        health,
         phone,
       }))
       .catch((error) => {

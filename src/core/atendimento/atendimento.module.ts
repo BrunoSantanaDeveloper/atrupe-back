@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { MailModule } from '../mail/mail.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { AtendimentoEquipeCron } from './atendimento-equipe.cron';
+import { AtendimentoNumeroCron } from './atendimento-numero.cron';
 import { AtendimentoRoboController } from './atendimento-robo.controller';
 import { AtendimentoTools } from './atendimento-tools';
 import { AtendimentoController } from './atendimento.controller';
@@ -17,13 +19,14 @@ import { AtendimentoStore } from './atendimento.store';
  * `EncryptionService` vem do `FiscalSecurityModule`, que é global.
  */
 @Module({
-  imports: [SubscriptionsModule],
+  imports: [SubscriptionsModule, MailModule],
   controllers: [AtendimentoController, AtendimentoRoboController],
   providers: [
     AtendimentoStore,
     AtendimentoTools,
     AtendimentoService,
     AtendimentoEquipeCron,
+    AtendimentoNumeroCron,
     { provide: ATENDIMENTO_KIT, useValue: defaultKitSource },
   ],
 })

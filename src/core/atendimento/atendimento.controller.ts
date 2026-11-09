@@ -190,14 +190,20 @@ export class AtendimentoController {
   }
 
   @Post('whatsapp')
-  @ApiOperation({ summary: 'Conecta o número (API oficial ou OpenWA)' })
+  @ApiOperation({
+    summary:
+      'Conecta o número (API oficial ou OpenWA) ou, com acao "reconectar", retoma a sessão que a caixa já tem',
+  })
   async connect(
     @Req() req,
     @Body() body: Record<string, string>,
     @Res() res: Response,
   ) {
-    await sendAnswer(res, this.logger, async () =>
-      this.atendimento.connectWhatsapp(await this.person(req), body),
-    );
+    await sendAnswer(res, this.logger, async () => {
+      const person = await this.person(req);
+      return body?.acao === 'reconectar'
+        ? this.atendimento.reconnectWhatsapp(person)
+        : this.atendimento.connectWhatsapp(person, body);
+    });
   }
 }

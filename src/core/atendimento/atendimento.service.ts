@@ -514,26 +514,40 @@ export class AtendimentoService {
     if (!person?.isSuperadmin) {
       return forbidden('Só quem administra o atendimento conecta o número.');
     }
+    const kit = await this.kit();
     const state = (await this.store.loadState(PLATFORM_TENANT)) ?? {};
-    const inbox = state.inboxes?.[state.inboxes.length - 1];
+    const inbox = kit.health.currentInbox(state);
     if (!inbox) {
       return {
         status: 200,
-        body: { connected: false, route: null, status: null, qrCode: null },
-      };
-    }
-    if (inbox.route === 'oficial') {
-      return {
-        status: 200,
         body: {
-          connected: true,
-          route: 'oficial',
-          status: 'ready',
+          connected: false,
+          route: null,
+          status: null,
           qrCode: null,
+          level: null,
+          findings: [],
         },
       };
     }
-    const kit = await this.kit();
+    if (inbox.route === 'oficial') {
+      const report = await kit.health.checkWhatsappHealth({
+        chatwootUrl: env.chatwootUrl(),
+        state,
+      });
+      const current = report.inboxes[0];
+      return {
+        status: 200,
+        body: {
+          connected: current.level !== 'fora',
+          route: 'oficial',
+          status: null,
+          qrCode: null,
+          level: current.level,
+          findings: current.findings,
+        },
+      };
+    }
     const status = await kit.provision.whatsappStatus({
       openwaUrl: env.openwaUrl(),
       openwaApiKey: env.openwaApiKey(),
@@ -547,6 +561,74 @@ export class AtendimentoService {
         ...status,
       },
     };
+  }
+
+  /** Ler o QR de novo: retoma a sessão que a caixa já tem, sem criar outra. */
+  async reconnectWhatsapp(person: AtendimentoPerson | null): Promise<Answer> {
+    if (!person?.isSuperadmin) {
+      return forbidden('Você não pode conectar o número.');
+    }
+    const kit = await this.kit();
+    const inbox = kit.health.currentInbox(
+      await this.store.loadState(PLATFORM_TENANT),
+    );
+    if (inbox?.route !== 'nao_oficial' || !inbox.session_id) {
+      return {
+        status: 409,
+        body: {
+          code: 'no_session',
+          message: 'Não há conexão pelo WhatsApp Web para retomar.',
+        },
+      };
+    }
+    const result = await kit.provision.reconnectOpenWA({
+      openwaUrl: env.openwaUrl(),
+      openwaApiKey: env.openwaApiKey(),
+      sessionId: inbox.session_id,
+    });
+    return { status: 200, body: { ok: true, status: result.status } };
+  }
+
+  /**
+   * Conferência do número: lê a sessão do OpenWA, ou a saúde que o Chatwoot
+   * consulta na Meta, e avisa quando o número para, pede atenção ou volta.
+   * Enquanto estiver parado, lembra uma vez por dia. Por dentro, um número que
+   * caiu não mostra erro: o painel só fica vazio.
+   */
+  async checkWhatsapp() {
+    const kit = await this.kit();
+    const state = await this.store.loadState(PLATFORM_TENANT);
+    const inbox = kit.health.currentInbox(state);
+    if (!state?.account_id || !inbox) {
+      return { skipped: 'no_inbox' as const, report: null, alerts: [] };
+    }
+    const report = await kit.health.checkWhatsappHealth({
+      chatwootUrl: env.chatwootUrl(),
+      state,
+      // Sem exigir as variáveis: faltando, a base devolve o achado para quem
+      // cuida do servidor, em vez de uma rotina que falha sem avisar ninguém.
+      openwa:
+        inbox.route === 'nao_oficial'
+          ? {
+              url: process.env.OPENWA_URL?.trim() ?? '',
+              apiKey: process.env.OPENWA_API_KEY?.trim() ?? '',
+            }
+          : null,
+    });
+    const { alerts, health } = kit.health.healthAlerts({
+      previous: state.health,
+      report,
+    });
+    // Avisa antes de gravar: se o e-mail falhar, o aviso volta na próxima
+    // conferência.
+    if (alerts.length) await this.store.alertWhatsapp(PLATFORM_TENANT, alerts);
+    if (JSON.stringify(health) !== JSON.stringify(state.health ?? {})) {
+      // Relê antes de gravar: a conferência e o e-mail levam segundos, e gravar
+      // o estado lido no começo apagaria um número conectado nesse meio-tempo.
+      const fresh = (await this.store.loadState(PLATFORM_TENANT)) ?? state;
+      await this.store.saveState(PLATFORM_TENANT, { ...fresh, health });
+    }
+    return { skipped: null, report, alerts };
   }
 
   async connectWhatsapp(
@@ -565,16 +647,31 @@ export class AtendimentoService {
     const kit = await this.kit();
     const state = await this.ensureAccount();
     if (body.route === 'oficial') {
-      const result = await kit.provision.connectCloudApi({
-        chatwootUrl: env.chatwootUrl(),
-        state,
-        cloud: {
-          phoneNumber: body.phoneNumber,
-          phoneNumberId: body.phoneNumberId,
-          businessAccountId: body.businessAccountId,
-          apiKey: body.apiKey,
-        },
-      });
+      const cloud = {
+        phoneNumber: body.phoneNumber,
+        phoneNumberId: body.phoneNumberId,
+        businessAccountId: body.businessAccountId,
+        apiKey: body.apiKey,
+      };
+      // O mesmo número de novo é a troca do token: o Chatwoot aceita cada
+      // número uma vez só.
+      const existing = (state.inboxes ?? []).find(
+        (inbox) =>
+          inbox.route === 'oficial' &&
+          kit.phone.samePhone(inbox.phone ?? '', cloud.phoneNumber),
+      );
+      const result = existing
+        ? await kit.provision.updateCloudApi({
+            chatwootUrl: env.chatwootUrl(),
+            state,
+            inboxId: existing.id,
+            cloud,
+          })
+        : await kit.provision.connectCloudApi({
+            chatwootUrl: env.chatwootUrl(),
+            state,
+            cloud,
+          });
       await this.store.saveState(PLATFORM_TENANT, result.state);
       return { status: 200, body: { metaWebhook: result.metaWebhook } };
     }
@@ -583,8 +680,8 @@ export class AtendimentoService {
       platformToken: env.platformToken(),
       state,
       input: {
-        // Nome novo a cada conexão: reconectar (QR vencido, celular que
-        // saiu) cria outra sessão, e o OpenWA recusa nome repetido.
+        // Nome novo a cada conexão, porque o OpenWA recusa nome repetido: é
+        // "Conectar outro número". Ler o QR de novo retoma a mesma sessão.
         sessionName: `atendimento-${PLATFORM_TENANT}-${Date.now().toString(36)}`,
         relayEmail: `repasse+${PLATFORM_TENANT}@${env.serviceEmailDomain()}`,
         chatwootPublicUrl: env.chatwootPublicUrl(),

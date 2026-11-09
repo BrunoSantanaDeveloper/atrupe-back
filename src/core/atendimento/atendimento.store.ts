@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { EncryptionService } from '../../shared/services/encryption.service';
+import { MailService } from '../mail/mail.service';
 
 import type { GapEventPayload } from '../../../atendimento/base/server/bot-contract.mjs';
+import type { WhatsappAlert } from '../../../atendimento/base/server/health.mjs';
 import type { SupportState } from '../../../atendimento/base/server/provision.mjs';
 import type { PlatformSettings } from '../../../atendimento/base/shared/settings.mjs';
 
@@ -12,6 +14,14 @@ export const PLATFORM_TENANT = 'plataforma';
 
 const STATE_KEY = (tenantId: string) => `atendimento.estado.${tenantId}`;
 const PLATFORM_SETTINGS_KEY = 'atendimento.robo.plataforma';
+
+/** A equipe do suporte da plataforma: os superadmins ativos. */
+const ACTIVE_SUPERADMIN = {
+  isActive: true,
+  userRole: { some: { isSystemAdmin: true } },
+};
+
+const WHATSAPP_SCREEN = '/admin/atendimento/whatsapp';
 
 export interface StoredSuggestion {
   id: string;
@@ -46,9 +56,12 @@ export interface AtendimentoPerson {
  */
 @Injectable()
 export class AtendimentoStore {
+  private readonly logger = new Logger(AtendimentoStore.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly encryption: EncryptionService,
+    private readonly mail: MailService,
   ) {}
 
   private aad(tenantId: string) {
@@ -120,10 +133,67 @@ export class AtendimentoStore {
    */
   async listPanelPeople(): Promise<string[]> {
     const users = await this.prisma.user.findMany({
-      where: { isActive: true, userRole: { some: { isSystemAdmin: true } } },
+      where: ACTIVE_SUPERADMIN,
       select: { id: true },
     });
     return users.map((user) => user.id);
+  }
+
+  /**
+   * Avisa os superadmins ativos que o WhatsApp parou, pede atenção ou voltou,
+   * pelo e-mail, o canal de avisos que o Atrupe tem. Lança quando ninguém
+   * recebeu: a conferência não grava a memória e o aviso volta na próxima. Quem
+   * falhou sozinho não faz repetir: um endereço recusado para sempre mandaria
+   * o mesmo e-mail a todos a cada 15 minutos.
+   */
+  async alertWhatsapp(
+    _tenantId: string,
+    alerts: WhatsappAlert[],
+  ): Promise<void> {
+    const people = await this.prisma.user.findMany({
+      where: ACTIVE_SUPERADMIN,
+      select: { email: true, name: true },
+    });
+    if (!people.length) {
+      throw new Error('Nenhum superadmin ativo para receber o aviso.');
+    }
+    const front = (process.env.FRONTEND_URL || 'https://app.atrupe.com.br')
+      .trim()
+      .replace(/\/+$/, '');
+    // Um número parado no homolog não pode parecer a produção fora do ar.
+    const prefix = process.env.APP_ENV === 'production' ? '' : '[Homolog] ';
+
+    for (const alert of alerts) {
+      const results = await Promise.allSettled(
+        people.map((person) =>
+          this.mail.sendEmail(
+            person.email,
+            `${prefix}${alert.title}`,
+            'whatsapp-alert',
+            {
+              name: person.name,
+              title: alert.title,
+              text: alert.text,
+              sinceText: alert.kind === 'voltou' ? '' : brasilia(alert.since),
+              tecnico: alert.kind !== 'voltou' && alert.fixBy === 'tecnico',
+              panelUrl: `${front}${WHATSAPP_SCREEN}`,
+            },
+            [],
+          ),
+        ),
+      );
+      const failed = results.filter((item) => item.status === 'rejected');
+      if (failed.length === people.length) {
+        throw new Error(
+          `O aviso do WhatsApp não chegou a nenhum dos ${people.length} superadmin(s).`,
+        );
+      }
+      if (failed.length) {
+        this.logger.warn(
+          `Aviso do WhatsApp: ${failed.length} de ${people.length} e-mail(s) não saíram.`,
+        );
+      }
+    }
   }
 
   async findPerson(userId: string): Promise<AtendimentoPerson | null> {
@@ -235,6 +305,16 @@ export class AtendimentoStore {
       at: row.at.toISOString(),
     }));
   }
+}
+
+function brasilia(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
 }
 
 function validDate(value: unknown): Date {

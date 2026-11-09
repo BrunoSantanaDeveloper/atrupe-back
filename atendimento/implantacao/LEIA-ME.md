@@ -48,7 +48,7 @@ do Atrupe (`atendimento/gerado/`). Pode rodar de novo quantas vezes precisar.
 3. No Atrupe, **Super Admin › Atendimento › WhatsApp**, conecte o número por uma das duas formas:
    - **Pelo WhatsApp Web (não oficial)**: a tela mostra o aviso de risco e, depois do aceite, o QR. No
      celular do número: WhatsApp › Aparelhos conectados › Conectar um aparelho. O celular precisa ficar
-     ligado e com internet; se ele sair, a tela mostra um QR novo.
+     ligado e com internet.
    - **API oficial**: Phone number ID, WABA ID e token permanente da Meta. A tela devolve a URL de retorno
      e o token de verificação para cadastrar no app da Meta, assinando o campo `messages`.
 4. **Super Admin › Atendimento › Robô**: confira o contexto (vem da base de suporte do Start de 29/10/2026)
@@ -61,8 +61,27 @@ do Atrupe (`atendimento/gerado/`). Pode rodar de novo quantas vezes precisar.
 
 O mesmo stack serve ao homolog: ponha as variáveis da API no `.env.dev` e `PROJECT_URL` do robô em
 `https://dev.atrupe.com.br/atendimento/robo`. Para passar à produção, troque o `PROJECT_URL`, leve as
-variáveis ao `.env.prod` e conecte o número de novo pela tela de produção (a conta do Chatwoot é criada
-pela API que a usa).
+variáveis ao `.env.prod`, **tire-as do `.env.dev`** e conecte o número de novo pela tela de produção (a
+conta do Chatwoot é criada pela API que a usa). Sem tirar, a rotina do homolog segue conferindo o número
+antigo e mandando aos superadmins, uma vez por dia, um e-mail de que ele parou (com `[Homolog]` no assunto).
+
+## Quando o número para
+
+Por dentro, um número que caiu não mostra erro: o painel só fica vazio, como num dia sem conversas. Por isso
+a API confere o número atual a cada 15 minutos (a sessão no OpenWA, ou a saúde na Meta pelo Chatwoot):
+
+- **Quem é avisado:** os superadmins ativos, por e-mail (o SMTP `MAIL_*` que a API já usa; sem ele, o aviso
+  não sai e o erro fica no log da API). O e-mail diz o que se viu, o que fazer e, quando é o caso, que a
+  correção é de quem cuida do servidor.
+- **Quando:** quando o número para, pede atenção ou volta, e uma vez por dia enquanto estiver parado. O que
+  costuma passar sozinho (o OpenWA tentando de novo, a sessão iniciando) só vira aviso se continuar na
+  conferência seguinte. Se nenhum e-mail sair, o aviso é tentado de novo na conferência seguinte.
+- **Como voltar:** em **Super Admin › Atendimento › WhatsApp**, que mostra o que a conferência viu. "Ler o QR
+  de novo" (WhatsApp Web) ou "Trocar o token da Meta" (API oficial) retomam a mesma caixa, e as conversas
+  continuam nela. "Conectar outro número" cria uma caixa nova.
+
+A conferência não vê uma mensagem que se perde no caminho com tudo dizendo que está bem: depois de implantar
+e de cada atualização, mande uma mensagem de outro celular e veja a resposta chegar.
 
 ## Conferir
 
@@ -72,6 +91,9 @@ Com o atendimento no ar, da raiz do `atrupe-back` (máquina com o kit instalado)
 node <kit>/scripts/kit.mjs verify atendimento --env <arquivo .env com as variáveis da API> --account <id da conta>
 node <kit>/scripts/kit.mjs look atendimento --account <id da conta> --user <id da pessoa de teste> --env <arquivo .env>
 ```
+
+O `verify` traz uma linha `numero_conectado_<sessão>` para cada sessão do OpenWA. O número da rota oficial
+aparece na tela WhatsApp e na rotina de 15 minutos.
 
 ## Conexão não oficial (OpenWA): riscos
 

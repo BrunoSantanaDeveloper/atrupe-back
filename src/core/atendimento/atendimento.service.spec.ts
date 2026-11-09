@@ -53,6 +53,8 @@ function makeKit() {
     connectCloudApi: jest.fn(),
     connectOpenWA: jest.fn(),
     whatsappStatus: jest.fn(),
+    reconnectOpenWA: jest.fn(),
+    updateCloudApi: jest.fn(),
     conversationHistory: jest.fn(async () => []),
   };
   const settings = {
@@ -91,7 +93,17 @@ function makeKit() {
     summarizeGaps: jest.fn(() => [{ topic: 'nota', count: 1 }]),
     GAP_CATEGORIES: { nao_sei: 'Não soube' },
   };
-  return { provision, settings, contract, report, phone: {} };
+  const health = {
+    currentInbox: (state: any) =>
+      state?.inboxes?.[state.inboxes.length - 1] ?? null,
+    checkWhatsappHealth: jest.fn(),
+    healthAlerts: jest.fn(),
+  };
+  const phone = {
+    samePhone: (a: string, b: string) =>
+      a.replace(/\D/g, '') === b.replace(/\D/g, ''),
+  };
+  return { provision, settings, contract, report, health, phone };
 }
 
 function makeStore(initial: Record<string, unknown> = {}) {
@@ -110,6 +122,7 @@ function makeStore(initial: Record<string, unknown> = {}) {
       data.platform = settings;
     }),
     listPanelPeople: jest.fn(async () => ['u-admin']),
+    alertWhatsapp: jest.fn(async () => undefined),
     addSuggestions: jest.fn(),
     listSuggestions: jest.fn(async () => data.suggestions ?? []),
     takeSuggestion: jest.fn(async () => true),
@@ -519,6 +532,258 @@ describe('AtendimentoService', () => {
         suggestions: [{ q: 'P?', a: 'R.', why: 'w' }],
       });
       expect(store.addSuggestions).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('conferência do número', () => {
+    const report = {
+      checked_at: '2026-11-08T12:00:00.000Z',
+      level: 'fora',
+      inboxes: [
+        {
+          inbox_id: 5,
+          route: 'nao_oficial',
+          phone: null,
+          level: 'fora',
+          findings: [{ code: 'numero_desconectado' }],
+        },
+      ],
+    };
+    const alert = { kind: 'novo', title: 'O WhatsApp do atendimento parou' };
+    const unofficial = {
+      account_id: 7,
+      service_token: 's',
+      inboxes: [{ id: 5, route: 'nao_oficial', session_id: 'sess-1' }],
+    };
+
+    it('sem número conectado, não confere nem avisa', async () => {
+      const { service, kit, store } = makeService({
+        store: makeStore({ state: { account_id: 7 } }),
+      });
+      expect(await service.checkWhatsapp()).toEqual({
+        skipped: 'no_inbox',
+        report: null,
+        alerts: [],
+      });
+      expect(kit.health.checkWhatsappHealth).not.toHaveBeenCalled();
+      expect(store.alertWhatsapp).not.toHaveBeenCalled();
+    });
+
+    it('avisa e só depois grava a memória', async () => {
+      const { service, kit, store, data } = makeService({
+        store: makeStore({ state: unofficial }),
+      });
+      kit.health.checkWhatsappHealth.mockResolvedValue(report);
+      kit.health.healthAlerts.mockReturnValue({
+        alerts: [alert],
+        health: { '5': { level: 'fora', open: true } },
+      });
+      const result = await service.checkWhatsapp();
+      expect(result.alerts).toEqual([alert]);
+      expect(store.alertWhatsapp).toHaveBeenCalledWith('plataforma', [alert]);
+      expect(store.alertWhatsapp.mock.invocationCallOrder[0]).toBeLessThan(
+        store.saveState.mock.invocationCallOrder[0],
+      );
+      expect(data.state.health).toEqual({ '5': { level: 'fora', open: true } });
+    });
+
+    it('se o e-mail falhar, não grava a memória: o aviso volta na próxima', async () => {
+      const { service, kit, store } = makeService({
+        store: makeStore({ state: unofficial }),
+      });
+      kit.health.checkWhatsappHealth.mockResolvedValue(report);
+      kit.health.healthAlerts.mockReturnValue({
+        alerts: [alert],
+        health: { '5': { level: 'fora', open: true } },
+      });
+      store.alertWhatsapp.mockRejectedValue(new Error('smtp fora'));
+      await expect(service.checkWhatsapp()).rejects.toThrow('smtp fora');
+      expect(store.saveState).not.toHaveBeenCalled();
+    });
+
+    it('sem mudança, não avisa nem grava', async () => {
+      const health = { '5': { level: 'fora', open: true } };
+      const { service, kit, store } = makeService({
+        store: makeStore({ state: { ...unofficial, health } }),
+      });
+      kit.health.checkWhatsappHealth.mockResolvedValue(report);
+      kit.health.healthAlerts.mockReturnValue({ alerts: [], health });
+      await service.checkWhatsapp();
+      expect(store.alertWhatsapp).not.toHaveBeenCalled();
+      expect(store.saveState).not.toHaveBeenCalled();
+    });
+
+    it('não apaga um número conectado enquanto a conferência rodava', async () => {
+      const { service, kit, data } = makeService({
+        store: makeStore({ state: unofficial }),
+      });
+      const newInbox = { id: 9, route: 'oficial', phone: '+5548999990000' };
+      kit.health.checkWhatsappHealth.mockImplementation(async () => {
+        data.state = {
+          ...data.state,
+          inboxes: [...data.state.inboxes, newInbox],
+        };
+        return report;
+      });
+      kit.health.healthAlerts.mockReturnValue({
+        alerts: [],
+        health: { '5': { level: 'fora', open: false } },
+      });
+      await service.checkWhatsapp();
+      expect(data.state.inboxes).toContainEqual(newInbox);
+      expect(data.state.health).toEqual({
+        '5': { level: 'fora', open: false },
+      });
+    });
+
+    it('sem as variáveis do OpenWA, a conferência roda e a base aponta o problema', async () => {
+      delete process.env.OPENWA_URL;
+      delete process.env.OPENWA_API_KEY;
+      const { service, kit } = makeService({
+        store: makeStore({ state: unofficial }),
+      });
+      kit.health.checkWhatsappHealth.mockResolvedValue(report);
+      kit.health.healthAlerts.mockReturnValue({ alerts: [], health: {} });
+      await service.checkWhatsapp();
+      expect(kit.health.checkWhatsappHealth).toHaveBeenCalledWith(
+        expect.objectContaining({ openwa: { url: '', apiKey: '' } }),
+      );
+    });
+
+    it('a rota oficial não consulta o OpenWA e a tela mostra o que a conferência viu', async () => {
+      const state = {
+        account_id: 7,
+        service_token: 's',
+        inboxes: [{ id: 5, route: 'oficial', phone: '+5548999990000' }],
+      };
+      const { service, kit } = makeService({ store: makeStore({ state }) });
+      const findings = [{ code: 'meta_recusou_token', level: 'fora' }];
+      kit.health.checkWhatsappHealth.mockResolvedValue({
+        level: 'fora',
+        inboxes: [{ inbox_id: 5, level: 'fora', findings }],
+      });
+      expect((await service.whatsapp(superadmin)).body).toEqual({
+        connected: false,
+        route: 'oficial',
+        status: null,
+        qrCode: null,
+        level: 'fora',
+        findings,
+      });
+      kit.health.healthAlerts.mockReturnValue({ alerts: [], health: {} });
+      await service.checkWhatsapp();
+      expect(kit.health.checkWhatsappHealth).toHaveBeenLastCalledWith(
+        expect.objectContaining({ openwa: null }),
+      );
+    });
+
+    it('antes de conectar, a tela recebe nível nulo e lista vazia', async () => {
+      const { service } = makeService({
+        store: makeStore({ state: { account_id: 7 } }),
+      });
+      expect((await service.whatsapp(superadmin)).body).toEqual({
+        connected: false,
+        route: null,
+        status: null,
+        qrCode: null,
+        level: null,
+        findings: [],
+      });
+    });
+  });
+
+  describe('volta do número', () => {
+    beforeEach(() => {
+      Object.assign(process.env, {
+        OPENWA_URL: 'http://atendimento-openwa:2785',
+        OPENWA_API_KEY: 'chave',
+      });
+    });
+
+    it('ler o QR de novo retoma a sessão da caixa, sem criar outra', async () => {
+      const { service, kit, store } = makeService({
+        store: makeStore({
+          state: {
+            account_id: 7,
+            inboxes: [{ id: 5, route: 'nao_oficial', session_id: 'sess-1' }],
+          },
+        }),
+      });
+      kit.provision.reconnectOpenWA.mockResolvedValue({
+        status: 'initializing',
+        started: true,
+      });
+      expect(await service.reconnectWhatsapp(superadmin)).toEqual({
+        status: 200,
+        body: { ok: true, status: 'initializing' },
+      });
+      expect(kit.provision.reconnectOpenWA).toHaveBeenCalledWith({
+        openwaUrl: 'http://atendimento-openwa:2785',
+        openwaApiKey: 'chave',
+        sessionId: 'sess-1',
+      });
+      expect(kit.provision.connectOpenWA).not.toHaveBeenCalled();
+      expect(store.saveState).not.toHaveBeenCalled();
+    });
+
+    it('sem sessão do WhatsApp Web para retomar, 409; sem ser superadmin, 403', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({
+          state: { account_id: 7, inboxes: [{ id: 5, route: 'oficial' }] },
+        }),
+      });
+      expect((await service.reconnectWhatsapp(superadmin)).status).toBe(409);
+      expect((await service.reconnectWhatsapp(outsider)).status).toBe(403);
+      expect(kit.provision.reconnectOpenWA).not.toHaveBeenCalled();
+    });
+
+    const cloud = {
+      route: 'oficial',
+      phoneNumber: '+55 48 99999-0000',
+      phoneNumberId: '111111',
+      businessAccountId: '222222',
+      apiKey: 'token-novo-permanente',
+    };
+
+    it('o mesmo número pela API oficial troca o token na mesma caixa', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({
+          state: {
+            account_id: 7,
+            bot_token: 'b',
+            inboxes: [{ id: 5, route: 'oficial', phone: '+5548999990000' }],
+          },
+        }),
+      });
+      kit.provision.updateCloudApi.mockImplementation(async ({ state }) => ({
+        state,
+        metaWebhook: { callbackUrl: 'u', verifyToken: 'v' },
+      }));
+      const answer = await service.connectWhatsapp(superadmin, cloud);
+      expect(answer.status).toBe(200);
+      expect(kit.provision.updateCloudApi).toHaveBeenCalledWith(
+        expect.objectContaining({ inboxId: 5 }),
+      );
+      expect(kit.provision.connectCloudApi).not.toHaveBeenCalled();
+    });
+
+    it('outro número pela API oficial cria outra caixa', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({
+          state: {
+            account_id: 7,
+            bot_token: 'b',
+            inboxes: [{ id: 5, route: 'oficial', phone: '+5511888880000' }],
+          },
+        }),
+      });
+      kit.provision.connectCloudApi.mockImplementation(async ({ state }) => ({
+        state,
+        metaWebhook: { callbackUrl: 'u', verifyToken: 'v' },
+      }));
+      await service.connectWhatsapp(superadmin, cloud);
+      expect(kit.provision.connectCloudApi).toHaveBeenCalled();
+      expect(kit.provision.updateCloudApi).not.toHaveBeenCalled();
     });
   });
 
