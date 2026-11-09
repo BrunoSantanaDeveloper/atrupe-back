@@ -1514,6 +1514,53 @@ describe('NfseService', () => {
       expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
     });
 
+    /**
+     * Ordem coberta por uma NFS-e consolidada: a nota mora no vinculo, nao em
+     * `order.nfses`, que so' enxerga a ordem principal. Sem ler o vinculo a
+     * guarda liberava uma segunda nota para servico ja' faturado — foi o que
+     * deixou 12 das 13 O.S. de uma consolidada emitiveis de novo.
+     */
+    it('recusa emissão para ordem já coberta por NFS-e consolidada', async () => {
+      prisma.quotation.findFirst.mockResolvedValueOnce({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: {
+          ...mockOrder,
+          nfses: [],
+          nfseOrders: [
+            {
+              nfse: {
+                id: 'nfse-consolidada',
+                status: NfseStatus.AUTHORIZED,
+                numero: 171,
+              },
+            },
+          ],
+        },
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: mockOrder.items[0].product,
+          },
+        ],
+      });
+
+      await expect(
+        service.emitFromOrder(mockCompanyId, {
+          orderId: mockOrderId,
+          codigoServico: '1.05',
+          discriminacao: 'Teste',
+        }),
+      ).rejects.toThrow(/171/);
+
+      expect(invoicyApiService.emitNfse).not.toHaveBeenCalled();
+    });
+
     it('libera a ordem quando o provedor não conhece o RPS em processamento', async () => {
       // Emissão que falhou no transporte fica em PROCESSING e travava a ordem
       // para sempre. Se o provedor não registrou o RPS, não há nota em voo.
@@ -1777,6 +1824,30 @@ describe('NfseService', () => {
           },
         },
       });
+    });
+
+    /**
+     * O vinculo e' o que tira as demais O.S. do estado "Nao emitida" e barra
+     * uma segunda nota para o mesmo servico. Antes so' a ordem principal
+     * ficava em `Nfse.orderId` e o resto vivia no draftData, que nenhuma
+     * consulta lia.
+     */
+    it('vincula todas as ordens à nota, não só a principal', async () => {
+      await service.emitFromOrders(mockCompanyId, {
+        orderIds: ['order-A', 'order-B'],
+        codigoServico: '1.05',
+        discriminacao: 'Crachas',
+      } as any);
+
+      expect(prisma.nfse.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            nfseOrders: {
+              create: [{ orderId: 'order-A' }, { orderId: 'order-B' }],
+            },
+          }),
+        }),
+      );
     });
 
     it('casa o orcamento com a primeira ordem selecionada', async () => {

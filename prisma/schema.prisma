@@ -1256,6 +1256,7 @@ model Order {
   nfes             Nfe[]
   nfeOrders        NfeOrder[]
   nfses            Nfse[]
+  nfseOrders       NfseOrder[]
   nfces            Nfce[]
 
   @@index([id])
@@ -2632,6 +2633,26 @@ model NfeOrder {
   @@map("nfe_orders")
 }
 
+/// Ordens que entraram numa NFS-e consolidada.
+///
+/// `Nfse.orderId` guarda uma ordem so'. Na emissao consolidada ele ficava com
+/// a primeira e as demais nao tinham vinculo nenhum: apareciam como "Nao
+/// emitida" na listagem e passavam pela guarda de duplicidade, que le
+/// `order.nfses`. A lista completa existia apenas dentro de `draftData`, que
+/// nenhuma consulta olhava. Esta tabela e' o espelho do NfeOrder para a NFS-e.
+model NfseOrder {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  nfseId    String
+  orderId   String
+  nfse      Nfse     @relation(fields: [nfseId], references: [id], onDelete: Cascade)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([nfseId, orderId])
+  @@index([orderId])
+  @@map("nfse_orders")
+}
+
 enum NfeCorrectionStatus {
   PENDING // sequência reservada, evento ainda não confirmado pela SEFAZ
   REGISTERED // evento registrado (cStat 135 ou 136)
@@ -2828,6 +2849,7 @@ model Nfse {
 
   company               Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order                 Order?         @relation(fields: [orderId], references: [id])
+  nfseOrders            NfseOrder[]
   quotation             Quotation?     @relation(fields: [quotationId], references: [id])
   invoicyConfig         InvoicyConfig? @relation(fields: [invoicyConfigId], references: [id], onDelete: Restrict)
 

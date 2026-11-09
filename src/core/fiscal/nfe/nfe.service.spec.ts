@@ -661,6 +661,139 @@ describe('NfeService', () => {
         );
       });
     });
+
+    /**
+     * A NFS-e consolidada cobre varias O.S.. A lista mostrava uma linha por
+     * ordem: so' a principal dizia "Emitida", as demais diziam "Nao emitida",
+     * e o valor exibido era o da ordem (R$ 12,00), nao o da nota (R$ 165,00).
+     */
+    describe('NFS-e consolidada na listagem', () => {
+      const notaConsolidada = {
+        id: 'nfse-consolidada-1',
+        numero: 171,
+        serie: '1',
+        status: 'AUTHORIZED',
+        valorServicos: 165,
+        createdAt: new Date('2026-11-03T11:17:35.000Z'),
+        nfseOrders: [
+          { orderId: 'order-1' },
+          { orderId: 'order-2' },
+          { orderId: 'order-3' },
+        ],
+      };
+
+      const ordemDaConsolidada = (id: string, numero: number) => ({
+        id,
+        createdAt: new Date('2026-10-28T12:00:00.000Z'),
+        status: 'FINISHED',
+        quotation: {
+          quotationNumber: numero,
+          totalValue: 1200,
+          series: { code: 'Si' },
+          client: { name: 'SYS MANAGER' },
+        },
+        nfes: [],
+        nfeOrders: [],
+        nfses: [],
+        nfseOrders: [{ nfse: notaConsolidada }],
+      });
+
+      const tresOrdens = () => {
+        prisma.order.findMany.mockResolvedValue([
+          ordemDaConsolidada('order-1', 226851),
+          ordemDaConsolidada('order-2', 226852),
+          ordemDaConsolidada('order-3', 226853),
+        ]);
+        prisma.order.count.mockResolvedValue(3);
+      };
+
+      const itensDe = (result: any) =>
+        result.data.flatMap((grupo: any) => grupo.items);
+
+      /**
+       * `clearAllMocks` zera chamadas, nao implementacoes: um
+       * `mockResolvedValue` daqui continuaria valendo nos describes seguintes,
+       * que esperam a lista vazia do beforeEach de findUnified.
+       */
+      afterEach(() => {
+        prisma.order.findMany.mockResolvedValue([]);
+        prisma.order.count.mockResolvedValue(0);
+      });
+
+      it('agrupa as ordens numa entrada só, com o valor da nota', async () => {
+        tresOrdens();
+
+        const result = await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+        });
+
+        const itens = itensDe(result);
+        expect(itens).toHaveLength(1);
+        expect(itens[0]).toMatchObject({
+          type: 'NFSE_CONSOLIDADA',
+          id: 'nfse-consolidada-1',
+          status: 'AUTHORIZED',
+          totalValue: 165,
+          clientName: 'SYS MANAGER',
+          consolidatedOrderCount: 3,
+        });
+        expect(itens[0].reference).toBe('NFS-e 171 · 3 O.S.');
+      });
+
+      it('lista as O.S. cobertas para a tela não perder o rastro delas', async () => {
+        tresOrdens();
+
+        const result = await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+        });
+
+        expect(
+          itensDe(result)[0].consolidatedOrders.map((o: any) => o.reference),
+        ).toEqual(['Si-226851', 'Si-226852', 'Si-226853']);
+      });
+
+      /**
+       * Tres ordens viram uma linha: sem descontar, a paginacao prometia
+       * paginas que vinham vazias.
+       */
+      it('desconta do total as ordens absorvidas pela consolidada', async () => {
+        tresOrdens();
+
+        const result = await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+        });
+
+        expect(result.total).toBe(1);
+      });
+
+      /**
+       * Nota de uma O.S. so' nao e' consolidacao: a ordem segue como linha
+       * propria, com o valor dela.
+       */
+      it('não agrupa quando a nota cobre uma única ordem', async () => {
+        const notaSimples = {
+          ...notaConsolidada,
+          id: 'nfse-simples',
+          nfseOrders: [{ orderId: 'order-9' }],
+        };
+        prisma.order.findMany.mockResolvedValue([
+          {
+            ...ordemDaConsolidada('order-9', 226900),
+            nfses: [notaSimples],
+            nfseOrders: [{ nfse: notaSimples }],
+          },
+        ]);
+        prisma.order.count.mockResolvedValue(1);
+
+        const result = await service.findUnified(mockCompanyId, {
+          recordType: 'PEDIDOS',
+        });
+
+        const item = itensDe(result)[0];
+        expect(item.type).toBe('ORDER');
+        expect(item.totalValue).toBe(12);
+      });
+    });
   });
 
   describe('findById', () => {

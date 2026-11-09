@@ -997,9 +997,12 @@ export class NfseService {
     const { fullDto, uniqueOrderIds, orderCodes } =
       await this.buildNfseDtoFromOrders(companyId, dto);
 
-    const nfse = await this.emit(companyId, fullDto);
+    const nfse = await this.emit(companyId, fullDto, {
+      consolidatedOrderIds: uniqueOrderIds,
+    });
 
-    // Guardar todos os orderIds no draftData para referência
+    // O draftData segue gravado por compatibilidade com o que ja' foi emitido;
+    // quem decide agora e' a tabela de vinculo.
     if (nfse?.id) {
       await this.prisma.nfse.update({
         where: { id: nfse.id },
@@ -1321,11 +1324,34 @@ export class NfseService {
     return bloqueios;
   }
 
-  async emit(companyId: string, dto: EmitNfseDto) {
+  /**
+   * `opcoes.consolidatedOrderIds` sao TODAS as ordens cobertas pela nota. O
+   * campo `Nfse.orderId` guarda uma so', e na emissao consolidada as demais
+   * ficavam sem vinculo nenhum: sumiam da listagem como "Nao emitida" e
+   * passavam pela guarda de duplicidade, que le as notas da ordem. O vinculo
+   * e' gravado dentro da mesma transacao do create para nao existir nota
+   * consolidada sem as ordens dela.
+   */
+  async emit(
+    companyId: string,
+    dto: EmitNfseDto,
+    opcoes?: { consolidatedOrderIds?: string[] },
+  ) {
     const { config, environment } = await this.resolveNfseEmissionContext(
       companyId,
       dto,
     );
+
+    // A emissao por uma ordem so' tambem grava o vinculo: assim quem le pode
+    // usar `nfseOrders` como fonte unica, sem combinar com `orderId`.
+    const ordensVinculadas = [
+      ...new Set(
+        (opcoes?.consolidatedOrderIds?.length
+          ? opcoes.consolidatedOrderIds
+          : [dto.orderId]
+        ).filter((id): id is string => Boolean(id)),
+      ),
+    ];
 
     const bloqueios = this.bloqueiosDoGrupoIbsCbs(dto, config);
     if (bloqueios.length > 0) {
@@ -1353,6 +1379,13 @@ export class NfseService {
             companyId,
             invoicyConfigId: config.id,
             orderId: dto.orderId,
+            ...(ordensVinculadas.length > 0
+              ? {
+                  nfseOrders: {
+                    create: ordensVinculadas.map((orderId) => ({ orderId })),
+                  },
+                }
+              : {}),
             quotationId: dto.quotationId,
             numero: 0, // Será preenchido após retorno da prefeitura
             serie: reserved.rpsSerie,
@@ -2133,6 +2166,21 @@ export class NfseService {
         select: { id: true, status: true, numero: true },
         take: 1,
       },
+      nfseOrders: {
+        // Ordem coberta por uma NFS-e consolidada: a nota mora no vinculo, nao
+        // em `order.nfses`, que so' enxerga a ordem principal. Sem isto a
+        // guarda liberava uma segunda nota para servico ja' faturado.
+        where: {
+          nfse: {
+            OR: [
+              { status: { in: this.activeNfseStatuses } },
+              { numero: { gt: 0 } },
+            ],
+          },
+        },
+        select: { nfse: { select: { id: true, status: true, numero: true } } },
+        take: 1,
+      },
       nfces: {
         where: { status: { in: this.activeNfceStatuses } },
         select: { id: true, status: true },
@@ -2302,7 +2350,10 @@ export class NfseService {
         );
       }
 
-      const nfseExistente = order.nfses?.[0];
+      // A nota pode estar ligada direto (`orderId`) ou pelo vinculo da
+      // consolidacao; as duas contam como documento ja' existente.
+      const nfseExistente =
+        order.nfses?.[0] ?? order.nfseOrders?.[0]?.nfse ?? null;
       if (!nfseExistente) continue;
 
       // Antes dos demais ramos: numero atribuido quer dizer nota registrada

@@ -4946,6 +4946,18 @@ export class NfeService {
               },
             },
           },
+          // Ordem coberta por uma NFS-e consolidada: a nota esta' no vinculo,
+          // nao em `nfses`, que so' guarda a ordem principal.
+          {
+            nfseOrders: {
+              some: {
+                nfse: {
+                  status: NfseStatus.AUTHORIZED,
+                  ambiente: envNfse,
+                },
+              },
+            },
+          },
         ];
       } else if (status === 'EM_DIGITACAO') {
         orderWhere.OR = [
@@ -4975,6 +4987,22 @@ export class NfeService {
               },
             },
           },
+          {
+            nfseOrders: {
+              some: {
+                nfse: {
+                  status: {
+                    in: [
+                      NfseStatus.DRAFT,
+                      NfseStatus.PENDING,
+                      NfseStatus.PROCESSING,
+                    ],
+                  },
+                  ambiente: envNfse,
+                },
+              },
+            },
+          },
         ];
         orderWhere.AND = [
           {
@@ -5000,6 +5028,16 @@ export class NfeService {
               none: {
                 status: NfseStatus.AUTHORIZED,
                 ambiente: envNfse,
+              },
+            },
+          },
+          {
+            nfseOrders: {
+              none: {
+                nfse: {
+                  status: NfseStatus.AUTHORIZED,
+                  ambiente: envNfse,
+                },
               },
             },
           },
@@ -5039,6 +5077,26 @@ export class NfeService {
               },
             },
           },
+          // Sem este `none`, as demais ordens de uma NFS-e consolidada caiam
+          // no filtro de nao emitidas — e a entrada agrupada aparecia ali
+          // dizendo "Emitida".
+          {
+            nfseOrders: {
+              none: {
+                nfse: {
+                  status: {
+                    in: [
+                      NfseStatus.AUTHORIZED,
+                      NfseStatus.DRAFT,
+                      NfseStatus.PENDING,
+                      NfseStatus.PROCESSING,
+                    ],
+                  },
+                  ambiente: envNfse,
+                },
+              },
+            },
+          },
         ];
         orderWhere.status = { not: 'CANCELED' };
       } else if (status === 'CANCELADA') {
@@ -5067,6 +5125,13 @@ export class NfeService {
           {
             nfses: {
               some: { status: NfseStatus.CANCELLED, ambiente: envNfse },
+            },
+          },
+          {
+            nfseOrders: {
+              some: {
+                nfse: { status: NfseStatus.CANCELLED, ambiente: envNfse },
+              },
             },
           },
         ];
@@ -5132,6 +5197,14 @@ export class NfeService {
           nfes: true,
           nfeOrders: { include: { nfe: true } },
           nfses: true,
+          // A NFS-e consolidada cobre varias ordens e so' a principal aparece
+          // em `nfses`. O vinculo diz quais ordens a nota cobre, e a contagem
+          // aninhada diz se ela e' consolidada (mais de uma) ou comum.
+          nfseOrders: {
+            include: {
+              nfse: { include: { nfseOrders: { select: { orderId: true } } } },
+            },
+          },
         },
       });
       ordersCountPromise = this.prisma.order.count({ where: orderWhere });
@@ -5246,16 +5319,62 @@ export class NfeService {
 
     const unifiedItems = [];
 
+    /**
+     * Uma NFS-e consolidada cobre varias ordens, e a lista mostrava uma linha
+     * por ordem: so' a principal dizia "Emitida", as outras diziam "Nao
+     * emitida", e o valor exibido era o da ordem, nao o da nota. As ordens
+     * cobertas viram uma entrada unica, com o numero da nota, o valor dela e
+     * um unico PDF.
+     *
+     * A desduplicacao vale dentro da requisicao: `itemsToFetch` e' page*limit,
+     * entao toda ordem anterior a' pagina pedida ja' veio junto e a nota e'
+     * vista uma vez so'.
+     */
+    const referenciaDaOrdem = (o: any) =>
+      o.quotation?.series?.code
+        ? `${o.quotation.series.code}-${o.quotation.quotationNumber}`
+        : `OS ${o.quotation?.quotationNumber || ''}`;
+
+    const consolidadasEmitidas = new Set<string>();
+    let ordensAbsorvidas = 0;
+
     for (const o of orders as any[]) {
+      const notaConsolidada = (o.nfseOrders || [])
+        .map((vinculo: any) => vinculo.nfse)
+        .find((n: any) => n && (n.nfseOrders?.length ?? 0) > 1);
+
+      if (notaConsolidada) {
+        ordensAbsorvidas++;
+        if (consolidadasEmitidas.has(notaConsolidada.id)) continue;
+        consolidadasEmitidas.add(notaConsolidada.id);
+
+        const ordensDaNota = notaConsolidada.nfseOrders.length;
+        unifiedItems.push({
+          type: 'NFSE_CONSOLIDADA',
+          id: notaConsolidada.id,
+          // A data e' a da emissao, nao a da ordem: a entrada representa a
+          // nota, e as ordens dela podem ser de dias diferentes.
+          createdAt: notaConsolidada.createdAt,
+          status: notaConsolidada.status,
+          clientName: o.quotation?.client?.name || 'Cliente não identificado',
+          reference: `NFS-e ${notaConsolidada.numero || 's/n'} · ${ordensDaNota} O.S.`,
+          totalValue: notaConsolidada.valorServicos || 0,
+          consolidatedOrderCount: ordensDaNota,
+          nfes: [],
+          nfses: [notaConsolidada],
+          nfse: notaConsolidada,
+          originalData: notaConsolidada,
+        });
+        continue;
+      }
+
       unifiedItems.push({
         type: 'ORDER',
         id: o.id,
         createdAt: o.createdAt,
         status: o.status,
         clientName: o.quotation?.client?.name || 'Cliente não identificado',
-        reference: o.quotation?.series?.code
-          ? `${o.quotation.series.code}-${o.quotation.quotationNumber}`
-          : `OS ${o.quotation?.quotationNumber || ''}`,
+        reference: referenciaDaOrdem(o),
         totalValue: (o.quotation?.totalValue || 0) / 100,
         nfes: [
           ...(o.nfes || []),
@@ -5265,6 +5384,29 @@ export class NfeService {
         nfse: (o.nfses || [])[0] || null,
         originalData: o,
       });
+    }
+
+    // Lista as ordens de cada consolidada que vieram nesta busca, para a tela
+    // mostrar quais O.S. entraram sem precisar de outra chamada.
+    if (consolidadasEmitidas.size > 0) {
+      const ordensPorNota = new Map<string, any[]>();
+      for (const o of orders as any[]) {
+        for (const vinculo of o.nfseOrders || []) {
+          const nota = vinculo.nfse;
+          if (!nota || !consolidadasEmitidas.has(nota.id)) continue;
+          const lista = ordensPorNota.get(nota.id) ?? [];
+          lista.push({
+            id: o.id,
+            reference: referenciaDaOrdem(o),
+            totalValue: (o.quotation?.totalValue || 0) / 100,
+          });
+          ordensPorNota.set(nota.id, lista);
+        }
+      }
+      for (const item of unifiedItems as any[]) {
+        if (item.type !== 'NFSE_CONSOLIDADA') continue;
+        item.consolidatedOrders = ordensPorNota.get(item.id) ?? [];
+      }
     }
 
     for (const n of nfeAvulsas as any[]) {
@@ -5358,8 +5500,11 @@ export class NfeService {
     }
     if (currentGroup) groupedItems.push(currentGroup);
 
+    // Cada consolidada ocupa uma linha no lugar de N ordens; sem descontar,
+    // a paginacao prometia paginas que vinham vazias.
     const totalCount =
-      (ordersCount as number) +
+      Math.max((ordersCount as number) - ordensAbsorvidas, 0) +
+      consolidadasEmitidas.size +
       (nfeCount as number) +
       (nfseCount as number) +
       (nfceCount as number);
