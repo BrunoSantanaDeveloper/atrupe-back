@@ -12,11 +12,14 @@ import { assertSameCompany } from './legacy-destination-guard';
 import { importValueToCents } from '../core/import/import-number';
 import {
   importedItemPrices,
+  lineUnitCost,
   unitKindFromCode,
 } from '../core/import/product-unit';
+import { isExampleProduct } from '../core/import/example-products';
 
 /**
- * Põe os produtos já migrados na unidade e na situação que têm no legado.
+ * Põe os produtos já migrados — e as linhas dos documentos migrados — na
+ * unidade e na situação que têm no legado.
  *
  * Até 11/2026 a carga tirava a unidade do serviço ou do item de venda, mas o
  * legado guarda a unidade de cobrança no tipo de cálculo do produto, e o item
@@ -26,19 +29,22 @@ import {
  * linha entrou ativo ao lado do que o substituiu — o cliente leu como
  * duplicado.
  *
- * A carga de hoje já lê os dois. Este script é para o que entrou antes.
+ * A carga de hoje já lê os dois. Este script é para o que entrou antes. Só
+ * mexe no que a carga gravou e ninguém tocou depois:
  *
- * Só mexe no que a carga gravou e ninguém tocou depois:
- * - unidade: o item precisa estar exatamente como a carga o deixou — mesma
- *   unidade, custo e preço tirados do valor do legado, sem medida. O que o
- *   cliente já corrigiu ou alterou fica como está e sai listado para conferir.
- * - situação: inativa o produto que está inativo no legado, menos o que algum
- *   documento feito no Atrupe já usa. Não reativa nada.
- * - produto adotado (cadastro da conta que a carga vinculou ao legado) não é
- *   tocado, como na própria carga.
- *
- * As linhas dos documentos migrados guardam a própria unidade e não mudam: o
- * total delas veio do legado e continua certo.
+ * - produto: o item precisa estar exatamente como a carga o deixou (mesma
+ *   unidade, custo e preço tirados do valor do legado, sem medida). Inativa o
+ *   que está inativo no legado, menos o que um documento feito no Atrupe já
+ *   usa. Não reativa nada. Produto adotado (cadastro da conta vinculado ao
+ *   legado) não é tocado, como na própria carga.
+ * - exemplos, só na conta criada para a migração: o exemplo que a carga
+ *   adotou no lugar de um produto do legado passa a ser esse produto (nome,
+ *   unidade, preço, situação, setor), com o histórico que já está nele. O
+ *   exemplo que não corresponde a nada sai de linha.
+ * - linhas de documento migrado: a do produto por m² que tem medida passa a
+ *   área, e a da O.S. de produto por unidade, que a carga gravava sem unidade,
+ *   passa a unidade. A taxa é recalculada pela regra da carga, e o total da
+ *   linha não muda. Linha alterada depois da carga fica como está.
  *
  * É idempotente. Sem --yes apenas relata o que mudaria.
  *
@@ -48,12 +54,17 @@ import {
  *
  * --por-codigo casa também pelo código os produtos importados sem vínculo com
  * o legado — as cargas anteriores a 28/09/2026 não gravavam o vínculo.
+ * --exemplos trata os exemplos mesmo quando a migração não registrou a conta
+ * como criada para ela (carga pela linha de comando).
  */
 
-/** Um produto do legado, com o que decide a unidade e a situação. */
+/** Um produto do legado, com o que decide unidade, situação e cadastro. */
 export interface LegacyProduct {
   codigo: string;
   nome: string;
+  descricao: string;
+  setor: string;
+  grupo: string;
   ativo: boolean;
   /** Unidade de cobrança, pela regra de hoje. */
   unidade: string;
@@ -80,10 +91,12 @@ export interface ProductSnapshot {
   name: string;
   legacyId: string | null;
   isImported: boolean;
+  isStandard: boolean;
   isActive: boolean;
   items: ItemSnapshot[];
   /** Linhas em documento feito no Atrupe, fora da migração. */
   ownUses: number;
+  fiscalNcm: string | null;
 }
 
 export interface ItemPrices {
@@ -180,6 +193,127 @@ export function decideStatus(
   return product.ownUses > 0 ? 'in-use' : 'deactivate';
 }
 
+export type ExampleDecision =
+  | { action: 'convert'; legacy: LegacyProduct; active: boolean }
+  | { action: 'deactivate' }
+  | { action: 'in-use' }
+  | { action: 'review'; reason: string }
+  | { action: 'none' };
+
+/**
+ * O que fazer com um produto de exemplo de uma conta criada para a migração.
+ *
+ * `legacy` é o produto do legado que a carga pendurou nele — pelo vínculo,
+ * quando adotou por nome, ou pelo código, quando o exemplo ocupava o código.
+ * `legacyTaken` diz que outro produto da conta já tem o vínculo com ele.
+ */
+export function decideExample(
+  product: ProductSnapshot,
+  legacy: LegacyProduct | undefined,
+  legacyTaken = false,
+): ExampleDecision {
+  if (product.isImported || !isExampleProduct(product)) {
+    return { action: 'none' };
+  }
+
+  if (legacy && !legacyTaken) {
+    if (product.items.length !== 1) {
+      return {
+        action: 'review',
+        reason: `${product.items.length} itens no exemplo`,
+      };
+    }
+    return {
+      action: 'convert',
+      legacy,
+      active: legacy.ativo || product.ownUses > 0,
+    };
+  }
+
+  if (!product.isActive) return { action: 'none' };
+  return product.ownUses > 0 ? { action: 'in-use' } : { action: 'deactivate' };
+}
+
+/** Uma linha de documento migrado. */
+export interface LineSnapshot {
+  id: string;
+  productId: string;
+  unitKind: UnitKind | null;
+  unitCost: number | null;
+  salePrice: number | null;
+  totalValue: number | null;
+  width: number | null;
+  height: number | null;
+  /** Quantidade da composição; a carga grava 1. */
+  quantity: number;
+  /** Quantidade da linha do documento. */
+  lineQuantity: number;
+}
+
+export type LineDecision =
+  | {
+      action: 'fix';
+      to: { unitKind: UnitKind; unitCost: number | null };
+    }
+  | { action: 'ok' }
+  | { action: 'review' }
+  | { action: 'skip' };
+
+/**
+ * O que fazer com a linha, dada a unidade do produto no legado.
+ *
+ * Só mexe na linha como a carga a gravou: composição com quantidade 1, total
+ * igual ao preço, e taxa coerente com unidade avulsa ou com área. Fora disso
+ * alguém abriu e salvou a linha.
+ */
+export function decideLine(
+  target: UnitKind | null,
+  line: LineSnapshot,
+): LineDecision {
+  if (target !== 'AREA' && target !== 'UNITY') return { action: 'skip' };
+  if (line.unitKind === target) return { action: 'ok' };
+
+  const total = line.salePrice;
+  const dims = { width: line.width, height: line.height };
+  const untouched =
+    line.quantity === 1 &&
+    total !== null &&
+    sameValue(total, line.totalValue) &&
+    (sameValue(
+      line.unitCost,
+      lineUnitCost(total, 'UNITY', dims, line.lineQuantity),
+    ) ||
+      sameValue(
+        line.unitCost,
+        lineUnitCost(total, 'AREA', dims, line.lineQuantity),
+      ));
+
+  if (!untouched) return { action: 'review' };
+
+  if (target === 'AREA') {
+    // Sem largura e altura não há área: a linha segue como foi vendida.
+    if (!(line.width > 0 && line.height > 0)) return { action: 'skip' };
+    return {
+      action: 'fix',
+      to: {
+        unitKind: 'AREA',
+        unitCost: lineUnitCost(total, 'AREA', dims, line.lineQuantity),
+      },
+    };
+  }
+
+  // Produto por unidade: só a linha de O.S., que a carga gravava sem unidade
+  // e que o PDF lia como área quando tinha medida.
+  if (line.unitKind !== null) return { action: 'review' };
+  return {
+    action: 'fix',
+    to: {
+      unitKind: 'UNITY',
+      unitCost: lineUnitCost(total, 'UNITY', dims, line.lineQuantity),
+    },
+  };
+}
+
 /** Chave de casamento entre o código do legado e o vínculo do produto. */
 const matchKey = (value: string) => value.trim().toLowerCase();
 
@@ -191,11 +325,16 @@ export async function readLegacyProducts(
   const [rows] = await legacy.query(`
     SELECT ${PRODUCT_CODE_SQL(base, 'p')} AS codigo,
            p.nome                         AS nome,
+           p.descricao                    AS descricao,
            p.fkidstatus                   AS status,
+           s.setor                        AS setor,
+           cat.categoria                  AS grupo,
            ${PRODUCT_UNIT_SQL(base, 'p', 'sv')} AS unidade,
            ${LEGACY_SALE_UNIT_SQL(base, 'p', 'sv')} AS unidadeMigrada,
            sv.valor                       AS valor
       FROM ${base}.est_produto p
+      LEFT JOIN ${base}.emp_setor s ON s.idsetor = p.fkidsetor
+      LEFT JOIN ${base}.est_produto_categoria cat ON cat.idcategoria = p.fkidcategoria
       LEFT JOIN ${base}.ven_servico sv ON sv.idservico = p.fkidservico
   `);
 
@@ -207,6 +346,9 @@ export async function readLegacyProducts(
     byCode.set(matchKey(codigo), {
       codigo,
       nome: text(row.nome),
+      descricao: text(row.descricao),
+      setor: text(row.setor),
+      grupo: text(row.grupo),
       ativo: Number(row.status) === 1,
       unidade: text(row.unidade),
       unidadeMigrada: text(row.unidadeMigrada),
@@ -216,6 +358,12 @@ export async function readLegacyProducts(
 
   return byCode;
 }
+
+/** O produto do legado ligado ao produto da conta. */
+const legacyOf = (
+  legacyByCode: Map<string, LegacyProduct>,
+  product: ProductSnapshot,
+) => legacyByCode.get(matchKey(product.legacyId ?? product.code));
 
 export interface FixPlan {
   unitFixes: {
@@ -251,7 +399,7 @@ export function planFixes(
   };
 
   for (const product of products) {
-    const legacy = legacyByCode.get(matchKey(product.legacyId ?? product.code));
+    const legacy = legacyOf(legacyByCode, product);
     if (!legacy) {
       plan.unmatched++;
       continue;
@@ -276,6 +424,106 @@ export function planFixes(
   return plan;
 }
 
+export interface ExamplePlan {
+  convert: {
+    product: ProductSnapshot;
+    legacy: LegacyProduct;
+    active: boolean;
+  }[];
+  deactivate: ProductSnapshot[];
+  inUse: ProductSnapshot[];
+  review: { product: ProductSnapshot; reason: string }[];
+}
+
+/** Decide o destino de cada exemplo da conta criada para a migração. */
+export function planExamples(
+  legacyByCode: Map<string, LegacyProduct>,
+  examples: ProductSnapshot[],
+  /** Todos os produtos da conta, para não repetir um vínculo. */
+  products: ProductSnapshot[],
+): ExamplePlan {
+  const plan: ExamplePlan = {
+    convert: [],
+    deactivate: [],
+    inUse: [],
+    review: [],
+  };
+
+  for (const example of examples) {
+    const legacy = legacyOf(legacyByCode, example);
+    const taken =
+      !!legacy &&
+      products.some(
+        (other) =>
+          other.id !== example.id &&
+          other.legacyId !== null &&
+          matchKey(other.legacyId) === matchKey(legacy.codigo),
+      );
+
+    const decision = decideExample(example, legacy, taken);
+    if (decision.action === 'convert') {
+      plan.convert.push({
+        product: example,
+        legacy: decision.legacy,
+        active: decision.active,
+      });
+    } else if (decision.action === 'deactivate') {
+      plan.deactivate.push(example);
+    } else if (decision.action === 'in-use') {
+      plan.inUse.push(example);
+    } else if (decision.action === 'review') {
+      plan.review.push({ product: example, reason: decision.reason });
+    }
+  }
+
+  return plan;
+}
+
+const productSelect = {
+  id: true,
+  code: true,
+  name: true,
+  legacyId: true,
+  isImported: true,
+  isStandard: true,
+  isActive: true,
+  fiscalData: { select: { ncm: true } },
+  items: {
+    select: {
+      id: true,
+      unitKind: true,
+      unitCost: true,
+      salePrice: true,
+      width: true,
+      height: true,
+      length: true,
+      duration: true,
+    },
+  },
+} as const;
+
+/** Linhas em documento feito no Atrupe, por produto. */
+async function loadOwnUses(prisma: PrismaClient, companyId: string) {
+  const uses = await prisma.quotationProduct.groupBy({
+    by: ['productId'],
+    where: {
+      product: { companyId },
+      quotation: { isImported: false },
+    },
+    _count: { _all: true },
+  });
+  return new Map(uses.map((u) => [u.productId, u._count._all]));
+}
+
+const toSnapshot = (product: any, ownUses: Map<string, number>) => {
+  const { fiscalData, ...rest } = product;
+  return {
+    ...rest,
+    fiscalNcm: fiscalData?.ncm ?? null,
+    ownUses: ownUses.get(product.id) ?? 0,
+  } as ProductSnapshot;
+};
+
 /** Produtos da conta que vieram do legado, com o que a decisão precisa. */
 export async function loadProducts(
   prisma: PrismaClient,
@@ -290,47 +538,249 @@ export async function loadProducts(
         ...(options.byCode ? [{ isImported: true, legacyId: null }] : []),
       ],
     },
-    select: {
-      id: true,
-      code: true,
-      name: true,
-      legacyId: true,
-      isImported: true,
-      isActive: true,
-      items: {
-        select: {
-          id: true,
-          unitKind: true,
-          unitCost: true,
-          salePrice: true,
-          width: true,
-          height: true,
-          length: true,
-          duration: true,
-        },
-      },
-    },
+    select: productSelect,
   });
 
-  const uses = await prisma.quotationProduct.groupBy({
-    by: ['productId'],
-    where: {
-      product: { companyId },
-      quotation: { isImported: false },
-    },
-    _count: { _all: true },
-  });
-  const ownUses = new Map(uses.map((u) => [u.productId, u._count._all]));
-
-  return products.map((product) => ({
-    ...product,
-    ownUses: ownUses.get(product.id) ?? 0,
-  }));
+  const ownUses = await loadOwnUses(prisma, companyId);
+  return products.map((product) => toSnapshot(product, ownUses));
 }
+
+/** Exemplos da conta: o que a migração não criou e veio do cadastro inicial. */
+export async function loadExamples(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<ProductSnapshot[]> {
+  const products = await prisma.product.findMany({
+    where: { companyId, isImported: false },
+    select: productSelect,
+  });
+
+  const ownUses = await loadOwnUses(prisma, companyId);
+  return products
+    .map((product) => toSnapshot(product, ownUses))
+    .filter(isExampleProduct);
+}
+
+export interface LinePlan {
+  fixes: {
+    line: LineSnapshot;
+    to: { unitKind: UnitKind; unitCost: number | null };
+  }[];
+  ok: number;
+  review: number;
+  skipped: number;
+}
+
+/** Tamanho da página de linhas: o contêiner da API tem 512 MiB. */
+const LINE_PAGE = 2000;
+
+/** Decide as linhas dos documentos migrados, página a página. */
+export async function planLines(
+  prisma: PrismaClient,
+  companyId: string,
+  targetByProduct: Map<string, UnitKind | null>,
+): Promise<LinePlan> {
+  const plan: LinePlan = { fixes: [], ok: 0, review: 0, skipped: 0 };
+  let cursor: string | undefined;
+
+  for (;;) {
+    const page = await prisma.quotationProductItem.findMany({
+      where: {
+        quotationProduct: { quotation: { companyId, isImported: true } },
+      },
+      select: {
+        id: true,
+        productId: true,
+        unitKind: true,
+        unitCost: true,
+        salePrice: true,
+        totalValue: true,
+        width: true,
+        height: true,
+        quantity: true,
+        quotationProduct: { select: { quantity: true } },
+      },
+      orderBy: { id: 'asc' },
+      take: LINE_PAGE,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+    });
+
+    for (const row of page) {
+      if (!targetByProduct.has(row.productId)) {
+        plan.skipped++;
+        continue;
+      }
+
+      const line: LineSnapshot = {
+        id: row.id,
+        productId: row.productId,
+        unitKind: row.unitKind,
+        unitCost: row.unitCost,
+        salePrice: row.salePrice,
+        totalValue: row.totalValue,
+        width: row.width,
+        height: row.height,
+        quantity: row.quantity,
+        lineQuantity: row.quotationProduct.quantity,
+      };
+
+      const decision = decideLine(targetByProduct.get(row.productId), line);
+      if (decision.action === 'fix') {
+        plan.fixes.push({ line, to: decision.to });
+      } else if (decision.action === 'ok') {
+        plan.ok++;
+      } else if (decision.action === 'review') {
+        plan.review++;
+      } else {
+        plan.skipped++;
+      }
+    }
+
+    if (page.length < LINE_PAGE) break;
+    cursor = page[page.length - 1].id;
+  }
+
+  return plan;
+}
+
+/**
+ * A conta foi criada só para a migração? A tela registra isso na nota do
+ * financeiro, que entra inteiro em vez de cortado na data de uso.
+ */
+export async function createdForMigration(
+  prisma: PrismaClient,
+  companyId: string,
+  base: string,
+): Promise<boolean> {
+  const runs = await prisma.migrationRun.findMany({
+    where: { companyId, legacyBase: base, dryRun: false, status: 'COMPLETED' },
+    select: { summary: true },
+  });
+
+  return runs.some((run) =>
+    ((run.summary as any[]) ?? []).some((step: any) =>
+      (step?.notes ?? []).some((note: string) =>
+        String(note).startsWith('Corte por data desligado'),
+      ),
+    ),
+  );
+}
+
+/** NCM padrão da empresa, pela mesma regra do cadastro fiscal automático. */
+async function companyDefaultNcm(prisma: PrismaClient, companyId: string) {
+  const config =
+    (await prisma.invoicyConfig.findFirst({
+      where: { companyId, isDefault: true },
+      select: { defaultNcm: true },
+    })) ??
+    (await prisma.invoicyConfig.findFirst({
+      where: { companyId },
+      orderBy: { createdAt: 'asc' },
+      select: { defaultNcm: true },
+    }));
+  return config?.defaultNcm || '49119900';
+}
+
+/** NCM do cadastro de exemplo, que nenhuma nota aceita. */
+const PLACEHOLDER_NCM = '00000000';
+
+const collator = new Intl.Collator('pt-BR', {
+  sensitivity: 'base',
+  usage: 'search',
+});
+const sameName = (a: string, b: string) =>
+  collator.compare(a.trim(), b.trim()) === 0;
+
+/** Grava a conversão dos exemplos no produto do legado e inativa o resto. */
+async function applyExamples(
+  prisma: PrismaClient,
+  companyId: string,
+  plan: ExamplePlan,
+): Promise<void> {
+  if (plan.convert.length === 0 && plan.deactivate.length === 0) return;
+
+  const [sectors, categories, codes, ncm] = await Promise.all([
+    prisma.companySector.findMany({
+      where: { companyId },
+      select: { id: true, name: true },
+    }),
+    prisma.category.findMany({
+      where: { companyId, kind: 'PRODUCT' },
+      select: { id: true, name: true },
+    }),
+    prisma.product.findMany({ where: { companyId }, select: { code: true } }),
+    companyDefaultNcm(prisma, companyId),
+  ]);
+  const taken = new Set(codes.map((c) => matchKey(c.code)));
+
+  for (const { product, legacy, active } of plan.convert) {
+    const sector = sectors.find(
+      (s) => legacy.setor && sameName(s.name, legacy.setor),
+    );
+    const category = categories.find(
+      (c) => legacy.grupo && sameName(c.name, legacy.grupo),
+    );
+    // O código do legado, como a carga grava, quando está livre.
+    const code =
+      matchKey(product.code) === matchKey(legacy.codigo) ||
+      !taken.has(matchKey(legacy.codigo))
+        ? legacy.codigo
+        : product.code;
+    taken.add(matchKey(code));
+
+    const kind = unitKindFromCode(legacy.unidade);
+    await prisma.product.update({
+      where: { id: product.id },
+      data: {
+        code,
+        name: legacy.nome,
+        technicalDescription: legacy.descricao || null,
+        imageUrl: null,
+        isStandard: false,
+        isImported: true,
+        legacyId: legacy.codigo,
+        isActive: active,
+        ...(sector && { sectorId: sector.id }),
+        ...(category && { categoryId: category.id }),
+      },
+    });
+    await prisma.productItem.update({
+      where: { id: product.items[0].id },
+      data: {
+        name: legacy.nome,
+        unitKind: kind,
+        ...importedItemPrices(legacy.valorCentavos, kind),
+        width: null,
+        height: null,
+        length: null,
+        duration: null,
+      },
+    });
+    if (product.fiscalNcm === PLACEHOLDER_NCM) {
+      await prisma.productFiscalData.update({
+        where: { productId: product.id },
+        data: { ncm },
+      });
+    }
+  }
+
+  for (const product of plan.deactivate) {
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { isActive: false },
+    });
+  }
+}
+
+/** Quantas linhas gravar por transação. */
+const LINE_BATCH = 200;
 
 export async function applyFixes(
   prisma: PrismaClient,
+  companyId: string,
   plan: FixPlan,
+  examples: ExamplePlan,
+  lines: LinePlan,
 ): Promise<void> {
   for (const { decision } of plan.unitFixes) {
     await prisma.productItem.update({
@@ -344,6 +794,20 @@ export async function applyFixes(
       where: { id: product.id },
       data: { isActive: false },
     });
+  }
+
+  await applyExamples(prisma, companyId, examples);
+
+  for (let i = 0; i < lines.fixes.length; i += LINE_BATCH) {
+    const batch = lines.fixes.slice(i, i + LINE_BATCH);
+    await prisma.$transaction(
+      batch.map(({ line, to }) =>
+        prisma.quotationProductItem.update({
+          where: { id: line.id },
+          data: to,
+        }),
+      ),
+    );
   }
 }
 
@@ -366,20 +830,50 @@ function changeBreakdown(plan: FixPlan): string {
     .join(' · ');
 }
 
-export function printPlan(plan: FixPlan): void {
+/** Linhas que vão mudar, como "UNITY → AREA 1773 · sem unidade → UNITY 900". */
+function lineBreakdown(lines: LinePlan): string {
+  const counts = new Map<string, number>();
+  for (const { line, to } of lines.fixes) {
+    const key = `${line.unitKind ?? 'sem unidade'} → ${to.unitKind}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, total]) => `${key} ${total}`)
+    .join(' · ');
+}
+
+export function printPlan(
+  plan: FixPlan,
+  examples: ExamplePlan | null,
+  lines: LinePlan,
+  apply: boolean,
+): void {
   const linha = (label: string, total: number, extra = '') =>
     console.log(
-      `  ${label.padEnd(40)} ${String(total).padStart(5)}${extra ? `   ${extra}` : ''}`,
+      `  ${label.padEnd(40)} ${String(total).padStart(6)}${extra ? `   ${extra}` : ''}`,
     );
 
-  console.log('Unidade');
+  console.log('Unidade do produto');
   linha('corrigir', plan.unitFixes.length, changeBreakdown(plan));
   linha('já na unidade do legado', plan.unitOk);
   linha('alterados depois da carga (conferir)', plan.unitReview.length);
   linha('adotados ou sem unidade no legado', plan.unitSkipped);
-  console.log('Situação');
+  console.log('Situação do produto');
   linha('inativar (inativo no legado)', plan.deactivate.length);
   linha('inativo no legado, mas usado no Atrupe', plan.inUse.length);
+  if (examples) {
+    console.log('Exemplos da conta (criada para a migração)');
+    linha('viram o produto do legado', examples.convert.length);
+    linha('inativar', examples.deactivate.length);
+    linha('usados no Atrupe (mantidos)', examples.inUse.length);
+    linha('conferir', examples.review.length);
+  }
+  console.log('Linhas de documento migrado');
+  linha('corrigir', lines.fixes.length, lineBreakdown(lines));
+  linha('já na unidade do legado', lines.ok);
+  linha('alteradas depois da carga (mantidas)', lines.review);
+  linha('sem medida ou fora do legado', lines.skipped);
   if (plan.unmatched > 0) {
     console.log(
       `\n${plan.unmatched} produto(s) sem par no legado: ficam como estão.`,
@@ -403,6 +897,26 @@ export function printPlan(plan: FixPlan): void {
     }
   }
 
+  if (examples && examples.convert.length > 0) {
+    console.log('\nExemplos que viram o produto do legado (antes → depois):');
+    for (const { product, legacy, active } of examples.convert) {
+      const item = product.items[0];
+      console.log(
+        `  ${describeProduct(product)} ${describeItem(item)} → ` +
+          `${legacy.codigo} "${legacy.nome}" [legado ${legacy.unidade || '-'} ` +
+          `a ${legacy.valorCentavos ?? '-'} centavos] ${active ? 'ativo' : 'inativo'}` +
+          `${product.fiscalNcm === PLACEHOLDER_NCM ? ' + NCM padrão' : ''}`,
+      );
+    }
+  }
+
+  if (examples && examples.deactivate.length > 0) {
+    console.log('\nExemplos inativados (para desfazer, isActive = true):');
+    for (const product of examples.deactivate) {
+      console.log(`  ${describeProduct(product)}`);
+    }
+  }
+
   if (plan.unitReview.length > 0) {
     console.log('\nPara conferir com o cliente (unidade não mexida):');
     for (const { product, legacy, reason } of plan.unitReview) {
@@ -422,6 +936,16 @@ export function printPlan(plan: FixPlan): void {
       console.log(`  ${describeProduct(product)} — ${product.ownUses} uso(s)`);
     }
   }
+
+  // Milhares de linhas: só na gravação, para desfazer.
+  if (apply && lines.fixes.length > 0) {
+    console.log('\nLinhas corrigidas (id, unidade e custo anteriores):');
+    for (const { line } of lines.fixes) {
+      console.log(
+        `  LINHA ${line.id} ${line.unitKind ?? 'null'} ${line.unitCost}`,
+      );
+    }
+  }
 }
 
 function flagValue(args: string[], name: string): string | undefined {
@@ -433,12 +957,13 @@ async function main() {
   const args = process.argv.slice(2);
   const apply = args.includes('--yes');
   const byCode = args.includes('--por-codigo');
+  const forceExamples = args.includes('--exemplos');
   const companyId = flagValue(args, 'company-id');
   const [base] = args.filter((a) => !a.startsWith('--'));
 
   if (!companyId || !base) {
     console.error(
-      'Uso: fix-legacy-products --company-id=<id> <base> [--por-codigo] [--yes]',
+      'Uso: fix-legacy-products --company-id=<id> <base> [--por-codigo] [--exemplos] [--yes]',
     );
     process.exit(1);
   }
@@ -472,9 +997,15 @@ async function main() {
     if (!legacyCompany) throw new Error(`Base '${base}' não tem empresa`);
     assertSameCompany(legacyCompany, company);
 
+    const forMigration =
+      forceExamples || (await createdForMigration(prisma, company.id, base));
+
     console.log(`Empresa: ${company.name} (${company.id})`);
     console.log(
       `Base:    ${base} — ${legacyCompany.razao_social || legacyCompany.nome}`,
+    );
+    console.log(
+      `Conta criada para a migração: ${forMigration ? 'sim' : 'não'}`,
     );
     console.log(
       apply
@@ -486,11 +1017,43 @@ async function main() {
     const products = await loadProducts(prisma, company.id, { byCode });
     const plan = planFixes(legacyByCode, products);
 
-    printPlan(plan);
+    const examples = forMigration
+      ? planExamples(
+          legacyByCode,
+          await loadExamples(prisma, company.id),
+          products,
+        )
+      : null;
+
+    // Unidade de cada produto no legado, para as linhas. O exemplo que vira
+    // produto do legado entra pela mesma chave.
+    const targetByProduct = new Map<string, UnitKind | null>();
+    for (const product of [
+      ...products,
+      ...(examples?.convert.map((c) => c.product) ?? []),
+    ]) {
+      const match = legacyOf(legacyByCode, product);
+      if (match)
+        targetByProduct.set(product.id, unitKindFromCode(match.unidade));
+    }
+    const lines = await planLines(prisma, company.id, targetByProduct);
+
+    printPlan(plan, examples, lines, apply);
 
     if (apply) {
-      await applyFixes(prisma, plan);
-      console.log('\nProdutos corrigidos.');
+      await applyFixes(
+        prisma,
+        company.id,
+        plan,
+        examples ?? {
+          convert: [],
+          deactivate: [],
+          inUse: [],
+          review: [],
+        },
+        lines,
+      );
+      console.log('\nProdutos e linhas corrigidos.');
     } else {
       console.log('\nNada foi gravado.');
     }

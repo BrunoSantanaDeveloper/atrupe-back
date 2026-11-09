@@ -1,6 +1,8 @@
 import {
   displayToRawUnitCost,
   importedItemPrices,
+  lineRawMeasure,
+  lineUnitCost,
   unitKindFromCode,
 } from './product-unit';
 
@@ -85,5 +87,34 @@ describe('importedItemPrices', () => {
       unitCost: 3000,
       salePrice: 3000,
     });
+  });
+});
+
+describe('lineUnitCost', () => {
+  it('em área, a taxa vezes a área e a quantidade da linha dá o total', () => {
+    // 3 peças de 1,00 × 2,00 m por R$ 360,00: R$ 60,00/m².
+    const taxa = lineUnitCost(36000, 'AREA', { width: 1000, height: 2000 }, 3);
+
+    expect(taxa * 1000 * 2000 * 3).toBeCloseTo(36000, 6);
+    expect(taxa * 1_000_000).toBeCloseTo(6000, 6);
+  });
+
+  it('em unidade, a taxa é o total dividido pela quantidade da linha', () => {
+    expect(lineUnitCost(36000, 'UNITY', {}, 3)).toBe(12000);
+    expect(lineUnitCost(36000, null, {}, 3)).toBe(12000);
+  });
+
+  it('sem medida, devolve o próprio total em vez de dividir por zero', () => {
+    expect(lineUnitCost(36000, 'AREA', { width: null, height: 2000 }, 3)).toBe(
+      36000,
+    );
+    expect(lineUnitCost(null, 'AREA', { width: 1000, height: 2000 }, 3)).toBe(
+      null,
+    );
+  });
+
+  it('a medida da unidade avulsa é a quantidade', () => {
+    expect(lineRawMeasure('UNITY', {}, 4)).toBe(4);
+    expect(lineRawMeasure('LENGTH', { length: 1500 }, 4)).toBe(1500);
   });
 });

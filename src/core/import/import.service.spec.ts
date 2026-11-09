@@ -1234,3 +1234,116 @@ describe('ImportService refresh of migrated sales', () => {
     expect(total).toBe(65000);
   });
 });
+
+/**
+ * Linha da O.S. migrada. A carga de orçamento sempre gravou a unidade do
+ * produto na linha; a de O.S. não gravava. Com o produto por m², a taxa sai
+ * por mm² e a tela lia a linha como unidade avulsa: mostrava a taxa por mm²
+ * como preço da peça.
+ */
+describe('ImportService migrated order lines', () => {
+  it('grava na linha da O.S. a unidade do produto, como no orçamento', async () => {
+    const linhas: any[] = [];
+
+    // Banco de mentira: qualquer leitura volta vazia e qualquer gravação
+    // devolve um registro. Só o produto e as linhas importam aqui.
+    const model = (name: string) =>
+      new Proxy(
+        {},
+        {
+          get: (_target, method: string) => {
+            if (name === 'product' && method === 'findUnique') {
+              return jest.fn().mockResolvedValue({
+                id: 'prod-1',
+                name: 'BANNER',
+                technicalDescription: null,
+                items: [
+                  {
+                    id: 'item-1',
+                    name: 'BANNER',
+                    unitKind: 'AREA',
+                    width: null,
+                    height: null,
+                    length: null,
+                    weight: null,
+                    volume: null,
+                    distance: null,
+                    duration: null,
+                  },
+                ],
+              });
+            }
+            if (name === 'quotationProductItem' && method === 'create') {
+              return jest.fn().mockImplementation(({ data }) => {
+                linhas.push(data);
+                return Promise.resolve({ id: 'linha-1' });
+              });
+            }
+            if (method === 'findMany' || method === 'groupBy') {
+              return jest.fn().mockResolvedValue([]);
+            }
+            if (method === 'count') return jest.fn().mockResolvedValue(0);
+            if (method.startsWith('find')) {
+              return jest.fn().mockResolvedValue(null);
+            }
+            return jest.fn().mockResolvedValue({ id: `${name}-1` });
+          },
+        },
+      );
+
+    const prisma: any = new Proxy(
+      {},
+      {
+        get: (_target, name: string) =>
+          name === '$transaction'
+            ? (arg: any) =>
+                Array.isArray(arg) ? Promise.all(arg) : arg(prisma)
+            : model(name),
+      },
+    );
+
+    const service = new ImportService(prisma, {} as any, {} as any);
+    const internals = service as any;
+    jest.spyOn(internals, 'buildClientIndex').mockResolvedValue({});
+    jest.spyOn(internals, 'buildPaymentConditionIndex').mockResolvedValue({});
+    jest
+      .spyOn(internals, 'resolveImportSeries')
+      .mockResolvedValue({ id: 'serie-1', code: '1' });
+    jest
+      .spyOn(internals, 'resolveClient')
+      .mockReturnValue({ id: 'cliente-1', name: 'Cliente' });
+    jest
+      .spyOn(internals, 'findSeller')
+      .mockResolvedValue({ id: 'vendedor-1', name: 'Vendedor' });
+    jest.spyOn(internals, 'resolvePaymentCondition').mockReturnValue(null);
+
+    // 2 peças de 1,00 × 0,50 m por R$ 60,00 (R$ 60,00/m²).
+    await internals.importOrders(
+      [
+        {
+          NumeroVenda: '10',
+          Serie: '1',
+          DataVenda: '2026-01-10',
+          ClienteCodigoLegado: '5',
+          VendedorCodigoLegado: '2',
+          ProdutoCodigo: 'BAN06',
+          ProdutoNome: 'BANNER',
+          ItemLargura: '1,000',
+          ItemComprimento: '0,500',
+          Quantidade: '2',
+          ValorUnitario: '30,00',
+          ValorTotal: '60,00',
+          Desconto: '',
+          StatusOrdem: 'FINISHED',
+        },
+      ],
+      'company-1',
+      { skipReceivable: true },
+    );
+
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0].unitKind).toBe('AREA');
+    // A tela multiplica a taxa pela área e pela quantidade da linha.
+    expect(linhas[0].unitCost * 1000 * 500 * 2).toBeCloseTo(6000, 6);
+  });
+});

@@ -1,9 +1,13 @@
 import {
   LegacyProduct,
+  LineSnapshot,
   ProductSnapshot,
+  decideExample,
+  decideLine,
   decideStatus,
   decideUnit,
   kindAsMigrated,
+  planExamples,
   planFixes,
 } from './fix-legacy-products';
 
@@ -15,6 +19,9 @@ import {
 const legado = (over: Partial<LegacyProduct> = {}): LegacyProduct => ({
   codigo: 'BAN05',
   nome: 'Banner Papel',
+  descricao: '',
+  setor: 'Almoxarifado',
+  grupo: 'IMPRESSÃO DIGITAL',
   ativo: true,
   unidade: 'M2',
   unidadeMigrada: 'UN',
@@ -28,8 +35,10 @@ const produto = (over: Partial<ProductSnapshot> = {}): ProductSnapshot => ({
   name: 'Banner Papel',
   legacyId: 'BAN05',
   isImported: true,
+  isStandard: false,
   isActive: true,
   ownUses: 0,
+  fiscalNcm: '49119900',
   items: [
     {
       id: 'item-1',
@@ -209,5 +218,206 @@ describe('planFixes', () => {
     expect(plano.unitOk).toBe(1);
     expect(plano.deactivate.map((d) => d.product.id)).toEqual(['prod-2']);
     expect(plano.unmatched).toBe(1);
+  });
+});
+
+/**
+ * Exemplos de uma conta criada para a migração. Na Terabyte, o "Banner" de
+ * exemplo (código trocado para BANNER, por isso sem `isStandard`) foi adotado
+ * pelo "Banner" do legado, inativo lá; e o exemplo "Adesivo Recorte" ocupava
+ * o código ADREC do "Adesivo Jateado + Recortes", ativo no legado.
+ */
+describe('decideExample', () => {
+  const exemplo = (over: Partial<ProductSnapshot> = {}) =>
+    produto({
+      id: 'ex-1',
+      code: 'BANNER',
+      name: 'Banner',
+      legacyId: 'BANNE',
+      isImported: false,
+      isStandard: false,
+      fiscalNcm: '00000000',
+      items: item({ unitKind: 'AREA', unitCost: 0.01, salePrice: 10000 }),
+      ...over,
+    });
+
+  it('o exemplo adotado vira o produto do legado, na situação de lá', () => {
+    const decisao = decideExample(
+      exemplo(),
+      legado({ codigo: 'BANNE', nome: 'Banner', ativo: false }),
+    );
+
+    expect(decisao).toMatchObject({ action: 'convert', active: false });
+  });
+
+  it('o exemplo que ocupava o código vira o produto ativo do legado', () => {
+    const decisao = decideExample(
+      exemplo({
+        code: 'ADREC',
+        name: 'Adesivo Recorte',
+        legacyId: null,
+        isStandard: true,
+      }),
+      legado({ codigo: 'ADREC', nome: 'Adesivo Jateado + Recortes' }),
+    );
+
+    expect(decisao).toMatchObject({ action: 'convert', active: true });
+  });
+
+  it('mantém ativo o exemplo já vendido no Atrupe', () => {
+    const decisao = decideExample(
+      exemplo({ ownUses: 1 }),
+      legado({ codigo: 'BANNE', ativo: false }),
+    );
+
+    expect(decisao).toMatchObject({ action: 'convert', active: true });
+  });
+
+  it('inativa o exemplo que não corresponde a nada do legado', () => {
+    const solto = exemplo({
+      code: 'PNFLT',
+      name: 'Painel Front Light',
+      legacyId: null,
+      isStandard: true,
+    });
+
+    expect(decideExample(solto, undefined)).toEqual({ action: 'deactivate' });
+    expect(decideExample({ ...solto, ownUses: 2 }, undefined)).toEqual({
+      action: 'in-use',
+    });
+    expect(decideExample({ ...solto, isActive: false }, undefined)).toEqual({
+      action: 'none',
+    });
+  });
+
+  it('não converte quando outro produto já tem o vínculo com o legado', () => {
+    expect(decideExample(exemplo(), legado({ codigo: 'BANNE' }), true)).toEqual(
+      { action: 'deactivate' },
+    );
+  });
+
+  it('não toca no que não é exemplo nem no que a migração criou', () => {
+    expect(
+      decideExample(
+        produto({ isImported: false, name: 'Placa do cliente', code: 'PLC' }),
+        undefined,
+      ),
+    ).toEqual({ action: 'none' });
+    expect(decideExample(produto(), legado())).toEqual({ action: 'none' });
+  });
+});
+
+describe('planExamples', () => {
+  it('não repete o vínculo de um produto do legado que já existe', () => {
+    const porCodigo = new Map([['banne', legado({ codigo: 'BANNE' })]]);
+    // O exemplo ocupa o código, mas uma carga anterior já criou o produto
+    // do legado com o vínculo: converter estouraria a chave do vínculo.
+    const exemplo = produto({
+      id: 'ex-1',
+      code: 'BANNE',
+      name: 'Banner',
+      legacyId: null,
+      isImported: false,
+      isStandard: true,
+    });
+    const migrado = produto({ id: 'prod-9', legacyId: 'BANNE' });
+
+    const plano = planExamples(porCodigo, [exemplo], [migrado]);
+
+    expect(plano.convert).toEqual([]);
+    expect(plano.deactivate.map((p) => p.id)).toEqual(['ex-1']);
+  });
+
+  it('converte o exemplo cujo vínculo ninguém mais tem', () => {
+    const porCodigo = new Map([['adrec', legado({ codigo: 'ADREC' })]]);
+    const exemplo = produto({
+      id: 'ex-2',
+      code: 'ADREC',
+      name: 'Adesivo Recorte',
+      legacyId: null,
+      isImported: false,
+      isStandard: true,
+    });
+
+    const plano = planExamples(porCodigo, [exemplo], []);
+
+    expect(plano.convert.map((c) => c.product.id)).toEqual(['ex-2']);
+  });
+});
+
+/**
+ * Linhas de documento migrado. Na Terabyte, o "BANNER" (BAN06) tem 330 linhas
+ * vendidas com largura e comprimento que entraram como unidade.
+ */
+describe('decideLine', () => {
+  // 2 peças de 1,00 × 0,50 m a R$ 60,00/m² = R$ 60,00.
+  const linha = (over: Partial<LineSnapshot> = {}): LineSnapshot => ({
+    id: 'linha-1',
+    productId: 'prod-1',
+    unitKind: 'UNITY',
+    unitCost: 3000,
+    salePrice: 6000,
+    totalValue: 6000,
+    width: 1000,
+    height: 500,
+    quantity: 1,
+    lineQuantity: 2,
+    ...over,
+  });
+
+  it('passa a área a linha do produto por m², mantendo o total', () => {
+    const decisao = decideLine('AREA', linha());
+
+    expect(decisao.action).toBe('fix');
+    if (decisao.action !== 'fix') return;
+    expect(decisao.to.unitKind).toBe('AREA');
+    // A tela multiplica a taxa pela área e pela quantidade da linha.
+    expect(decisao.to.unitCost * 1000 * 500 * 2).toBeCloseTo(6000, 6);
+  });
+
+  it('dá unidade à linha de O.S. que a carga gravou sem nenhuma', () => {
+    expect(decideLine('UNITY', linha({ unitKind: null }))).toEqual({
+      action: 'fix',
+      to: { unitKind: 'UNITY', unitCost: 3000 },
+    });
+  });
+
+  it('corrige a linha de O.S. sem unidade que já tinha a taxa por mm²', () => {
+    // Produto de exemplo adotado já estava em área: a taxa veio por mm², mas
+    // a O.S. ficou sem a unidade.
+    const decisao = decideLine(
+      'AREA',
+      linha({ unitKind: null, unitCost: 6000 / (1000 * 500 * 2) }),
+    );
+
+    expect(decisao).toMatchObject({ action: 'fix', to: { unitKind: 'AREA' } });
+  });
+
+  it('não mexe na linha que alguém abriu e salvou', () => {
+    expect(decideLine('AREA', linha({ unitCost: 2500 }))).toEqual({
+      action: 'review',
+    });
+    expect(decideLine('AREA', linha({ quantity: 2 }))).toEqual({
+      action: 'review',
+    });
+    expect(decideLine('AREA', linha({ totalValue: 5000 }))).toEqual({
+      action: 'review',
+    });
+  });
+
+  it('deixa como está a linha sem medida e a que já está certa', () => {
+    expect(decideLine('AREA', linha({ width: null }))).toEqual({
+      action: 'skip',
+    });
+    expect(decideLine('AREA', linha({ unitKind: 'AREA' }))).toEqual({
+      action: 'ok',
+    });
+    expect(decideLine('LENGTH', linha())).toEqual({ action: 'skip' });
+  });
+
+  it('só dá unidade à linha que estava sem nenhuma', () => {
+    expect(decideLine('UNITY', linha({ unitKind: 'LENGTH' }))).toEqual({
+      action: 'review',
+    });
   });
 });

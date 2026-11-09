@@ -117,3 +117,56 @@ export function importedItemPrices(
 
   return { unitCost, salePrice };
 }
+
+/** Medidas de uma linha de documento, em unidade bruta (mm, segundos). */
+export interface LineDimensions {
+  width?: number | null;
+  height?: number | null;
+  length?: number | null;
+  duration?: number | null;
+}
+
+/**
+ * Medida bruta que multiplica o preço unitário da linha.
+ *
+ * A tela recalcula `unitCost = salePrice / medida` ao abrir o item. Se o
+ * `unitCost` gravado não seguir a mesma regra, abrir a linha sobrescreve o
+ * valor da venda pelo do catálogo — foi o que aconteceu na primeira carga.
+ */
+export function lineRawMeasure(
+  unitKind: UnitKind | null,
+  item: LineDimensions,
+  quantity: number,
+): number {
+  switch (unitKind) {
+    case 'AREA':
+      return (item.width || 0) * (item.height || 0);
+    case 'LENGTH':
+      return item.width || item.length || 0;
+    case 'DURATION':
+      return item.duration || 0;
+    default:
+      // Unidade avulsa não tem medida própria: a quantidade da linha é
+      // aplicada pelo chamador.
+      return quantity;
+  }
+}
+
+/**
+ * Taxa por unidade bruta coerente com o valor da linha, para a tela não
+ * recalcular um valor diferente do que foi vendido.
+ *
+ * A tela obtém a medida total multiplicando a medida unitária pela quantidade
+ * da linha; a taxa precisa sair da mesma base.
+ */
+export function lineUnitCost(
+  lineTotalInCents: number | null,
+  unitKind: UnitKind | null,
+  dimensions: LineDimensions,
+  quantity: number,
+): number | null {
+  if (lineTotalInCents === null) return null;
+
+  const measure = lineRawMeasure(unitKind, dimensions, 1) * (quantity || 1);
+  return measure > 0 ? lineTotalInCents / measure : lineTotalInCents;
+}

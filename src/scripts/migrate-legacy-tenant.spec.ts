@@ -897,6 +897,83 @@ describe('prepareStep', () => {
     expect(prep.notes.join(' ')).toMatch(/não têm item cadastrado.*30/s);
   });
 
+  it('na conta criada para a migração, tira os exemplos de linha antes da carga', async () => {
+    // Na Terabyte, o exemplo "Banner" ficou no lugar do "Banner" do legado com
+    // o preço de exemplo, e o código ADREC do exemplo impediu a carga de criar
+    // o "Adesivo Jateado + Recortes".
+    const exemplos = [
+      { id: 'ex-1', code: 'ADREC' },
+      { id: 'ex-2', code: 'PNFLT' },
+    ];
+    const retire = jest.fn().mockResolvedValue(['ADREC → ADREC-EXEMPLO']);
+    const adocoes = jest
+      .fn()
+      .mockResolvedValue({ adopted: [], withoutItem: [] });
+    const service = internals({
+      findExampleProducts: jest.fn().mockResolvedValue(exemplos),
+      retireExampleProducts: retire,
+      findProductAdoptions: adocoes,
+    });
+
+    const prep = await prepareStep(
+      service,
+      etapa('product'),
+      [{ codigo: 'ADREC', unidadeMedida: 'M2', ativo: 'SIM' }],
+      'company-1',
+      false,
+      true,
+    );
+
+    expect(retire).toHaveBeenCalledWith('company-1', exemplos, ['ADREC']);
+    expect(adocoes).toHaveBeenCalledWith(
+      expect.any(Array),
+      'company-1',
+      new Set(['ex-1', 'ex-2']),
+    );
+    expect(prep.notes.join(' ')).toMatch(
+      /2 produto\(s\) de exemplo da conta inativados.*ADREC → ADREC-EXEMPLO/,
+    );
+  });
+
+  it('na simulação, só avisa dos exemplos que sairão de linha', async () => {
+    const retire = jest.fn();
+    const service = internals({
+      findExampleProducts: jest
+        .fn()
+        .mockResolvedValue([{ id: 'ex-1', code: 'PNFLT' }]),
+      retireExampleProducts: retire,
+    });
+
+    const prep = await prepareStep(
+      service,
+      etapa('product'),
+      [],
+      'company-1',
+      true,
+      true,
+    );
+
+    expect(retire).not.toHaveBeenCalled();
+    expect(prep.notes.join(' ')).toMatch(
+      /1 produto\(s\) de exemplo.*serão inativados/,
+    );
+  });
+
+  it('na conta que já estava em uso, os exemplos são do cliente', async () => {
+    const procura = jest.fn();
+
+    await prepareStep(
+      internals({ findExampleProducts: procura }),
+      etapa('product'),
+      [],
+      'company-1',
+      false,
+      false,
+    );
+
+    expect(procura).not.toHaveBeenCalled();
+  });
+
   it('mostra na simulação as unidades e os produtos que entram inativos', async () => {
     // Unidade errada não reprova linha nenhuma: a contagem é o que deixa o
     // operador ver, antes de gravar, uma gráfica sem nenhum produto por m².

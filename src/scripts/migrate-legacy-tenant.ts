@@ -176,9 +176,38 @@ export async function prepareStep(
   }
 
   if (extractor.entity === 'product') {
+    // Conta criada só para a migração: os produtos de exemplo não são do
+    // cliente. Adotados, ficavam no lugar do produto do legado com o preço de
+    // exemplo, e o código deles impedia a carga de criar o produto que tinha o
+    // mesmo código. Saem de linha antes da carga, com o código liberado.
+    let examples: { id: string; code: string }[] = [];
+    if (fullHistory) {
+      examples = await internals.findExampleProducts(companyId);
+
+      if (examples.length > 0) {
+        const renamed = dryRun
+          ? []
+          : await internals.retireExampleProducts(
+              companyId,
+              examples,
+              rows.map((row) => row.codigo).filter(Boolean),
+            );
+
+        prep.notes.push(
+          `${examples.length} produto(s) de exemplo da conta ` +
+            `${dryRun ? 'serão inativados' : 'inativados'} antes da carga, ` +
+            `porque a conta foi criada para a migração.` +
+            (renamed.length > 0
+              ? ` Código liberado para o legado: ${renamed.join(', ')}.`
+              : ''),
+        );
+      }
+    }
+
     const { adopted, withoutItem } = await internals.findProductAdoptions(
       rows,
       companyId,
+      new Set(examples.map((example) => example.id)),
     );
     prep.adopted = adopted.length;
 
