@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import * as mysql from 'mysql2/promise';
 import { ImportService } from '../core/import/import.service';
 import { ProductFiscalService } from '../core/fiscal/product-fiscal/product-fiscal.service';
+import { IcmsAliquotaInternaService } from '../core/fiscal/shared/icms-aliquota-interna.service';
 import { resolveCompanyByEmail } from './preflight-financial-import';
 import {
   EXTRACTORS,
@@ -702,7 +703,12 @@ function service(prisma: PrismaClient) {
   return new ImportService(
     prisma as any,
     null as any,
-    new ProductFiscalService(prisma as any),
+    // A alíquota interna por UF só é consultada pela correção de tributação em
+    // massa, que não roda na importação: o script monta o service sem ela.
+    new ProductFiscalService(
+      prisma as any,
+      new IcmsAliquotaInternaService(prisma as any),
+    ),
   );
 }
 

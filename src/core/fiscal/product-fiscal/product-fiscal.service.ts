@@ -6,8 +6,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import {
+  BULK_FISCAL_MAX_PRODUCTS,
   BULK_NCM_MAX_PRODUCTS,
   BulkUpdateNcmDto,
+  BulkUpdateTributacaoDto,
   CreateProductFiscalDataDto,
   UpdateProductFiscalDataDto,
   ProductStRuleDto,
@@ -18,8 +20,36 @@ import {
   validateNcm,
   formatNcm,
 } from '../utils/fiscal-validators';
-import { defaultsCadastroFiscal } from '../utils/product-fiscal-defaults.util';
+import {
+  defaultsCadastroFiscal,
+  isRegimeNormal,
+} from '../utils/product-fiscal-defaults.util';
+import {
+  codigosCstDeOutroRegime,
+  exigeAliquotaIcms,
+  exigeReducaoBase,
+  opcoesCstIcms,
+  validarCstIcmsParaRegime,
+} from '../utils/icms-cst.util';
+import { normalizarUf } from '../utils/icms-aliquota-interna.util';
+import { IcmsAliquotaInternaService } from '../shared/icms-aliquota-interna.service';
 import { buildProductListWhere } from '../../product/product-list-where.util';
+
+/**
+ * Campos de tributação que a correção em massa sabe gravar.
+ *
+ * Tipado campo a campo, e não como um mapa aberto: o Prisma precisa saber que
+ * `icmsRate` é número para aceitar a escrita, e o tipo também é o que impede
+ * acrescentar um campo aqui sem passar pela validação.
+ */
+export interface CamposTributacaoEmMassa {
+  icmsCst?: string;
+  icmsRate?: number;
+  icmsReducao?: number;
+  icmsOrigin?: string;
+  cfopInState?: string;
+  cfopOutState?: string;
+}
 
 /** Pendência de cadastro que impede ou compromete a emissão de NFS-e. */
 export interface PendenciaFiscal {
@@ -33,7 +63,15 @@ export interface PendenciaFiscal {
 export class ProductFiscalService {
   private readonly logger = new Logger(ProductFiscalService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    /**
+     * Mesma fonte de alíquota interna que o cálculo da NF-e usa, com os
+     * ajustes do superadmin sobre os padrões por UF: a sugestão da tela de
+     * correção não pode divergir do que a emissão vai calcular.
+     */
+    private readonly icmsAliquotaInterna: IcmsAliquotaInternaService,
+  ) {}
 
   /**
    * Avalia o cadastro fiscal de um serviço e devolve suas pendências.
@@ -360,6 +398,7 @@ export class ProductFiscalService {
   private async resolverEscopoSelecionado(
     companyId: string,
     productIds: string[],
+    mensagemVazio = 'Nenhum produto encontrado para aplicar o NCM.',
   ) {
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, companyId },
@@ -367,9 +406,7 @@ export class ProductFiscalService {
     });
 
     if (products.length === 0) {
-      throw new NotFoundException(
-        'Nenhum produto encontrado para aplicar o NCM.',
-      );
+      throw new NotFoundException(mensagemVazio);
     }
 
     return {
@@ -417,6 +454,380 @@ export class ProductFiscalService {
       comCadastroFiscal: comCadastro,
       semCadastroFiscal: semCadastro,
     };
+  }
+
+  /**
+   * Correção de tributação em massa: CST de ICMS, alíquota, redução de base,
+   * origem e CFOPs.
+   *
+   * Existe por causa da troca de regime. No Simples todo produto nasce com
+   * CSOSN (padrão 102); ao virar Regime Normal, a base inteira recusa a
+   * emissão de uma vez — "o código 102 é CSOSN e não vale no Regime Normal" —
+   * e não há como abrir 119 cadastros um por um. Um script por cliente
+   * resolveria o primeiro caso e nenhum dos seguintes, então a correção mora
+   * aqui, com a mesma mecânica de escopo da alteração de NCM em massa.
+   *
+   * Só os campos informados são gravados: quem precisa apenas do CST não tem o
+   * CFOP ajustado à mão sobrescrito por um padrão.
+   *
+   * O CST escolhido é conferido contra o regime do emissor antes de qualquer
+   * escrita, nos dois sentidos — CSOSN no Regime Normal e CST no Simples —, e
+   * a operação é recusada quando o novo CST exigiria alíquota (ou redução de
+   * base) que os produtos não têm e que não vem na requisição: gravar só o
+   * código trocaria um bloqueio de emissão por outro.
+   */
+  async bulkUpdateTributacao(companyId: string, dto: BulkUpdateTributacaoDto) {
+    const defaults = await this.getCompanyFiscalDefaults(companyId);
+    const dados = this.validarTributacaoEmMassa(dto, defaults.emitCrt);
+
+    const { productWhere, ignored } =
+      dto.scope === 'ALL'
+        ? {
+            // companyId sempre do token, nunca do corpo.
+            productWhere: buildProductListWhere({
+              ...dto.filters,
+              companyId,
+            }),
+            ignored: 0,
+          }
+        : await this.resolverEscopoSelecionado(
+            companyId,
+            dto.productIds ?? [],
+            'Nenhum produto encontrado para corrigir a tributação.',
+          );
+
+    const filtroRegime = this.filtroCstDeOutroRegime(dto, defaults.emitCrt);
+
+    // Produto sem cadastro fiscal não tem CST: entra mesmo com o filtro "só os
+    // do outro regime" ligado, porque o cadastro nasce com o CST do regime.
+    const semCadastro = await this.prisma.product.findMany({
+      where: { ...productWhere, fiscalData: null },
+      select: { id: true },
+    });
+
+    await this.conferirExigenciasDoCst(
+      dto,
+      { product: productWhere, ...filtroRegime },
+      semCadastro.length,
+    );
+
+    // Sem transação única pelo mesmo motivo da alteração de NCM: no escopo ALL
+    // ela seguraria locks sobre toda a base de produtos. A operação é
+    // idempotente — aplicar a mesma tributação duas vezes não muda nada —,
+    // então uma falha no meio pode ser repetida.
+    const whereFiscal = { product: productWhere, ...filtroRegime };
+    const updateResult = await this.aplicarTributacao(
+      whereFiscal,
+      dados,
+      dto.onlyMissingRate === true,
+    );
+
+    let created = 0;
+    for (let i = 0; i < semCadastro.length; i += BULK_FISCAL_MAX_PRODUCTS) {
+      const lote = semCadastro.slice(i, i + BULK_FISCAL_MAX_PRODUCTS);
+      const { count } = await this.prisma.productFiscalData.createMany({
+        data: lote.map(({ id: productId }) => ({
+          productId,
+          // NCM fica com o padrão do emissor, ou nulo: inventar um código aqui
+          // seria gravar uma classificação fiscal errada em silêncio. A
+          // emissão e a alteração de NCM em massa cobram o NCM certo.
+          ncm: defaults.defaultNcm ? formatNcm(defaults.defaultNcm) : null,
+          cfopInState: defaults.defaultCfop || '5101',
+          ...defaultsCadastroFiscal(defaults.emitCrt),
+          // O que foi pedido vence os defaults.
+          ...dados,
+        })),
+        skipDuplicates: true,
+      });
+      created += count;
+    }
+
+    const total = updateResult.count + created;
+    if (total === 0) {
+      throw new NotFoundException(
+        dto.onlyIncompatibleRegime
+          ? 'Nenhum produto para corrigir: todos já estão com um CST do regime do emissor.'
+          : 'Nenhum produto encontrado para corrigir a tributação.',
+      );
+    }
+
+    this.logger.log(
+      `Tributação em massa na empresa ${companyId} (escopo ${dto.scope ?? 'SELECTED'}` +
+        `${dto.onlyIncompatibleRegime ? ', só CST de outro regime' : ''}` +
+        `${dto.onlyMissingRate ? ', alíquota só de quem está sem' : ''}): ` +
+        `${JSON.stringify(dados)} em ${updateResult.count} atualizados, ` +
+        `${created} criados, ${ignored} ignorados.`,
+    );
+
+    return {
+      scope: dto.scope ?? 'SELECTED',
+      aplicado: dados,
+      onlyMissingRate: dto.onlyMissingRate === true,
+      updated: updateResult.count,
+      created,
+      ignored,
+      total,
+    };
+  }
+
+  /**
+   * Grava a correção, respeitando "preencher a alíquota somente de quem está
+   * sem".
+   *
+   * Nesse modo a escrita vira dois passos, porque o alvo de cada parte é
+   * diferente: o CST (e os demais campos) vão para todos os produtos do
+   * escopo, e a alíquota só para quem está sem uma. Numa base migrada a
+   * alíquota preenchida é a exceção deliberada — um produto com tributação
+   * diferente do padrão da UF —, e sobrescrevê-la junto seria apagar em
+   * silêncio o único dado que alguém conferiu.
+   *
+   * `updated` continua sendo quantos produtos a correção tocou: o passo que
+   * atinge todos quando há outros campos, ou o da alíquota quando ela é a
+   * única coisa pedida.
+   */
+  private async aplicarTributacao(
+    whereFiscal: Record<string, unknown>,
+    dados: CamposTributacaoEmMassa,
+    somenteSemAliquota: boolean,
+  ): Promise<{ count: number }> {
+    const { icmsRate, ...outrosCampos } = dados;
+
+    if (!somenteSemAliquota || icmsRate === undefined) {
+      return this.prisma.productFiscalData.updateMany({
+        where: whereFiscal,
+        data: dados,
+      });
+    }
+
+    // AND explícito: whereFiscal pode já ter um OR (filtro por regime), e
+    // espalhar as duas condições no mesmo objeto sobrescreveria aquele.
+    const aliquotaResult = await this.prisma.productFiscalData.updateMany({
+      where: { AND: [whereFiscal, { icmsRate: null }] },
+      data: { icmsRate },
+    });
+
+    if (Object.keys(outrosCampos).length === 0) return aliquotaResult;
+
+    return this.prisma.productFiscalData.updateMany({
+      where: whereFiscal,
+      data: outrosCampos,
+    });
+  }
+
+  /** Quantos produtos a correção de tributação atingiria, sem alterar nada. */
+  async contarAlvosBulkTributacao(
+    companyId: string,
+    dto: BulkUpdateTributacaoDto,
+  ) {
+    const defaults = await this.getCompanyFiscalDefaults(companyId);
+    const productWhere =
+      dto.scope === 'ALL'
+        ? buildProductListWhere({ ...dto.filters, companyId })
+        : { id: { in: dto.productIds ?? [] }, companyId };
+
+    const filtroRegime = this.filtroCstDeOutroRegime(dto, defaults.emitCrt);
+
+    const [comCadastro, semCadastro] = await Promise.all([
+      this.prisma.productFiscalData.count({
+        where: { product: productWhere, ...filtroRegime },
+      }),
+      this.prisma.product.count({
+        where: { ...productWhere, fiscalData: null },
+      }),
+    ]);
+
+    return {
+      total: comCadastro + semCadastro,
+      comCadastroFiscal: comCadastro,
+      semCadastroFiscal: semCadastro,
+    };
+  }
+
+  /**
+   * O que a tela de correção precisa saber antes de oferecer qualquer opção:
+   * o regime do emissor, os CSTs que valem nele, a alíquota interna da UF como
+   * sugestão e quantos produtos estão com o código do outro regime.
+   *
+   * A alíquota vem com `origem` e `revisado` de propósito: parte dos padrões
+   * por UF não foi conferida na legislação estadual, e a tela precisa poder
+   * dizer isso em vez de apresentar o número como verdade fiscal. Quem decide
+   * a alíquota é o contador do cliente.
+   */
+  async opcoesBulkTributacao(companyId: string) {
+    const defaults = await this.getCompanyFiscalDefaults(companyId);
+
+    const enderecos = await this.prisma.address.findMany({
+      where: { companyId },
+      select: { state: true, type: true },
+    });
+    const principal =
+      enderecos.find((endereco) => endereco.type === 'Principal') ??
+      enderecos[0];
+    const uf = normalizarUf(principal?.state);
+
+    const [aliquotas, incompativeis, semCadastroFiscal] = await Promise.all([
+      this.icmsAliquotaInterna.listar(),
+      this.prisma.productFiscalData.count({
+        where: {
+          product: { companyId },
+          icmsCst: { in: [...codigosCstDeOutroRegime(defaults.emitCrt)] },
+        },
+      }),
+      this.prisma.product.count({ where: { companyId, fiscalData: null } }),
+    ]);
+
+    return {
+      emitCrt: defaults.emitCrt,
+      regime: isRegimeNormal(defaults.emitCrt) ? 'NORMAL' : 'SIMPLES',
+      uf: uf || null,
+      aliquotaInternaSugerida:
+        aliquotas.find((aliquota) => aliquota.uf === uf) ?? null,
+      cstOptions: opcoesCstIcms(defaults.emitCrt),
+      incompativeis,
+      semCadastroFiscal,
+    };
+  }
+
+  /**
+   * Filtro "só os produtos com CST do outro regime".
+   *
+   * Vale nos dois sentidos: ao migrar para o Regime Normal pega os CSOSN, e ao
+   * voltar para o Simples pega os CST. Preserva quem já está com o código
+   * certo, inclusive ajustado à mão.
+   */
+  private filtroCstDeOutroRegime(
+    dto: BulkUpdateTributacaoDto,
+    emitCrt: number | null,
+  ) {
+    if (!dto.onlyIncompatibleRegime) return {};
+
+    return {
+      OR: [
+        { icmsCst: { in: [...codigosCstDeOutroRegime(emitCrt)] } },
+        // Cadastro sem CST também não emite, e a mensagem que o cliente recebe
+        // ("CST do ICMS não informado") é a mesma classe de problema.
+        { icmsCst: null },
+        { icmsCst: '' },
+      ],
+    };
+  }
+
+  /**
+   * Barra a correção que deixaria os produtos bloqueados de outra forma.
+   *
+   * Trocar CSOSN 102 por CST 00 sem alíquota só troca a mensagem de recusa —
+   * de "é CSOSN e não vale no Regime Normal" para "CST 00 exige alíquota de
+   * ICMS". A conferência roda antes de escrever e diz quantos produtos ficariam
+   * parados, para a alíquota vir na mesma correção.
+   *
+   * Só se aplica quando a requisição troca o CST: sem troca, cada produto
+   * continua com o código que já tinha e as exigências dele não mudam.
+   */
+  private async conferirExigenciasDoCst(
+    dto: BulkUpdateTributacaoDto,
+    whereFiscal: Record<string, unknown>,
+    semCadastroFiscal: number,
+  ) {
+    const cst = dto.icmsCst?.trim();
+    if (!cst) return;
+
+    // AND explícito: whereFiscal pode já ter um OR (filtro por regime), e
+    // espalhar as duas condições no mesmo objeto sobrescreveria aquele.
+    const contarSem = async (condicao: Record<string, unknown>) =>
+      this.prisma.productFiscalData.count({
+        where: { AND: [whereFiscal, condicao] },
+      });
+
+    if (exigeAliquotaIcms(cst) && dto.icmsRate === undefined) {
+      const semAliquota =
+        (await contarSem({ icmsRate: null })) + semCadastroFiscal;
+      if (semAliquota > 0) {
+        throw new BadRequestException(
+          `${semAliquota} produto(s) ficariam com o CST ${cst} sem alíquota de ` +
+            'ICMS cadastrada, e a emissão continuaria bloqueada. Informe a ' +
+            'alíquota de ICMS junto da correção.',
+        );
+      }
+    }
+
+    if (exigeReducaoBase(cst) && dto.icmsReducao === undefined) {
+      const semReducao =
+        (await contarSem({ OR: [{ icmsReducao: null }, { icmsReducao: 0 }] })) +
+        semCadastroFiscal;
+      if (semReducao > 0) {
+        throw new BadRequestException(
+          `${semReducao} produto(s) ficariam com o CST ${cst} sem o percentual ` +
+            'de redução da base de cálculo, e a emissão continuaria bloqueada. ' +
+            'Informe a redução junto da correção.',
+        );
+      }
+    }
+  }
+
+  /**
+   * Confere os campos informados e devolve só eles, prontos para gravar.
+   *
+   * A validação mora no service, e não apenas nos decoradores do DTO, porque
+   * depende do regime do emissor — que vem do banco — e porque a mensagem
+   * precisa dizer o que fazer, não apenas que o valor é inválido.
+   */
+  private validarTributacaoEmMassa(
+    dto: BulkUpdateTributacaoDto,
+    emitCrt: number | null,
+  ): CamposTributacaoEmMassa {
+    const dados: CamposTributacaoEmMassa = {};
+
+    const cst = dto.icmsCst?.trim();
+    if (cst) {
+      const check = validarCstIcmsParaRegime(cst, emitCrt);
+      if (!check.valid) throw new BadRequestException(check.message);
+      dados.icmsCst = cst;
+    }
+
+    if (dto.icmsRate !== undefined) dados.icmsRate = dto.icmsRate;
+
+    if (dto.icmsReducao !== undefined) {
+      // O cálculo exige redução estritamente entre 0 e 100: 0 não reduz nada
+      // (e aí o CST certo é outro) e 100 zeraria a base do imposto.
+      if (dto.icmsReducao <= 0 || dto.icmsReducao >= 100) {
+        throw new BadRequestException(
+          'A redução da base de cálculo do ICMS deve ficar entre 0 e 100, ' +
+            'sem incluir os extremos.',
+        );
+      }
+      dados.icmsReducao = dto.icmsReducao;
+    }
+
+    if (dto.icmsOrigin !== undefined) {
+      const origem = dto.icmsOrigin.trim();
+      if (!/^[0-8]$/.test(origem)) {
+        throw new BadRequestException(
+          'A origem da mercadoria deve ser um dígito de 0 a 8.',
+        );
+      }
+      dados.icmsOrigin = origem;
+    }
+
+    for (const campo of ['cfopInState', 'cfopOutState'] as const) {
+      const valor = dto[campo];
+      if (valor === undefined) continue;
+      const limpo = valor.trim();
+      if (!/^[0-9]{4}$/.test(limpo)) {
+        throw new BadRequestException(
+          'O CFOP deve ter 4 dígitos (ex.: 5101 dentro do estado, 6101 fora).',
+        );
+      }
+      dados[campo] = limpo;
+    }
+
+    if (Object.keys(dados).length === 0) {
+      throw new BadRequestException(
+        'Informe pelo menos um campo para corrigir: CST de ICMS, alíquota, ' +
+          'redução da base, origem da mercadoria ou CFOP.',
+      );
+    }
+
+    return dados;
   }
 
   async delete(productId: string) {

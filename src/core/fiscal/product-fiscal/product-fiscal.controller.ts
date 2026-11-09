@@ -20,6 +20,7 @@ import {
   CreateProductFiscalDataDto,
   UpdateProductFiscalDataDto,
   BulkUpdateNcmDto,
+  BulkUpdateTributacaoDto,
   ProductStRuleDto,
 } from './dtos/product-fiscal.dto';
 
@@ -41,6 +42,17 @@ export class ProductFiscalController {
     return this.productFiscalService.listarPendenciasFiscais(
       req.user.companyId,
     );
+  }
+
+  // Precede @Get(':productId/...') pelo mesmo motivo das rotas acima.
+  @Get('bulk-tributacao/opcoes')
+  @HasPermission('view', 'nota_fiscal:config')
+  @ApiOperation({
+    summary:
+      'Regime do emissor, CSTs válidos nele, alíquota sugerida da UF e quantos produtos estão com o código do outro regime',
+  })
+  async opcoesBulkTributacao(@Req() req) {
+    return this.productFiscalService.opcoesBulkTributacao(req.user.companyId);
   }
 
   // Precede @Get(':productId'): sem isso "st-rules" seria lido como productId.
@@ -118,6 +130,38 @@ export class ProductFiscalController {
   })
   async contarAlvosBulkNcm(@Req() req, @Body() dto: BulkUpdateNcmDto) {
     return this.productFiscalService.contarAlvosBulkNcm(
+      req.user.companyId,
+      dto,
+    );
+  }
+
+  /**
+   * Correção de tributação em massa. Mesmo escopo por empresa do bulk-ncm: o
+   * companyId sai do token porque este controller não passa pelo TenantGuard.
+   */
+  @Post('bulk-tributacao')
+  @HasPermission('edit', 'nota_fiscal:config')
+  @ApiOperation({
+    summary:
+      'Corrige CST de ICMS, alíquota e CFOP de vários produtos de uma vez',
+  })
+  async bulkUpdateTributacao(@Req() req, @Body() dto: BulkUpdateTributacaoDto) {
+    return this.productFiscalService.bulkUpdateTributacao(
+      req.user.companyId,
+      dto,
+    );
+  }
+
+  @Post('bulk-tributacao/count')
+  @HasPermission('edit', 'nota_fiscal:config')
+  @ApiOperation({
+    summary: 'Quantos produtos a correção de tributação atingiria',
+  })
+  async contarAlvosBulkTributacao(
+    @Req() req,
+    @Body() dto: BulkUpdateTributacaoDto,
+  ) {
+    return this.productFiscalService.contarAlvosBulkTributacao(
       req.user.companyId,
       dto,
     );

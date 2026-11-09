@@ -13,6 +13,17 @@
  */
 
 import { calcularIcmsSt, type StCalculado } from './icms-st-calculo.util';
+// Catálogo compartilhado com a correção de tributação em massa: as listas
+// moravam aqui, privadas, e uma segunda cópia na correção divergiria desta no
+// dia em que um CST passasse a ser calculado.
+import {
+  CSOSN,
+  CST_COM_PROPRIO,
+  CST_COM_REDUCAO,
+  CST_COM_ST,
+  CST_NAO_IMPLEMENTADO,
+  CST_SEM_VALOR,
+} from './icms-cst.util';
 
 /** Arredonda para 2 casas sem arrastar resíduo de ponto flutuante. */
 const duasCasas = (valor: number) =>
@@ -88,51 +99,6 @@ export interface ImpostoItemCalculado {
    */
   bloqueios: string[];
 }
-
-/**
- * CSTs de ICMS que não destacam valor.
- *
- * O 60 entra aqui porque o imposto já foi retido numa etapa anterior: os
- * valores retidos vêm do documento de origem, não de cálculo nosso, e todos os
- * campos correspondentes são opcionais no layout.
- */
-const CST_SEM_VALOR = new Set(['40', '41', '50', '60']);
-
-/** CSTs de ICMS com substituição tributária. */
-const CST_COM_ST = new Set(['10', '30', '70']);
-
-/** CSTs de ICMS que destacam ICMS próprio (com redução, quando aplicável). */
-const CST_COM_PROPRIO = new Set(['00', '20', '10', '70']);
-
-/** CSTs que reduzem a base do ICMS próprio. */
-const CST_COM_REDUCAO = new Set(['20', '70']);
-
-/** CSTs de ICMS cujo cálculo ainda não está implementado. */
-const CST_NAO_IMPLEMENTADO: Record<string, string> = {
-  '51': 'diferimento',
-  '90': 'tributação "outras"',
-};
-
-/**
- * CSOSN — codigos de situacao tributaria do SIMPLES NACIONAL.
- *
- * Sao invalidos no Regime Normal, mas e' o que esta' em todo produto ja'
- * cadastrado: o sistema nasceu atendendo so' o Simples e o padrao do cadastro
- * e' 102. Ao migrar de regime, todos aparecem de uma vez — por isso a mensagem
- * diz o que fazer, em vez de so' informar que o codigo nao foi reconhecido.
- */
-const CSOSN = new Set([
-  '101',
-  '102',
-  '103',
-  '201',
-  '202',
-  '203',
-  '300',
-  '400',
-  '500',
-  '900',
-]);
 
 /** CSTs de PIS/COFINS com apuração por alíquota. Os demais não destacam valor. */
 const PIS_COFINS_COM_ALIQUOTA = new Set(['01', '02']);

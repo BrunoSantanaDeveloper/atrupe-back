@@ -2,14 +2,17 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { ProductFiscalService } from './product-fiscal.service';
+import { IcmsAliquotaInternaService } from '../shared/icms-aliquota-interna.service';
 
 /**
- * Foco em bulkUpdateNcm: é a única operação que escreve em vários produtos de
- * uma vez e a única deste service que depende de escopo por empresa.
+ * Foco nas operações em massa (NCM e tributação): são as únicas que escrevem
+ * em vários produtos de uma vez e as únicas deste service que dependem de
+ * escopo por empresa.
  */
 describe('ProductFiscalService', () => {
   let service: ProductFiscalService;
   let prisma: any;
+  let aliquotaInterna: { listar: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -29,14 +32,18 @@ describe('ProductFiscalService', () => {
         upsert: jest.fn(),
         deleteMany: jest.fn(),
       },
+      address: { findMany: jest.fn().mockResolvedValue([]) },
       invoicyConfig: { findFirst: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn((ops: Promise<any>[]) => Promise.all(ops)),
     };
+
+    aliquotaInterna = { listar: jest.fn().mockResolvedValue([]) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProductFiscalService,
         { provide: PrismaService, useValue: prisma },
+        { provide: IcmsAliquotaInternaService, useValue: aliquotaInterna },
       ],
     }).compile();
 
@@ -496,6 +503,604 @@ describe('ProductFiscalService', () => {
       });
       expect(prisma.productFiscalData.updateMany).not.toHaveBeenCalled();
       expect(prisma.productFiscalData.createMany).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * A correção de tributação em massa escreve em centenas de cadastros de uma
+   * vez e é o caminho de quem acabou de migrar de regime fiscal: o que ela
+   * aceita gravar precisa estar coberto por teste, porque o erro só aparece na
+   * emissão da nota do cliente.
+   */
+  describe('bulkUpdateTributacao', () => {
+    const COMPANY = 'company-1';
+    const REGIME_NORMAL = 3;
+    const SIMPLES = 1;
+
+    /** Emissor da empresa, de onde sai o regime que valida o CST. */
+    function mockEmissor(emitCrt: number | null, extras: any = {}) {
+      prisma.invoicyConfig.findFirst.mockResolvedValue({
+        emitCrt,
+        defaultNcm: null,
+        defaultCfop: null,
+        ...extras,
+      });
+    }
+
+    /**
+     * `product.findMany` é chamado duas vezes no escopo SELECTED: primeiro
+     * para resolver quais IDs pertencem à empresa, depois para achar quem
+     * ainda não tem cadastro fiscal.
+     */
+    function mockProdutos(produtos: { id: string; hasFiscal: boolean }[]) {
+      const semCadastro = produtos
+        .filter((p) => !p.hasFiscal)
+        .map(({ id }) => ({ id }));
+
+      prisma.product.findMany
+        .mockResolvedValueOnce(produtos.map(({ id }) => ({ id })))
+        .mockResolvedValueOnce(semCadastro);
+      prisma.productFiscalData.updateMany.mockResolvedValue({
+        count: produtos.filter((p) => p.hasFiscal).length,
+      });
+      prisma.productFiscalData.createMany.mockResolvedValue({
+        count: semCadastro.length,
+      });
+      // Nenhum produto sem alíquota, salvo quando o teste disser o contrário.
+      prisma.productFiscalData.count.mockResolvedValue(0);
+    }
+
+    it('recusa CSOSN em emissor do Regime Normal antes de tocar o banco', async () => {
+      mockEmissor(REGIME_NORMAL);
+
+      await expect(
+        service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsCst: '102',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.product.findMany).not.toHaveBeenCalled();
+      expect(prisma.productFiscalData.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('recusa CST do Regime Normal em optante do Simples', async () => {
+      mockEmissor(SIMPLES);
+
+      await expect(
+        service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsCst: '00',
+          icmsRate: 17,
+        }),
+      ).rejects.toThrow(/Simples/);
+
+      expect(prisma.productFiscalData.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('recusa CST que o sistema ainda não calcula', async () => {
+      mockEmissor(REGIME_NORMAL);
+
+      await expect(
+        service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsCst: '90',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('recusa requisição sem nenhum campo de tributação', async () => {
+      mockEmissor(REGIME_NORMAL);
+
+      await expect(
+        service.bulkUpdateTributacao(COMPANY, { productIds: ['p-1'] }),
+      ).rejects.toThrow(/pelo menos um campo/);
+    });
+
+    /**
+     * O defeito que motivou a conferência: trocar CSOSN 102 por CST 00 sem
+     * alíquota só troca a mensagem de recusa na emissão.
+     */
+    it('recusa CST que exige alíquota quando os produtos não têm e ela não vem na correção', async () => {
+      mockEmissor(REGIME_NORMAL);
+      prisma.product.findMany
+        .mockResolvedValueOnce([{ id: 'p-1' }, { id: 'p-2' }])
+        .mockResolvedValueOnce([]);
+      prisma.productFiscalData.count.mockResolvedValue(118);
+
+      await expect(
+        service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1', 'p-2'],
+          icmsCst: '00',
+        }),
+      ).rejects.toThrow(/118 produto\(s\)/);
+
+      expect(prisma.productFiscalData.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('aceita CST que exige alíquota quando todos os produtos já têm uma', async () => {
+      mockEmissor(REGIME_NORMAL);
+      mockProdutos([{ id: 'p-1', hasFiscal: true }]);
+
+      const result = await service.bulkUpdateTributacao(COMPANY, {
+        productIds: ['p-1'],
+        icmsCst: '00',
+      });
+
+      expect(result.total).toBe(1);
+      expect(prisma.productFiscalData.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { icmsCst: '00' } }),
+      );
+    });
+
+    it('aceita CST que exige alíquota quando a alíquota vem na mesma correção', async () => {
+      mockEmissor(REGIME_NORMAL);
+      mockProdutos([{ id: 'p-1', hasFiscal: true }]);
+      // Mesmo com produtos sem alíquota no banco, a correção os preenche.
+      prisma.productFiscalData.count.mockResolvedValue(50);
+
+      await service.bulkUpdateTributacao(COMPANY, {
+        productIds: ['p-1'],
+        icmsCst: '00',
+        icmsRate: 17,
+      });
+
+      expect(prisma.productFiscalData.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { icmsCst: '00', icmsRate: 17 } }),
+      );
+    });
+
+    /**
+     * Numa base migrada a alíquota preenchida é a exceção deliberada — o
+     * produto que alguém conferiu. Sobrescrevê-la junto do CST apagaria em
+     * silêncio o único dado revisado da base.
+     */
+    describe("filtro 'alíquota só de quem está sem'", () => {
+      it('escreve a alíquota apenas em quem está sem, e o CST em todos', async () => {
+        mockEmissor(REGIME_NORMAL);
+        prisma.product.findMany
+          .mockResolvedValueOnce([{ id: 'p-1' }])
+          .mockResolvedValueOnce([]);
+        prisma.productFiscalData.count.mockResolvedValue(0);
+        prisma.productFiscalData.updateMany
+          .mockResolvedValueOnce({ count: 118 })
+          .mockResolvedValueOnce({ count: 119 });
+
+        const result = await service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsCst: '00',
+          icmsRate: 17,
+          onlyMissingRate: true,
+        });
+
+        const [primeira, segunda] =
+          prisma.productFiscalData.updateMany.mock.calls;
+        expect(primeira[0]).toMatchObject({ data: { icmsRate: 17 } });
+        expect(primeira[0].where.AND[1]).toEqual({ icmsRate: null });
+        expect(segunda[0]).toMatchObject({ data: { icmsCst: '00' } });
+        expect(segunda[0].where.AND).toBeUndefined();
+        // Quantos produtos a correção tocou: o passo que atinge todos.
+        expect(result.updated).toBe(119);
+      });
+
+      it('com a alíquota como único campo, conta o passo da alíquota', async () => {
+        mockEmissor(REGIME_NORMAL);
+        prisma.product.findMany
+          .mockResolvedValueOnce([{ id: 'p-1' }])
+          .mockResolvedValueOnce([]);
+        prisma.productFiscalData.count.mockResolvedValue(0);
+        prisma.productFiscalData.updateMany.mockResolvedValue({ count: 118 });
+
+        const result = await service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsRate: 17,
+          onlyMissingRate: true,
+        });
+
+        expect(prisma.productFiscalData.updateMany).toHaveBeenCalledTimes(1);
+        expect(result.updated).toBe(118);
+      });
+
+      it('desligado, grava tudo de uma vez', async () => {
+        mockEmissor(REGIME_NORMAL);
+        mockProdutos([{ id: 'p-1', hasFiscal: true }]);
+
+        await service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsCst: '00',
+          icmsRate: 17,
+        });
+
+        expect(prisma.productFiscalData.updateMany).toHaveBeenCalledTimes(1);
+        expect(prisma.productFiscalData.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({ data: { icmsCst: '00', icmsRate: 17 } }),
+        );
+      });
+
+      /** Cadastro novo não tem alíquota: recebe a informada de qualquer modo. */
+      it('cadastro criado recebe a alíquota mesmo com o filtro ligado', async () => {
+        mockEmissor(REGIME_NORMAL);
+        mockProdutos([{ id: 'p-1', hasFiscal: false }]);
+
+        await service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsCst: '00',
+          icmsRate: 17,
+          onlyMissingRate: true,
+        });
+
+        expect(prisma.productFiscalData.createMany).toHaveBeenCalledWith({
+          data: [expect.objectContaining({ icmsCst: '00', icmsRate: 17 })],
+          skipDuplicates: true,
+        });
+      });
+    });
+
+    it('recusa CST com redução de base sem o percentual de redução', async () => {
+      mockEmissor(REGIME_NORMAL);
+      prisma.product.findMany
+        .mockResolvedValueOnce([{ id: 'p-1' }])
+        .mockResolvedValueOnce([]);
+      prisma.productFiscalData.count.mockResolvedValue(3);
+
+      await expect(
+        service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsCst: '20',
+          icmsRate: 17,
+        }),
+      ).rejects.toThrow(/redução da base/);
+    });
+
+    it('recusa redução de base fora do intervalo aberto 0-100', async () => {
+      mockEmissor(REGIME_NORMAL);
+
+      for (const icmsReducao of [0, 100]) {
+        await expect(
+          service.bulkUpdateTributacao(COMPANY, {
+            productIds: ['p-1'],
+            icmsReducao,
+          }),
+        ).rejects.toThrow(/entre 0 e 100/);
+      }
+    });
+
+    it('recusa origem da mercadoria fora de 0-8 e CFOP que não tem 4 dígitos', async () => {
+      mockEmissor(REGIME_NORMAL);
+
+      await expect(
+        service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsOrigin: '9',
+        }),
+      ).rejects.toThrow(/origem da mercadoria/);
+
+      await expect(
+        service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          cfopInState: '510',
+        }),
+      ).rejects.toThrow(/4 dígitos/);
+    });
+
+    /**
+     * Quem corrige só o CST não pode ter o CFOP ou a alíquota ajustados à mão
+     * sobrescritos por um padrão.
+     */
+    it('grava somente os campos informados', async () => {
+      mockEmissor(REGIME_NORMAL);
+      mockProdutos([{ id: 'p-1', hasFiscal: true }]);
+
+      await service.bulkUpdateTributacao(COMPANY, {
+        productIds: ['p-1'],
+        icmsCst: '40',
+        icmsOrigin: '0',
+      });
+
+      expect(prisma.productFiscalData.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { icmsCst: '40', icmsOrigin: '0' } }),
+      );
+    });
+
+    it('filtra por companyId e ignora ids de fora da empresa', async () => {
+      mockEmissor(REGIME_NORMAL);
+      prisma.product.findMany
+        .mockResolvedValueOnce([{ id: 'p-1' }])
+        .mockResolvedValueOnce([]);
+      prisma.productFiscalData.count.mockResolvedValue(0);
+      prisma.productFiscalData.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.bulkUpdateTributacao(COMPANY, {
+        productIds: ['p-1', 'de-outra-empresa'],
+        icmsCst: '40',
+      });
+
+      expect(result.ignored).toBe(1);
+      expect(prisma.product.findMany).toHaveBeenNthCalledWith(1, {
+        where: { id: { in: ['p-1', 'de-outra-empresa'] }, companyId: COMPANY },
+        select: { id: true },
+      });
+    });
+
+    it('falha quando nenhum id pertence à empresa', async () => {
+      mockEmissor(REGIME_NORMAL);
+      prisma.product.findMany.mockResolvedValueOnce([]);
+
+      await expect(
+        service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['de-outra-empresa'],
+          icmsCst: '40',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    /**
+     * Produto sem cadastro fiscal não emite nota: o cadastro nasce com os
+     * defaults do regime e já com a correção aplicada em cima.
+     */
+    it('cria cadastro para quem não tem, com os defaults do regime e a correção', async () => {
+      mockEmissor(REGIME_NORMAL, {
+        defaultNcm: '4911.10.10',
+        defaultCfop: '5102',
+      });
+      mockProdutos([
+        { id: 'p-1', hasFiscal: true },
+        { id: 'p-2', hasFiscal: false },
+      ]);
+
+      await service.bulkUpdateTributacao(COMPANY, {
+        productIds: ['p-1', 'p-2'],
+        icmsCst: '00',
+        icmsRate: 17,
+      });
+
+      expect(prisma.productFiscalData.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            productId: 'p-2',
+            ncm: '49111010',
+            cfopInState: '5102',
+            icmsCst: '00',
+            icmsRate: 17,
+          }),
+        ],
+        skipDuplicates: true,
+      });
+    });
+
+    /** Inventar um NCM aqui seria gravar classificação fiscal errada calada. */
+    it('não inventa NCM ao criar cadastro quando o emissor não tem padrão', async () => {
+      mockEmissor(REGIME_NORMAL);
+      mockProdutos([{ id: 'p-1', hasFiscal: false }]);
+
+      await service.bulkUpdateTributacao(COMPANY, {
+        productIds: ['p-1'],
+        icmsCst: '40',
+      });
+
+      expect(prisma.productFiscalData.createMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ ncm: null, cfopInState: '5101' })],
+        skipDuplicates: true,
+      });
+    });
+
+    describe("filtro 'só os do outro regime'", () => {
+      it('no Regime Normal atinge os CSOSN e quem está sem CST', async () => {
+        mockEmissor(REGIME_NORMAL);
+        mockProdutos([{ id: 'p-1', hasFiscal: true }]);
+
+        await service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsCst: '40',
+          onlyIncompatibleRegime: true,
+        });
+
+        const where =
+          prisma.productFiscalData.updateMany.mock.calls[0][0].where;
+        expect(where.OR).toEqual([
+          { icmsCst: { in: expect.arrayContaining(['102', '500', '900']) } },
+          { icmsCst: null },
+          { icmsCst: '' },
+        ]);
+        expect(where.OR[0].icmsCst.in).not.toContain('00');
+      });
+
+      it('no Simples atinge os CST do Regime Normal', async () => {
+        mockEmissor(SIMPLES);
+        mockProdutos([{ id: 'p-1', hasFiscal: true }]);
+
+        await service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsCst: '102',
+          onlyIncompatibleRegime: true,
+        });
+
+        const where =
+          prisma.productFiscalData.updateMany.mock.calls[0][0].where;
+        expect(where.OR[0].icmsCst.in).toEqual(
+          expect.arrayContaining(['00', '20', '60']),
+        );
+        expect(where.OR[0].icmsCst.in).not.toContain('102');
+      });
+
+      it('explica quando todos já estão com o CST do regime', async () => {
+        mockEmissor(REGIME_NORMAL);
+        prisma.product.findMany
+          .mockResolvedValueOnce([{ id: 'p-1' }])
+          .mockResolvedValueOnce([]);
+        prisma.productFiscalData.count.mockResolvedValue(0);
+        prisma.productFiscalData.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+          service.bulkUpdateTributacao(COMPANY, {
+            productIds: ['p-1'],
+            icmsCst: '40',
+            onlyIncompatibleRegime: true,
+          }),
+        ).rejects.toThrow(/já estão com um CST do regime/);
+      });
+
+      /**
+       * A conferência de alíquota precisa respeitar o filtro por regime sem
+       * sobrescrever o OR dele — daí o AND explícito.
+       */
+      it('confere a alíquota dentro do mesmo filtro, sem perder o OR do regime', async () => {
+        mockEmissor(REGIME_NORMAL);
+        prisma.product.findMany
+          .mockResolvedValueOnce([{ id: 'p-1' }])
+          .mockResolvedValueOnce([]);
+        prisma.productFiscalData.count.mockResolvedValue(0);
+        prisma.productFiscalData.updateMany.mockResolvedValue({ count: 1 });
+
+        await service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          icmsCst: '00',
+          onlyIncompatibleRegime: true,
+        });
+
+        const where = prisma.productFiscalData.count.mock.calls[0][0].where;
+        expect(where.AND[0].OR).toBeDefined();
+        expect(where.AND[1]).toEqual({ icmsRate: null });
+      });
+    });
+
+    describe("escopo 'todos os produtos'", () => {
+      it('aplica os filtros da listagem com a empresa vinda do token', async () => {
+        mockEmissor(REGIME_NORMAL);
+        prisma.product.findMany.mockResolvedValue([]);
+        prisma.productFiscalData.count.mockResolvedValue(0);
+        prisma.productFiscalData.updateMany.mockResolvedValue({ count: 42 });
+
+        const result = await service.bulkUpdateTributacao(COMPANY, {
+          scope: 'ALL',
+          productIds: ['ignorado'],
+          filters: { search: 'placa' },
+          icmsCst: '00',
+          icmsRate: 17,
+        });
+
+        expect(result).toMatchObject({ scope: 'ALL', updated: 42, ignored: 0 });
+        // Escopo ALL não resolve IDs: a única busca é a de quem não tem cadastro.
+        expect(prisma.product.findMany).toHaveBeenCalledTimes(1);
+        const where =
+          prisma.productFiscalData.updateMany.mock.calls[0][0].where;
+        expect(where.product).toMatchObject({ companyId: COMPANY });
+      });
+
+      it('cria cadastros em lotes de 500', async () => {
+        mockEmissor(REGIME_NORMAL);
+        const semCadastro = Array.from({ length: 1200 }, (_, i) => ({
+          id: `p-${i}`,
+        }));
+        prisma.product.findMany.mockResolvedValue(semCadastro);
+        prisma.productFiscalData.count.mockResolvedValue(0);
+        prisma.productFiscalData.updateMany.mockResolvedValue({ count: 0 });
+        prisma.productFiscalData.createMany
+          .mockResolvedValueOnce({ count: 500 })
+          .mockResolvedValueOnce({ count: 500 })
+          .mockResolvedValueOnce({ count: 200 });
+
+        const result = await service.bulkUpdateTributacao(COMPANY, {
+          scope: 'ALL',
+          icmsCst: '40',
+        });
+
+        expect(prisma.productFiscalData.createMany).toHaveBeenCalledTimes(3);
+        expect(result.created).toBe(1200);
+      });
+    });
+  });
+
+  describe('contarAlvosBulkTributacao', () => {
+    const COMPANY = 'company-1';
+
+    it('soma quem tem cadastro fiscal e quem ainda não tem, sem escrever', async () => {
+      prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 3 });
+      prisma.productFiscalData.count.mockResolvedValue(119);
+      prisma.product.count.mockResolvedValue(2);
+
+      const result = await service.contarAlvosBulkTributacao(COMPANY, {
+        scope: 'ALL',
+        icmsCst: '00',
+        onlyIncompatibleRegime: true,
+      });
+
+      expect(result).toEqual({
+        total: 121,
+        comCadastroFiscal: 119,
+        semCadastroFiscal: 2,
+      });
+      expect(prisma.productFiscalData.updateMany).not.toHaveBeenCalled();
+      expect(prisma.productFiscalData.createMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('opcoesBulkTributacao', () => {
+    const COMPANY = 'company-1';
+
+    it('devolve regime, CSTs do regime e quantos estão com o código do outro', async () => {
+      prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 3 });
+      prisma.address.findMany.mockResolvedValue([
+        { state: 'sc', type: 'Entrega' },
+        { state: 'rs', type: 'Principal' },
+      ]);
+      prisma.productFiscalData.count.mockResolvedValue(119);
+      prisma.product.count.mockResolvedValue(0);
+      aliquotaInterna.listar.mockResolvedValue([
+        { uf: 'RS', aliquota: 17, origem: 'padrao', revisado: false },
+        { uf: 'SC', aliquota: 17, origem: 'padrao', revisado: true },
+      ]);
+
+      const result = await service.opcoesBulkTributacao(COMPANY);
+
+      expect(result).toMatchObject({
+        emitCrt: 3,
+        regime: 'NORMAL',
+        // Endereço principal vence a ordem em que os endereços vieram.
+        uf: 'RS',
+        incompativeis: 119,
+      });
+      expect(result.cstOptions.map((o) => o.code)).toContain('00');
+      expect(result.cstOptions.map((o) => o.code)).not.toContain('102');
+    });
+
+    /**
+     * Parte dos padrões por UF não foi conferida na legislação estadual: a
+     * tela precisa receber `revisado` para poder dizer isso, em vez de
+     * apresentar o número como verdade fiscal.
+     */
+    it('passa adiante a procedência da alíquota sugerida', async () => {
+      prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 3 });
+      prisma.address.findMany.mockResolvedValue([
+        { state: 'RS', type: 'Principal' },
+      ]);
+      prisma.productFiscalData.count.mockResolvedValue(0);
+      prisma.product.count.mockResolvedValue(0);
+      aliquotaInterna.listar.mockResolvedValue([
+        { uf: 'RS', aliquota: 17, origem: 'padrao', revisado: false },
+      ]);
+
+      const result = await service.opcoesBulkTributacao(COMPANY);
+
+      expect(result.aliquotaInternaSugerida).toEqual({
+        uf: 'RS',
+        aliquota: 17,
+        origem: 'padrao',
+        revisado: false,
+      });
+    });
+
+    it('no Simples oferece os CSOSN', async () => {
+      prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 1 });
+      prisma.productFiscalData.count.mockResolvedValue(0);
+      prisma.product.count.mockResolvedValue(0);
+
+      const result = await service.opcoesBulkTributacao(COMPANY);
+
+      expect(result.regime).toBe('SIMPLES');
+      expect(result.cstOptions.map((o) => o.code)).toContain('102');
+      expect(result.uf).toBeNull();
+      expect(result.aliquotaInternaSugerida).toBeNull();
     });
   });
 });

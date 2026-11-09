@@ -370,6 +370,119 @@ export class BulkUpdateNcmDto {
   ncm: string;
 }
 
+/**
+ * Mesmo teto da alteração de NCM em massa, pela mesma razão: transação curta e
+ * estrago limitado se um envio sair errado.
+ */
+export const BULK_FISCAL_MAX_PRODUCTS = BULK_NCM_MAX_PRODUCTS;
+
+/**
+ * Correção de tributação em massa.
+ *
+ * Nasceu do emissor que migra de regime: no Simples todo produto tem CSOSN
+ * (padrão 102) e, ao virar Regime Normal, os 119 produtos da base recusam a
+ * emissão de uma vez com "o código 102 é CSOSN e não vale no Regime Normal".
+ * Corrigir produto a produto não é opção, e um script por cliente não se
+ * reaproveita — daí a mesma mecânica de escopo da alteração de NCM.
+ *
+ * Todos os campos de tributação são opcionais e só os informados são
+ * gravados: quem precisa apenas do CST não tem o CFOP sobrescrito por um
+ * padrão. Pelo menos um deles é obrigatório, conferido no service para a
+ * mensagem poder dizer o que falta.
+ */
+export class BulkUpdateTributacaoDto {
+  @ApiPropertyOptional({
+    description:
+      'SELECTED (padrão) aplica aos productIds informados; ALL aplica a todos ' +
+      'os produtos da empresa que atendem aos filtros.',
+    enum: ['SELECTED', 'ALL'],
+    default: 'SELECTED',
+  })
+  @IsIn(['SELECTED', 'ALL'])
+  @IsOptional()
+  scope?: BulkNcmScope;
+
+  @ApiPropertyOptional({
+    description: 'IDs dos produtos (obrigatório no escopo SELECTED)',
+    type: [String],
+  })
+  @ValidateIf((dto: BulkUpdateTributacaoDto) => dto.scope !== 'ALL')
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(BULK_FISCAL_MAX_PRODUCTS)
+  @IsUUID(undefined, { each: true })
+  productIds?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Filtros da listagem, usados apenas no escopo ALL',
+    type: BulkNcmFiltersDto,
+  })
+  @ValidateNested()
+  @Type(() => BulkNcmFiltersDto)
+  @IsOptional()
+  filters?: BulkNcmFiltersDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Aplica somente a produtos cujo CST de ICMS é do outro regime (CSOSN ' +
+      'em emissor do Regime Normal, ou CST em optante do Simples). Preserva ' +
+      'quem já está com o código certo, inclusive ajustado à mão.',
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  onlyIncompatibleRegime?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Preenche a alíquota somente de quem está sem. Preserva alíquota ' +
+      'ajustada à mão, que costuma ser a exceção legítima na base (um produto ' +
+      'com alíquota diferente do padrão da UF).',
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  onlyMissingRate?: boolean;
+
+  @ApiPropertyOptional({ description: 'CST (ou CSOSN) de ICMS a aplicar' })
+  @IsString()
+  @IsOptional()
+  icmsCst?: string;
+
+  @ApiPropertyOptional({ description: 'Alíquota de ICMS a aplicar (%)' })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  icmsRate?: number;
+
+  @ApiPropertyOptional({
+    description: 'Redução da base de cálculo do ICMS a aplicar (%)',
+  })
+  @Transform(parseNumber)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  icmsReducao?: number;
+
+  @ApiPropertyOptional({ description: 'Origem da mercadoria (0-8)' })
+  @IsString()
+  @IsOptional()
+  icmsOrigin?: string;
+
+  @ApiPropertyOptional({ description: 'CFOP para operação dentro do estado' })
+  @IsString()
+  @IsOptional()
+  cfopInState?: string;
+
+  @ApiPropertyOptional({ description: 'CFOP para operação interestadual' })
+  @IsString()
+  @IsOptional()
+  cfopOutState?: string;
+}
+
 export class UpdateProductFiscalDataDto {
   @ApiPropertyOptional({ description: 'NCM - Nomenclatura Comum do Mercosul' })
   @IsString()
