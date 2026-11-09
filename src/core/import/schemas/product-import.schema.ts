@@ -166,5 +166,34 @@ export const PRODUCT_IMPORT_SCHEMA = {
       description: 'Valor unitario de venda',
       example: '120.00',
     },
+    {
+      name: 'ativo',
+      required: false,
+      type: 'string',
+      description:
+        'SIM ou NAO. Produto que saiu de linha vem como NAO e ainda assim é importado: as vendas antigas apontam para ele. Vazio entra ativo.',
+      example: 'SIM',
+      validate: async (value: string) => {
+        if (!value) return null;
+        const v = value.trim().toUpperCase();
+        const accepted = [
+          'SIM',
+          'S',
+          'TRUE',
+          '1',
+          'YES',
+          'NAO',
+          'NÃO',
+          'N',
+          'FALSE',
+          '0',
+          'NO',
+        ];
+        if (!accepted.includes(v)) {
+          return 'Valor deve ser SIM ou NAO';
+        }
+        return null;
+      },
+    },
   ],
 };

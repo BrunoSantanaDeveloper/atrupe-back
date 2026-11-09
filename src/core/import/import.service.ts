@@ -2,7 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { MinioService } from '../../svc/file-upload/minio.service';
 import { ProductFiscalService } from '../fiscal/product-fiscal/product-fiscal.service';
-import { ImportStatus } from '@prisma/client';
+import { ImportStatus, UnitKind } from '@prisma/client';
 import * as csv from 'fast-csv';
 import { Readable } from 'stream';
 import { ImportStatusDto } from './dto';
@@ -38,20 +38,15 @@ import {
   sanitizeOptionalEmail,
 } from './optional-value-sanitizers';
 import { deleteImportedSales } from './imported-sale-cleanup';
-
-/**
- * Unidades cujo preço total depende de uma medida (área, comprimento, peso…).
- * Para elas o `unitCost` é uma taxa por unidade bruta (R$/mm², R$/segundo…) e
- * só vira total quando multiplicado pela medida.
- */
-const DIMENSIONAL_UNIT_KINDS = [
-  'AREA',
-  'LENGTH',
-  'CAPACITY',
-  'WEIGHT',
-  'DISTANCE',
-  'DURATION',
-];
+import { importValueToCents, parseImportDecimal } from './import-number';
+import { exampleCodeFor, isExampleProduct } from './example-products';
+import {
+  LineDimensions,
+  importedItemPrices,
+  lineRawMeasure,
+  lineUnitCost,
+  unitKindFromCode,
+} from './product-unit';
 
 /**
  * Índice de clientes montado uma vez por importação, para não varrer a base a
@@ -87,23 +82,11 @@ export class ImportService {
    * Trata valores vazios, nulos e arredonda para evitar erros de ponto flutuante
    */
   private toCents(value: string | number | null | undefined): number | null {
-    if (value === null || value === undefined || value === '') return null;
-    const numValue = this.parseDecimal(value);
-    if (isNaN(numValue)) return null;
-    return Math.round(numValue * 100);
+    return importValueToCents(value);
   }
 
   private parseDecimal(value: string | number | null | undefined): number {
-    if (value === null || value === undefined || value === '') return NaN;
-    if (typeof value === 'number') return value;
-
-    const normalized = value
-      .trim()
-      .replace(/\s/g, '')
-      .replace(/\.(?=\d{3}(?:\D|$))/g, '')
-      .replace(',', '.');
-
-    return parseFloat(normalized);
+    return parseImportDecimal(value);
   }
 
   /**
@@ -123,58 +106,28 @@ export class ImportService {
    * Se um identificador foi informado e não casou, devolve null para o chamador
    * lançar erro: atribuir a venda a outra pessoa é pior do que recusar a linha.
    */
-  /**
-   * Medida bruta que multiplica o preço unitário da linha.
-   *
-   * A tela recalcula `unitCost = salePrice / medida` ao abrir o item. Se o
-   * `unitCost` gravado não seguir a mesma regra, abrir a linha sobrescreve o
-   * valor da venda pelo do catálogo — foi o que aconteceu na primeira carga.
-   */
+  /** Ver `lineRawMeasure`: a regra mora no módulo, junto do reparo. */
   private rawMeasure(
     unitKind: string | null,
-    item: {
-      width?: number | null;
-      height?: number | null;
-      length?: number | null;
-      duration?: number | null;
-    },
+    item: LineDimensions,
     quantity: number,
   ): number {
-    switch (unitKind) {
-      case 'AREA':
-        return (item.width || 0) * (item.height || 0);
-      case 'LENGTH':
-        return item.width || item.length || 0;
-      case 'DURATION':
-        return item.duration || 0;
-      default:
-        // Unidade avulsa não tem medida própria: a quantidade da linha é
-        // aplicada pelo chamador.
-        return quantity;
-    }
+    return lineRawMeasure(unitKind as UnitKind | null, item, quantity);
   }
 
-  /**
-   * Taxa por unidade bruta coerente com o valor da linha, para a tela não
-   * recalcular um valor diferente do que foi vendido.
-   */
+  /** Ver `lineUnitCost`: o reparo das linhas migradas usa a mesma regra. */
   private unitCostForLine(
     lineTotalInCents: number | null,
     unitKind: string | null,
-    dimensions: {
-      width?: number | null;
-      height?: number | null;
-      length?: number | null;
-      duration?: number | null;
-    },
+    dimensions: LineDimensions,
     quantity: number,
   ): number | null {
-    if (lineTotalInCents === null) return null;
-
-    // A tela obtém a medida total multiplicando a medida unitária pela
-    // quantidade da linha; a taxa precisa sair da mesma base.
-    const measure = this.rawMeasure(unitKind, dimensions, 1) * (quantity || 1);
-    return measure > 0 ? lineTotalInCents / measure : lineTotalInCents;
+    return lineUnitCost(
+      lineTotalInCents,
+      unitKind as UnitKind | null,
+      dimensions,
+      quantity,
+    );
   }
 
   /**
@@ -922,10 +875,13 @@ export class ImportService {
   async findProductAdoptions(
     rows: any[],
     companyId: string,
+    /** Exemplos que a carga vai inativar antes: não contam como adoção. */
+    ignoreIds: Set<string> = new Set(),
   ): Promise<{ adopted: string[]; withoutItem: string[] }> {
     const products = await this.prisma.product.findMany({
       where: { companyId },
       select: {
+        id: true,
         code: true,
         legacyId: true,
         items: { select: { id: true }, take: 1 },
@@ -933,7 +889,9 @@ export class ImportService {
     });
 
     const byCode = new Map(
-      products.map((product) => [product.code.trim().toLowerCase(), product]),
+      products
+        .filter((product) => !ignoreIds.has(product.id))
+        .map((product) => [product.code.trim().toLowerCase(), product]),
     );
 
     const adopted: string[] = [];
@@ -975,8 +933,10 @@ export class ImportService {
       usage: 'search',
     });
 
+    // Produto inativo não é adotado: o cliente o tirou de linha, e é assim que
+    // ficam os exemplos de uma conta criada só para a migração.
     const candidates = await this.prisma.product.findMany({
-      where: { companyId, legacyId: null },
+      where: { companyId, legacyId: null, isActive: true },
       select: { id: true, name: true },
     });
 
@@ -985,6 +945,65 @@ export class ImportService {
     );
 
     return matches.length === 1 ? { id: matches[0].id } : null;
+  }
+
+  /**
+   * Produtos de exemplo de uma conta criada só para a migração: sem vínculo
+   * com o legado, fora de qualquer documento.
+   */
+  async findExampleProducts(
+    companyId: string,
+  ): Promise<{ id: string; code: string; name: string }[]> {
+    const products = await this.prisma.product.findMany({
+      where: {
+        companyId,
+        isImported: false,
+        legacyId: null,
+        quotationProduct: { none: {} },
+      },
+      select: { id: true, code: true, name: true, isStandard: true },
+    });
+
+    return products
+      .filter(isExampleProduct)
+      .map(({ id, code, name }) => ({ id, code, name }));
+  }
+
+  /**
+   * Inativa os exemplos antes da carga e libera o código que coincide com o de
+   * um produto do legado. Inativo, o exemplo também não é adotado por nome.
+   */
+  async retireExampleProducts(
+    companyId: string,
+    examples: { id: string; code: string }[],
+    legacyCodes: string[],
+  ): Promise<string[]> {
+    const fromLegacy = new Set(
+      legacyCodes.map((code) => code.trim().toLowerCase()),
+    );
+    const existing = await this.prisma.product.findMany({
+      where: { companyId },
+      select: { code: true },
+    });
+    const taken = new Set([
+      ...existing.map((product) => product.code.trim().toLowerCase()),
+      ...fromLegacy,
+    ]);
+
+    const renamed: string[] = [];
+    for (const example of examples) {
+      const data: { isActive: boolean; code?: string } = { isActive: false };
+
+      if (fromLegacy.has(example.code.trim().toLowerCase())) {
+        data.code = exampleCodeFor(example.code, taken);
+        taken.add(data.code.toLowerCase());
+        renamed.push(`${example.code} → ${data.code}`);
+      }
+
+      await this.prisma.product.update({ where: { id: example.id }, data });
+    }
+
+    return renamed;
   }
 
   /**
@@ -2207,6 +2226,12 @@ export class ImportService {
           return;
         }
       }
+
+      // Adotado numa carga anterior: continua sendo cadastro da conta. A
+      // recarga o acha pelo vínculo e também não sobrescreve nada — antes ela
+      // trocava nome, setor, unidade e preço do produto do cliente pelos do
+      // legado.
+      if (mine && !mine.isImported) return;
     }
 
     // Buscar setor por nome case-insensitive (já validado, então deve existir)
@@ -2292,6 +2317,15 @@ export class ImportService {
       : true;
     const allowEditDescription = allowEditValues;
 
+    // O legado guarda o produto que o cliente deixou de vender, e as vendas
+    // antigas apontam para ele: ele entra, mas inativo, fora da listagem e das
+    // vendas novas, como estava lá. Sem a coluna, entra ativo.
+    const informedActive = row.ativo?.trim()
+      ? ['SIM', 'S', 'TRUE', '1', 'YES'].includes(
+          row.ativo.trim().toUpperCase(),
+        )
+      : null;
+
     const isService = false;
 
     // Verificar se produto já existe (case-insensitive)
@@ -2318,7 +2352,7 @@ export class ImportService {
           technicalDescription: row.descricao || null,
           categoryId: category?.id,
           sectorId: sector?.id,
-          isActive: true,
+          isActive: informedActive ?? true,
           status: 'ACTIVE',
           isImported: true,
           allowEditValues,
@@ -2338,6 +2372,7 @@ export class ImportService {
           allowEditValues,
           allowEditDescription,
           isService,
+          ...(informedActive !== null && { isActive: informedActive }),
         },
       });
     }
@@ -2361,7 +2396,8 @@ export class ImportService {
     // Criar item do produto (sempre criamos pelo menos 1 item para o produto importado)
     const itemName = row.nome;
 
-    // Buscar unidade de medida
+    // Buscar unidade de medida. A tabela de unidades padrão manda quando tem o
+    // código com tipo; sem ela, o tipo sai do próprio código.
     let unitOfMeasureId = null;
     let unitKind = null;
     if (row.unidadeMedida) {
@@ -2372,63 +2408,8 @@ export class ImportService {
         },
       });
       unitOfMeasureId = unitOfMeasure?.id || null;
-      unitKind = unitOfMeasure?.kind || null;
-
-      // Se a unidade de medida não foi encontrada no banco ou não tem kind, inferimos pelo código
-      if (!unitKind) {
-        if (['M2', 'M²', 'MT2', 'METRO QUADRADO'].includes(uomCode)) {
-          unitKind = 'AREA';
-        } else if (['M', 'ML', 'METRO', 'METRO LINEAR'].includes(uomCode)) {
-          unitKind = 'LENGTH';
-        } else if (['KG', 'QUILO', 'KILO', 'QUILOGRAMA'].includes(uomCode)) {
-          unitKind = 'WEIGHT';
-        } else if (['L', 'LT', 'LITRO', 'LITROS'].includes(uomCode)) {
-          unitKind = 'CAPACITY';
-        } else if (['KM', 'QUILOMETRO'].includes(uomCode)) {
-          unitKind = 'DISTANCE';
-        } else if (['H', 'HR', 'HORA', 'HORAS'].includes(uomCode)) {
-          unitKind = 'DURATION';
-        } else {
-          // Fallback comum: UN, PC, PECA, etc.
-          unitKind = 'UNITY';
-        }
-      }
+      unitKind = unitOfMeasure?.kind || unitKindFromCode(uomCode);
     }
-
-    // Converter valor de unidade de exibição (ex: R$/m²) para unidade bruta (ex: R$/mm²)
-    // O frontend faz a conversão inversa (raw → display) ao exibir
-    const convertDisplayToRaw = (
-      valueInCents: number | null,
-      kind: string | null,
-    ): number | null => {
-      if (valueInCents === null || valueInCents === 0) return valueInCents;
-      switch (kind) {
-        case 'AREA':
-          return valueInCents / 1_000_000; // R$/m² → R$/mm²
-        case 'LENGTH':
-          return valueInCents / 1_000; // R$/metro → R$/mm
-        case 'CAPACITY':
-          return valueInCents / 1_000; // R$/litro → R$/ml
-        case 'WEIGHT':
-          return valueInCents / 1_000_000; // R$/kg → R$/mg
-        case 'DISTANCE':
-          return valueInCents / 1_000; // R$/km → R$/metro
-        case 'DURATION':
-          return valueInCents / 3_600; // R$/hora → R$/segundo
-        case 'UNITY':
-        default:
-          return valueInCents;
-      }
-    };
-
-    // "valorUnitario" = preço de venda por unidade de exibição → unitCost bruto (ex: R$/mm²)
-    const displayUnitCost = this.toCents(row.valorUnitario);
-
-    const rawUnitCost = convertDisplayToRaw(displayUnitCost, unitKind);
-
-    // salePrice = total (unitCost × totalQuantity). Sem dimensões, será recalculado pelo frontend.
-    // Se houver dimensões (largura × altura para AREA), calculamos aqui
-    let salePrice: number | null = null;
 
     // O banco salva dimensões em milímetros. O CSV geralmente traz em metros (ex: 1,40).
     const parseDimension = (val: string | undefined): number | null => {
@@ -2448,21 +2429,13 @@ export class ImportService {
     const heightMm = parseDimension(row.altura);
     const durationSeconds = parseDuration(row.duracao);
 
-    if (rawUnitCost && rawUnitCost > 0) {
-      if (unitKind === 'AREA' && widthMm && heightMm) {
-        salePrice = rawUnitCost * widthMm * heightMm;
-      } else if (unitKind === 'DURATION' && durationSeconds) {
-        salePrice = rawUnitCost * durationSeconds;
-      } else if (!DIMENSIONAL_UNIT_KINDS.includes(unitKind)) {
-        // Unidade sem dimensão (UN, PC…): o valor unitário já é o próprio total.
-        salePrice = rawUnitCost;
-      }
-      // Unidade dimensional sem medida no CSV (ex.: produto por m² sem largura e
-      // altura): não existe total a calcular. Gravar `rawUnitCost` aqui colocaria
-      // uma taxa por unidade bruta (R$/mm², R$/segundo…) num campo de total, que a
-      // listagem exibiria como 0,00. Fica null e o total é calculado no orçamento,
-      // quando a medida é informada.
-    }
+    // "valorUnitario" é o preço por unidade de exibição (R$/m²). O banco guarda
+    // a taxa por unidade bruta (R$/mm²) e, quando a medida vem junto, o total.
+    const { unitCost: rawUnitCost, salePrice } = importedItemPrices(
+      this.toCents(row.valorUnitario),
+      unitKind,
+      { widthMm, heightMm, durationSeconds },
+    );
 
     // Buscar item existente do produto (para evitar duplicação em re-importação)
     const existingItem = await this.prisma.productItem.findFirst({
@@ -3392,6 +3365,11 @@ export class ImportService {
                 volume: productItem.volume,
                 distance: productItem.distance,
                 duration: productItem.duration,
+                // A taxa acima já está na unidade do produto (R$/mm² no m²).
+                // Sem a unidade junto, a tela lê a linha como unidade avulsa
+                // e mostra a taxa por mm² como preço da peça; o PDF deduz área
+                // pela medida. O orçamento migrado sempre gravou a unidade.
+                unitKind: productItem.unitKind,
               },
             });
           }

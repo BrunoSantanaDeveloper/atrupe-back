@@ -47,6 +47,7 @@ describe('ImportService CSV parsing', () => {
 describe('ImportService product import', () => {
   let service: ImportService;
   let createdItems: any[];
+  let createdProducts: any[];
 
   const baseRow = {
     codigo: 'TEL',
@@ -57,6 +58,7 @@ describe('ImportService product import', () => {
 
   beforeEach(() => {
     createdItems = [];
+    createdProducts = [];
 
     const prisma = {
       companySector: {
@@ -71,7 +73,10 @@ describe('ImportService product import', () => {
       },
       product: {
         findFirst: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({ id: 'prod-1' }),
+        create: jest.fn().mockImplementation(({ data }) => {
+          createdProducts.push(data);
+          return Promise.resolve({ id: 'prod-1' });
+        }),
       },
       defaultUnitOfMeasure: {
         findFirst: jest
@@ -80,7 +85,9 @@ describe('ImportService product import', () => {
             Promise.resolve(
               where.code === 'M2'
                 ? { id: 'uom-m2', kind: 'AREA' }
-                : { id: 'uom-un', kind: 'UNITY' },
+                : where.code === 'UN'
+                  ? { id: 'uom-un', kind: 'UNITY' }
+                  : null,
             ),
           ),
       },
@@ -155,6 +162,40 @@ describe('ImportService product import', () => {
     const [item] = createdItems;
     expect(item.unitCost).toBe(12000);
     expect(item.salePrice).toBe(12000);
+  });
+
+  it('tira o tipo do código quando a tabela de unidades não o tem', async () => {
+    // Em produção a tabela de unidades padrão está vazia: vale o código. "HH"
+    // é a hora do legado e entrava como unidade avulsa.
+    await (service as any).importProduct(
+      { ...baseRow, unidadeMedida: 'HH', valorUnitario: '36,00' },
+      'company-1',
+    );
+
+    const [item] = createdItems;
+    expect(item.unitKind).toBe('DURATION');
+    expect(item.unitCost).toBe(1); // R$ 36,00/hora = 1 centavo por segundo
+    expect(item.salePrice).toBeNull();
+  });
+
+  it('importa inativo o produto fora de linha', async () => {
+    // As vendas antigas apontam para ele, então ele entra — mas fora da
+    // listagem, como estava no legado.
+    await (service as any).importProduct(
+      { ...baseRow, unidadeMedida: 'UN', ativo: 'NAO' },
+      'company-1',
+    );
+
+    expect(createdProducts[0].isActive).toBe(false);
+  });
+
+  it('importa ativo quando a planilha não diz a situação', async () => {
+    await (service as any).importProduct(
+      { ...baseRow, unidadeMedida: 'UN' },
+      'company-1',
+    );
+
+    expect(createdProducts[0].isActive).toBe(true);
   });
 });
 
@@ -938,13 +979,17 @@ describe('ImportService product legacy link', () => {
     );
   };
 
-  const importar = () =>
-    (service as any).importProduct(row, 'company-1', { legacy: true });
+  const importar = (extra: Record<string, string> = {}) =>
+    (service as any).importProduct({ ...row, ...extra }, 'company-1', {
+      legacy: true,
+    });
 
   it('acha o produto da migração pelo código do legado, mesmo com o código trocado', async () => {
     // O cliente renomeou o código depois da carga anterior. Sem o vínculo, a
     // carga criava de novo e estourava a chave (companyId, legacyId).
-    buildService([{ id: 'prod-1', code: 'TEL-NOVO', legacyId: 'TEL' }]);
+    buildService([
+      { id: 'prod-1', code: 'TEL-NOVO', legacyId: 'TEL', isImported: true },
+    ]);
 
     await importar();
 
@@ -952,6 +997,46 @@ describe('ImportService product legacy link', () => {
     expect(prisma.product.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'prod-1' } }),
     );
+  });
+
+  it('a recarga não sobrescreve o produto que uma carga anterior adotou', async () => {
+    // Na Terabyte, o "Banner" de exemplo da conta foi adotado para o "Banner"
+    // do legado. A adoção só grava o vínculo; a recarga também não pode trocar
+    // nome, setor, unidade e preço pelos do legado.
+    buildService([
+      { id: 'prod-conta', code: 'BANNER', legacyId: 'TEL', isImported: false },
+    ]);
+
+    await importar({ ativo: 'NAO' });
+
+    expect(prisma.product.create).not.toHaveBeenCalled();
+    expect(prisma.product.update).not.toHaveBeenCalled();
+    expect(prisma.productItem.create).not.toHaveBeenCalled();
+  });
+
+  it('a recarga leva a situação do legado ao produto que a migração criou', async () => {
+    buildService([
+      { id: 'prod-1', code: 'TEL', legacyId: 'TEL', isImported: true },
+    ]);
+
+    await importar({ ativo: 'NAO' });
+
+    expect(prisma.product.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isActive: false }),
+      }),
+    );
+  });
+
+  it('sem a coluna de situação, a recarga não mexe nela', async () => {
+    buildService([
+      { id: 'prod-1', code: 'TEL', legacyId: 'TEL', isImported: true },
+    ]);
+
+    await importar();
+
+    const [[{ data }]] = prisma.product.update.mock.calls;
+    expect(data).not.toHaveProperty('isActive');
   });
 
   it('adota o produto do cliente que tem o mesmo código, sem tocar nele', async () => {
@@ -1147,5 +1232,118 @@ describe('ImportService refresh of migrated sales', () => {
     ]);
 
     expect(total).toBe(65000);
+  });
+});
+
+/**
+ * Linha da O.S. migrada. A carga de orçamento sempre gravou a unidade do
+ * produto na linha; a de O.S. não gravava. Com o produto por m², a taxa sai
+ * por mm² e a tela lia a linha como unidade avulsa: mostrava a taxa por mm²
+ * como preço da peça.
+ */
+describe('ImportService migrated order lines', () => {
+  it('grava na linha da O.S. a unidade do produto, como no orçamento', async () => {
+    const linhas: any[] = [];
+
+    // Banco de mentira: qualquer leitura volta vazia e qualquer gravação
+    // devolve um registro. Só o produto e as linhas importam aqui.
+    const model = (name: string) =>
+      new Proxy(
+        {},
+        {
+          get: (_target, method: string) => {
+            if (name === 'product' && method === 'findUnique') {
+              return jest.fn().mockResolvedValue({
+                id: 'prod-1',
+                name: 'BANNER',
+                technicalDescription: null,
+                items: [
+                  {
+                    id: 'item-1',
+                    name: 'BANNER',
+                    unitKind: 'AREA',
+                    width: null,
+                    height: null,
+                    length: null,
+                    weight: null,
+                    volume: null,
+                    distance: null,
+                    duration: null,
+                  },
+                ],
+              });
+            }
+            if (name === 'quotationProductItem' && method === 'create') {
+              return jest.fn().mockImplementation(({ data }) => {
+                linhas.push(data);
+                return Promise.resolve({ id: 'linha-1' });
+              });
+            }
+            if (method === 'findMany' || method === 'groupBy') {
+              return jest.fn().mockResolvedValue([]);
+            }
+            if (method === 'count') return jest.fn().mockResolvedValue(0);
+            if (method.startsWith('find')) {
+              return jest.fn().mockResolvedValue(null);
+            }
+            return jest.fn().mockResolvedValue({ id: `${name}-1` });
+          },
+        },
+      );
+
+    const prisma: any = new Proxy(
+      {},
+      {
+        get: (_target, name: string) =>
+          name === '$transaction'
+            ? (arg: any) =>
+                Array.isArray(arg) ? Promise.all(arg) : arg(prisma)
+            : model(name),
+      },
+    );
+
+    const service = new ImportService(prisma, {} as any, {} as any);
+    const internals = service as any;
+    jest.spyOn(internals, 'buildClientIndex').mockResolvedValue({});
+    jest.spyOn(internals, 'buildPaymentConditionIndex').mockResolvedValue({});
+    jest
+      .spyOn(internals, 'resolveImportSeries')
+      .mockResolvedValue({ id: 'serie-1', code: '1' });
+    jest
+      .spyOn(internals, 'resolveClient')
+      .mockReturnValue({ id: 'cliente-1', name: 'Cliente' });
+    jest
+      .spyOn(internals, 'findSeller')
+      .mockResolvedValue({ id: 'vendedor-1', name: 'Vendedor' });
+    jest.spyOn(internals, 'resolvePaymentCondition').mockReturnValue(null);
+
+    // 2 peças de 1,00 × 0,50 m por R$ 60,00 (R$ 60,00/m²).
+    await internals.importOrders(
+      [
+        {
+          NumeroVenda: '10',
+          Serie: '1',
+          DataVenda: '2026-01-10',
+          ClienteCodigoLegado: '5',
+          VendedorCodigoLegado: '2',
+          ProdutoCodigo: 'BAN06',
+          ProdutoNome: 'BANNER',
+          ItemLargura: '1,000',
+          ItemComprimento: '0,500',
+          Quantidade: '2',
+          ValorUnitario: '30,00',
+          ValorTotal: '60,00',
+          Desconto: '',
+          StatusOrdem: 'FINISHED',
+        },
+      ],
+      'company-1',
+      { skipReceivable: true },
+    );
+
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0].unitKind).toBe('AREA');
+    // A tela multiplica a taxa pela área e pela quantidade da linha.
+    expect(linhas[0].unitCost * 1000 * 500 * 2).toBeCloseTo(6000, 6);
   });
 });
