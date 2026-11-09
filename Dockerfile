@@ -38,6 +38,11 @@ COPY --from=builder /usr/src/app/prisma ./prisma
 COPY --from=builder /usr/src/app/src/seeds ./src/seeds
 COPY --from=builder /usr/src/app/package*.json ./
 COPY scripts/start.sh ./
+# Base do kit de atendimento (ESM, carregada em tempo de execução por
+# src/core/atendimento/atendimento-kit.ts) e as escolhas do projeto.
+COPY --from=builder /usr/src/app/atendimento/base ./atendimento/base
+COPY --from=builder /usr/src/app/atendimento/conhecimento ./atendimento/conhecimento
+COPY --from=builder /usr/src/app/atendimento/kit.json /usr/src/app/atendimento/escolhas.json ./atendimento/
 
 # Dar permissão de execução ao script
 RUN chmod +x start.sh

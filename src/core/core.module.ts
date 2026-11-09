@@ -39,6 +39,7 @@ import { CouponsModule } from './coupons/coupons.module';
 import { AiModule } from './ai/ai.module';
 import { OwnershipModule } from './ownership/ownership.module';
 import { AccountResetModule } from './account-reset/account-reset.module';
+import { AtendimentoModule } from './atendimento/atendimento.module';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { AccountResetModule } from './account-reset/account-reset.module';
     AiModule,
     OwnershipModule,
     AccountResetModule,
+    AtendimentoModule,
   ],
 })
 export class CoreModule {}

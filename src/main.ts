@@ -1,6 +1,7 @@
 import 'dotenv/config';
 // import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { ConfigService } from '@nestjs/config';
@@ -10,7 +11,14 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as packageJson from '../package.json';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: o robô do atendimento assina o corpo exato da requisição
+  // (src/core/atendimento); o JSON continua chegando em req.body como antes.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
+  // O contexto do robô do atendimento (instruções e conhecimento) passa de
+  // 100 kB, o limite padrão do JSON.
+  app.useBodyParser('json', { limit: '1mb' });
 
   app.use(compression());
   app.use(helmet());

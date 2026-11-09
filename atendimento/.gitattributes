@@ -1,0 +1,3 @@
+# A base do kit é conferida por hash (kit.json) e roda em contêiner Linux:
+# fim de linha LF também no Windows.
+* text=auto eol=lf

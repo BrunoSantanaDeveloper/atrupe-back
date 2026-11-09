@@ -3054,6 +3054,45 @@ model SystemSetting {
   @@map("system_settings")
 }
 
+/// Atendimento no WhatsApp: pergunta e resposta que o robô tirou de uma
+/// conversa resolvida pela equipe, esperando o superadmin aprovar ou descartar.
+/// Chega já sem dado pessoal. Aprovada ou descartada, a linha sai.
+model SupportSuggestion {
+  id             String   @id @default(uuid())
+  createdAt      DateTime @default(now())
+  /// "plataforma" no suporte do próprio sistema.
+  tenantId       String
+  /// A camada dona do conhecimento: "plataforma" ou "cliente".
+  owner          String
+  conversationId Int
+  question       String
+  answer         String
+  why            String   @default("")
+  /// Quando o robô gerou a sugestão.
+  suggestedAt    DateTime
+
+  @@index([owner, tenantId, createdAt])
+  @@map("support_suggestions")
+}
+
+/// Atendimento no WhatsApp: cada passagem do robô para a equipe, para o
+/// relatório do que o robô não soube. O trecho chega sem dado pessoal.
+model SupportGapEvent {
+  id             String   @id @default(uuid())
+  createdAt      DateTime @default(now())
+  tenantId       String
+  accountId      Int
+  conversationId Int
+  category       String
+  topic          String
+  reason         String   @default("")
+  excerpt        String   @default("")
+  at             DateTime
+
+  @@index([tenantId, at])
+  @@map("support_gap_events")
+}
+
 model Coupon {
   id                String         @id @default(uuid())
   code              String         @unique
