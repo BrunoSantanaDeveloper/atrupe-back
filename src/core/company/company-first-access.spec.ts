@@ -48,6 +48,7 @@ describe('CompanyService.createFirstAccess — titularidade', () => {
       stub,
       stub,
       stub,
+      stub,
     );
   });
 

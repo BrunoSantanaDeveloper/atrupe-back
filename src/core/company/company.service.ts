@@ -32,8 +32,13 @@ import { parsePfxCertificate } from '../fiscal/utils/certificate-parser';
 import { EncryptionService } from '../../shared/services/encryption.service';
 import { FiscalRolloutPolicyService } from '../fiscal/shared/fiscal-rollout-policy.service';
 import { FiscalCredentialResolverService } from '../fiscal/shared/fiscal-credential-resolver.service';
+import { FiscalAuditService } from '../fiscal/shared/fiscal-audit.service';
 import { InvoicyCompanyRegistrationService } from '../fiscal/invoicy/invoicy-company-registration.service';
-import { FiscalEnvironment } from '@prisma/client';
+import {
+  ActorType,
+  FiscalConfigAction,
+  FiscalEnvironment,
+} from '@prisma/client';
 import * as crypto from 'crypto';
 
 export type CompanyWithFiscalRelations = Prisma.CompanyGetPayload<{
@@ -56,6 +61,7 @@ export class CompanyService {
     private readonly encryptionService: EncryptionService,
     private readonly fiscalRolloutPolicy: FiscalRolloutPolicyService,
     private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
+    private readonly fiscalAuditService: FiscalAuditService,
     private readonly invoicyCompanyRegistration: InvoicyCompanyRegistrationService,
   ) {}
   async createFirstAccess(email: string, companyId: string) {
@@ -1039,14 +1045,40 @@ export class CompanyService {
           ));
 
       if (cnpjChanged || ieChanged || addressChanged) {
-        await this.prisma.invoicyEnvironmentConfig.updateMany({
-          where: { invoicyConfig: { companyId: id } },
-          data: {
-            status: 'DRAFT',
-            lastValidationAt: null,
-            lastValidationError: null,
+        const motivo = cnpjChanged
+          ? 'CNPJ alterado'
+          : ieChanged
+            ? 'Inscrição estadual alterada'
+            : 'Endereço alterado';
+
+        /**
+         * O rebaixamento apagava um READY sem deixar rastro. Quem perdia a
+         * ativação de produção não tinha como descobrir o motivo, e a causa só
+         * apareceu depois de uma investigação longa. O registro é o que torna
+         * o próximo caso diagnosticável em segundos.
+         */
+        await this.fiscalAuditService.commitWithOutcome(
+          {
+            companyId: id,
+            emissorName: 'Todos os emissores da empresa',
+            action: FiscalConfigAction.ENVIRONMENT_DEMOTED,
+            actorType: ActorType.SYSTEM,
+            createdByName: 'Gravação da empresa',
+            description:
+              `${motivo} no cadastro da empresa: os ambientes fiscais de ` +
+              'todos os emissores voltaram para rascunho e exigem nova ativação.',
+            result: 'SUCCESS',
           },
-        });
+          (tx) =>
+            tx.invoicyEnvironmentConfig.updateMany({
+              where: { invoicyConfig: { companyId: id } },
+              data: {
+                status: 'DRAFT',
+                lastValidationAt: null,
+                lastValidationError: null,
+              },
+            }),
+        );
       }
 
       // O cadastro no Invoicy so' recebe esses dados na criacao. Sem reenviar
