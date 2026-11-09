@@ -244,7 +244,7 @@ export interface LineSnapshot {
   totalValue: number | null;
   width: number | null;
   height: number | null;
-  /** Quantidade da composição; a carga grava 1. */
+  /** Quantidade da composição (a carga antiga gravava 1, a de hoje, N). */
   quantity: number;
   /** Quantidade da linha do documento. */
   lineQuantity: number;
@@ -262,8 +262,8 @@ export type LineDecision =
 /**
  * O que fazer com a linha, dada a unidade do produto no legado.
  *
- * Só mexe na linha como a carga a gravou: composição com quantidade 1, total
- * igual ao preço, e taxa coerente com unidade avulsa ou com área. Fora disso
+ * Só mexe na linha como a carga a gravou: total igual ao preço e taxa coerente
+ * com unidade avulsa ou com área, pela quantidade total da linha. Fora disso
  * alguém abriu e salvou a linha.
  */
 export function decideLine(
@@ -275,18 +275,14 @@ export function decideLine(
 
   const total = line.salePrice;
   const dims = { width: line.width, height: line.height };
+  // Quantidade total: a carga a gravava na linha e a tela, na composição
+  // (ver `lineQuantities`). A taxa sai dela nos dois formatos.
+  const quantity = (line.lineQuantity || 1) * (line.quantity || 1);
   const untouched =
-    line.quantity === 1 &&
     total !== null &&
     sameValue(total, line.totalValue) &&
-    (sameValue(
-      line.unitCost,
-      lineUnitCost(total, 'UNITY', dims, line.lineQuantity),
-    ) ||
-      sameValue(
-        line.unitCost,
-        lineUnitCost(total, 'AREA', dims, line.lineQuantity),
-      ));
+    (sameValue(line.unitCost, lineUnitCost(total, 'UNITY', dims, quantity)) ||
+      sameValue(line.unitCost, lineUnitCost(total, 'AREA', dims, quantity)));
 
   if (!untouched) return { action: 'review' };
 
@@ -297,7 +293,7 @@ export function decideLine(
       action: 'fix',
       to: {
         unitKind: 'AREA',
-        unitCost: lineUnitCost(total, 'AREA', dims, line.lineQuantity),
+        unitCost: lineUnitCost(total, 'AREA', dims, quantity),
       },
     };
   }
@@ -309,7 +305,7 @@ export function decideLine(
     action: 'fix',
     to: {
       unitKind: 'UNITY',
-      unitCost: lineUnitCost(total, 'UNITY', dims, line.lineQuantity),
+      unitCost: lineUnitCost(total, 'UNITY', dims, quantity),
     },
   };
 }

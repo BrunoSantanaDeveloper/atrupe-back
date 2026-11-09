@@ -421,3 +421,25 @@ describe('decideLine', () => {
     });
   });
 });
+
+describe('decideLine no formato da tela', () => {
+  it('reconhece a linha com a quantidade na composição', () => {
+    // Depois da normalização: linha = 1, composição = 2. A taxa é a mesma.
+    const decisao = decideLine('AREA', {
+      id: 'linha-1',
+      productId: 'prod-1',
+      unitKind: 'UNITY',
+      unitCost: 3000,
+      salePrice: 6000,
+      totalValue: 6000,
+      width: 1000,
+      height: 500,
+      quantity: 2,
+      lineQuantity: 1,
+    });
+
+    expect(decisao.action).toBe('fix');
+    if (decisao.action !== 'fix') return;
+    expect(decisao.to.unitCost * 1000 * 500 * 2).toBeCloseTo(6000, 6);
+  });
+});

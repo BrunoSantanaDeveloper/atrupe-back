@@ -1,6 +1,7 @@
 import {
   displayToRawUnitCost,
   importedItemPrices,
+  lineQuantities,
   lineRawMeasure,
   lineUnitCost,
   unitKindFromCode,
@@ -116,5 +117,21 @@ describe('lineUnitCost', () => {
   it('a medida da unidade avulsa é a quantidade', () => {
     expect(lineRawMeasure('UNITY', {}, 4)).toBe(4);
     expect(lineRawMeasure('LENGTH', { length: 1500 }, 4)).toBe(1500);
+  });
+});
+
+describe('lineQuantities', () => {
+  it('na linha de uma composição, a quantidade vai na composição', () => {
+    // É como a tela grava; o modal desse produto lê só a da composição.
+    expect(lineQuantities(110, 1)).toEqual({ line: 1, composition: 110 });
+  });
+
+  it('no produto composto, a quantidade fica na linha', () => {
+    expect(lineQuantities(3, 2)).toEqual({ line: 3, composition: 1 });
+  });
+
+  it('linha sem composição ou sem quantidade fica como veio', () => {
+    expect(lineQuantities(3, 0)).toEqual({ line: 3, composition: 1 });
+    expect(lineQuantities(0, 1)).toEqual({ line: 0, composition: 1 });
   });
 });

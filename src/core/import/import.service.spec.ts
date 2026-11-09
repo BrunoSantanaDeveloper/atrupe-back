@@ -1236,17 +1236,49 @@ describe('ImportService refresh of migrated sales', () => {
 });
 
 /**
- * Linha da O.S. migrada. A carga de orçamento sempre gravou a unidade do
- * produto na linha; a de O.S. não gravava. Com o produto por m², a taxa sai
- * por mm² e a tela lia a linha como unidade avulsa: mostrava a taxa por mm²
- * como preço da peça.
+ * Linhas de venda migradas. A carga de orçamento sempre gravou a unidade do
+ * produto na linha; a de O.S. não gravava, e a tela lia a taxa por mm² como
+ * preço da peça. E a quantidade ia na linha, com a composição em 1, ao
+ * contrário da tela: o modal de edição do produto de uma composição lê só a
+ * da composição, e ao salvar gravava o total dividido pela quantidade.
  */
-describe('ImportService migrated order lines', () => {
-  it('grava na linha da O.S. a unidade do produto, como no orçamento', async () => {
-    const linhas: any[] = [];
+describe('ImportService migrated sale lines', () => {
+  const linhaDoLegado = {
+    NumeroVenda: '10',
+    Serie: '1',
+    DataVenda: '2026-01-10',
+    ClienteCodigoLegado: '5',
+    VendedorCodigoLegado: '2',
+    ProdutoCodigo: 'BAN06',
+    ProdutoNome: 'BANNER',
+    // 2 peças de 1,00 × 0,50 m por R$ 60,00 (R$ 60,00/m²).
+    ItemLargura: '1,000',
+    ItemComprimento: '0,500',
+    Quantidade: '2',
+    ValorUnitario: '30,00',
+    ValorTotal: '60,00',
+    Desconto: '',
+    StatusOrdem: 'FINISHED',
+  };
 
-    // Banco de mentira: qualquer leitura volta vazia e qualquer gravação
-    // devolve um registro. Só o produto e as linhas importam aqui.
+  const itemDoProduto = (id: string) => ({
+    id,
+    name: 'BANNER',
+    unitKind: 'AREA',
+    width: null,
+    height: null,
+    length: null,
+    weight: null,
+    volume: null,
+    distance: null,
+    duration: null,
+  });
+
+  /** Banco de mentira: leitura volta vazia, gravação devolve um registro. */
+  const montar = (itensDoProduto: any[]) => {
+    const linhas: any[] = [];
+    const composicoes: any[] = [];
+
     const model = (name: string) =>
       new Proxy(
         {},
@@ -1257,26 +1289,19 @@ describe('ImportService migrated order lines', () => {
                 id: 'prod-1',
                 name: 'BANNER',
                 technicalDescription: null,
-                items: [
-                  {
-                    id: 'item-1',
-                    name: 'BANNER',
-                    unitKind: 'AREA',
-                    width: null,
-                    height: null,
-                    length: null,
-                    weight: null,
-                    volume: null,
-                    distance: null,
-                    duration: null,
-                  },
-                ],
+                items: itensDoProduto,
+              });
+            }
+            if (name === 'quotationProduct' && method === 'create') {
+              return jest.fn().mockImplementation(({ data }) => {
+                linhas.push(data);
+                return Promise.resolve({ id: 'linha-1' });
               });
             }
             if (name === 'quotationProductItem' && method === 'create') {
               return jest.fn().mockImplementation(({ data }) => {
-                linhas.push(data);
-                return Promise.resolve({ id: 'linha-1' });
+                composicoes.push(data);
+                return Promise.resolve({ id: 'composicao-1' });
               });
             }
             if (method === 'findMany' || method === 'groupBy') {
@@ -1302,8 +1327,7 @@ describe('ImportService migrated order lines', () => {
       },
     );
 
-    const service = new ImportService(prisma, {} as any, {} as any);
-    const internals = service as any;
+    const internals = new ImportService(prisma, {} as any, {} as any) as any;
     jest.spyOn(internals, 'buildClientIndex').mockResolvedValue({});
     jest.spyOn(internals, 'buildPaymentConditionIndex').mockResolvedValue({});
     jest
@@ -1317,33 +1341,66 @@ describe('ImportService migrated order lines', () => {
       .mockResolvedValue({ id: 'vendedor-1', name: 'Vendedor' });
     jest.spyOn(internals, 'resolvePaymentCondition').mockReturnValue(null);
 
-    // 2 peças de 1,00 × 0,50 m por R$ 60,00 (R$ 60,00/m²).
-    await internals.importOrders(
-      [
-        {
-          NumeroVenda: '10',
-          Serie: '1',
-          DataVenda: '2026-01-10',
-          ClienteCodigoLegado: '5',
-          VendedorCodigoLegado: '2',
-          ProdutoCodigo: 'BAN06',
-          ProdutoNome: 'BANNER',
-          ItemLargura: '1,000',
-          ItemComprimento: '0,500',
-          Quantidade: '2',
-          ValorUnitario: '30,00',
-          ValorTotal: '60,00',
-          Desconto: '',
-          StatusOrdem: 'FINISHED',
-        },
-      ],
+    return { internals, linhas, composicoes };
+  };
+
+  it('grava na linha da O.S. a unidade do produto, como no orçamento', async () => {
+    const { internals, composicoes } = montar([itemDoProduto('item-1')]);
+
+    await internals.importOrders([linhaDoLegado], 'company-1', {
+      skipReceivable: true,
+    });
+
+    expect(composicoes).toHaveLength(1);
+    expect(composicoes[0].unitKind).toBe('AREA');
+    // A medida total é a área vezes a quantidade: o total não muda.
+    expect(composicoes[0].unitCost * 1000 * 500 * 2).toBeCloseTo(6000, 6);
+  });
+
+  it('na O.S., põe a quantidade na composição, como a tela', async () => {
+    const { internals, linhas, composicoes } = montar([
+      itemDoProduto('item-1'),
+    ]);
+
+    await internals.importOrders([linhaDoLegado], 'company-1', {
+      skipReceivable: true,
+    });
+
+    expect(linhas[0].quantity).toBe(1);
+    expect(composicoes[0]).toMatchObject({ quantity: 2, originalQuantity: 2 });
+  });
+
+  it('no orçamento, põe a quantidade na composição, como a tela', async () => {
+    const { internals, linhas, composicoes } = montar([
+      itemDoProduto('item-1'),
+    ]);
+
+    await internals.importQuotations(
+      [{ ...linhaDoLegado, Status: 'OPEN' }],
       'company-1',
-      { skipReceivable: true },
     );
 
-    expect(linhas).toHaveLength(1);
-    expect(linhas[0].unitKind).toBe('AREA');
-    // A tela multiplica a taxa pela área e pela quantidade da linha.
-    expect(linhas[0].unitCost * 1000 * 500 * 2).toBeCloseTo(6000, 6);
+    expect(linhas[0].quantity).toBe(1);
+    expect(composicoes[0]).toMatchObject({
+      quantity: 2,
+      originalQuantity: 2,
+      unitKind: 'AREA',
+    });
+    expect(composicoes[0].unitCost * 1000 * 500 * 2).toBeCloseTo(6000, 6);
+  });
+
+  it('no produto composto, a quantidade fica na linha', async () => {
+    // A tela também grava assim: o modal do composto multiplica as duas.
+    const { internals, linhas, composicoes } = montar([
+      itemDoProduto('item-1'),
+      itemDoProduto('item-2'),
+    ]);
+
+    await internals.importOrders([linhaDoLegado], 'company-1', {
+      skipReceivable: true,
+    });
+
+    expect(linhas[0].quantity).toBe(2);
+    expect(composicoes.map((c) => c.quantity)).toEqual([1, 1]);
   });
 });

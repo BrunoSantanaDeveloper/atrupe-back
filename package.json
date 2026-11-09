@@ -66,7 +66,9 @@
     "produtos:dedup": "node dist/src/scripts/deactivate-duplicate-legacy-products.js",
     "produtos:dedup:dev": "ts-node src/scripts/deactivate-duplicate-legacy-products.ts",
     "produtos:legado": "node dist/src/scripts/fix-legacy-products.js",
-    "produtos:legado:dev": "ts-node src/scripts/fix-legacy-products.ts"
+    "produtos:legado:dev": "ts-node src/scripts/fix-legacy-products.ts",
+    "documentos:quantidade": "node dist/src/scripts/normalize-imported-line-quantity.js",
+    "documentos:quantidade:dev": "ts-node src/scripts/normalize-imported-line-quantity.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
