@@ -24,7 +24,8 @@ edita, em **Super Admin › Atendimento › Robô**.
    - `atendimento/segredos/robo.env` → `/home/ubuntu/atendimento/robo.env`
      (preencha `ANTHROPIC_API_KEY`, ou outro provedor: veja `api.env.example`)
    - `atendimento/segredos/openwa.env` → `/home/ubuntu/atendimento/openwa.env`
-   - as linhas de `atendimento/segredos/api.env` no `.env` da API (`.env.dev` no homolog primeiro)
+   - as linhas de `atendimento/segredos/api.env` no `.env` da API de produção
+     (`/home/ubuntu/atrupe-back/.env.prod`)
 
    Os arquivos de `atendimento/segredos/` foram gerados com valores aleatórios e não vão para o git.
    Os modelos comentados ficam nesta pasta (`*.env.example`).
@@ -57,13 +58,17 @@ do Atrupe (`atendimento/gerado/`). Pode rodar de novo quantas vezes precisar.
 5. **Abrir painel** leva o superadmin ao Chatwoot já logado. A equipe do painel são os superadmins ativos;
    quem deixa de ser sai do painel na conferência diária (04:20).
 
-## Homologação primeiro
+## Produção e homolog
 
-O mesmo stack serve ao homolog: ponha as variáveis da API no `.env.dev` e `PROJECT_URL` do robô em
-`https://dev.atrupe.com.br/atendimento/robo`. Para passar à produção, troque o `PROJECT_URL`, leve as
-variáveis ao `.env.prod`, **tire-as do `.env.dev`** e conecte o número de novo pela tela de produção (a
-conta do Chatwoot é criada pela API que a usa). Sem tirar, a rotina do homolog segue conferindo o número
-antigo e mandando aos superadmins, uma vez por dia, um e-mail de que ele parou (com `[Homolog]` no assunto).
+O atendimento vai direto à produção: o robô chama `https://api.atrupe.com.br/atendimento/robo` e as
+variáveis ficam só no `.env.prod`. Sem elas, a API sobe normal: as rotinas não rodam e as telas dizem que
+o atendimento não está configurado. Por isso o código pode ir ao `main` antes do Chatwoot existir.
+
+Para testar no homolog, o mesmo stack serve: variáveis no `.env.dev` e `PROJECT_URL` do robô em
+`https://dev.atrupe.com.br/atendimento/robo`. Uma API só por vez: a conta do Chatwoot é criada pela API
+que a usa. Ao voltar para a produção, **tire as variáveis do `.env.dev`** e conecte o número de novo pela
+tela de produção. Sem tirar, a rotina do homolog segue conferindo o número antigo e mandando aos
+superadmins, uma vez por dia, um e-mail de que ele parou (com `[Homolog]` no assunto).
 
 ## Quando o número para
 
