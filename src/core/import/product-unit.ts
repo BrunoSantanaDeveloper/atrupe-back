@@ -118,6 +118,28 @@ export function importedItemPrices(
   return { unitCost, salePrice };
 }
 
+/**
+ * Onde fica a quantidade de uma linha de documento migrado.
+ *
+ * A tela grava o produto de uma composição com a linha em 1 e a quantidade na
+ * composição, e o modal de edição desse produto lê só a da composição. A carga
+ * gravava o contrário (linha = N, composição = 1): o modal mostrava
+ * "Quantidade 1" e, ao salvar, gravava o total dividido por N. Produto
+ * composto leva a quantidade na linha, como a tela também faz.
+ *
+ * A taxa da linha não muda: a medida total é a quantidade vezes a medida, em
+ * qualquer dos dois lugares.
+ */
+export function lineQuantities(
+  quantity: number,
+  compositions: number,
+): { line: number; composition: number } {
+  if (compositions === 1 && quantity >= 1) {
+    return { line: 1, composition: quantity };
+  }
+  return { line: quantity, composition: 1 };
+}
+
 /** Medidas de uma linha de documento, em unidade bruta (mm, segundos). */
 export interface LineDimensions {
   width?: number | null;

@@ -43,6 +43,7 @@ import { exampleCodeFor, isExampleProduct } from './example-products';
 import {
   LineDimensions,
   importedItemPrices,
+  lineQuantities,
   lineRawMeasure,
   lineUnitCost,
   unitKindFromCode,
@@ -2884,12 +2885,20 @@ export class ImportService {
 
           quotationTotalValue += itemFinalValue;
 
+          // Só o primeiro item do produto entra no orçamento: com item, a
+          // linha tem uma composição e a quantidade vai nela, como na tela.
+          const quantity = parseInt(item.Quantidade);
+          const quantities = lineQuantities(
+            quantity,
+            product.items && product.items.length > 0 ? 1 : 0,
+          );
+
           // Criar QuotationProduct
           const quotationProduct = await this.prisma.quotationProduct.create({
             data: {
               quotationId: quotation.id,
               productId: product.id,
-              quantity: parseInt(item.Quantidade),
+              quantity: quantities.line,
               totalValue: itemTotalValue,
               finalValue: itemFinalValue,
               discount,
@@ -2919,10 +2928,12 @@ export class ImportService {
                 productId: product.id,
                 quotationProductId: quotationProduct.id,
                 productItemId: productItem.id,
-                // A tela multiplica a quantidade da composição pela da linha.
-                // Repetir a quantidade aqui elevava a medida ao quadrado: 250
-                // unidades viravam 62.500.
-                quantity: 1,
+                // A tela multiplica a quantidade da composição pela da linha:
+                // a quantidade fica num só dos dois (ver `lineQuantities`).
+                // Repetida nos dois, a medida ia ao quadrado — 250 unidades
+                // viravam 62.500.
+                quantity: quantities.composition,
+                originalQuantity: quantities.composition,
                 name: productItem.name,
                 // Total da linha, não o valor unitário: é o que a tela divide
                 // pela medida total para chegar à taxa.
@@ -2936,7 +2947,7 @@ export class ImportService {
                     length: productItem.length,
                     duration: productItem.duration,
                   },
-                  parseInt(item.Quantidade),
+                  quantity,
                 ),
                 totalValue: itemTotalValue,
                 width:
@@ -3309,13 +3320,17 @@ export class ImportService {
 
           quotationTotalValue += itemFinalValue;
 
+          // Uma composição: a quantidade vai nela, como na tela. Produto
+          // composto: na linha, com cada composição em 1.
+          const quantities = lineQuantities(quantity, product.items.length);
+
           // Criar produto do orçamento
           const quotationProduct = await this.prisma.quotationProduct.create({
             data: {
               quotationId: quotation.id,
               productId: product.id,
               description: item.ProdutoNome || product.name,
-              quantity,
+              quantity: quantities.line,
               totalValue: itemTotalValue,
               finalValue: itemFinalValue,
               discount,
@@ -3338,7 +3353,8 @@ export class ImportService {
                 productId: product.id,
                 productItemId: productItem.id,
                 name: productItem.name,
-                quantity: 1,
+                quantity: quantities.composition,
+                originalQuantity: quantities.composition,
                 // Valor da venda, não o do catálogo: o preço praticado no
                 // documento histórico é o que o cliente reconhece, e pode ser
                 // bem diferente do preço atual do produto.
