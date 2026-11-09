@@ -115,6 +115,19 @@ export interface StepPreparation {
 
 const dataBr = (iso: string) => iso.split('-').reverse().join('/');
 
+/** "UN 396 · M2 70 · M 10": quantos produtos entram em cada unidade. */
+export function unitBreakdown(rows: { unidadeMedida?: string }[]): string {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const unit = row.unidadeMedida?.trim().toUpperCase() || 'sem unidade';
+    counts.set(unit, (counts.get(unit) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([unit, total]) => `${unit} ${total}`)
+    .join(' · ');
+}
+
 /**
  * Decide o que a etapa faz antes de gravar, numa conta que pode não estar
  * vazia: quais cadastros de apoio criar, quais registros existentes aproveitar,
@@ -174,6 +187,21 @@ export async function prepareStep(
         `${withoutItem.length} produto(s) da conta com o mesmo código não têm ` +
           `item cadastrado, e a venda que os usa vai falhar: ` +
           `${withoutItem.slice(0, 10).join(', ')}`,
+      );
+    }
+
+    // A unidade errada não reprova linha nenhuma: a Terabyte passou na
+    // simulação com os 70 produtos por m² entrando como unidade. Mostrar a
+    // contagem deixa o operador ver, antes de gravar, uma gráfica sem m².
+    if (rows.length > 0) {
+      prep.notes.push(`Unidades: ${unitBreakdown(rows)}.`);
+    }
+
+    const inativos = rows.filter((row) => row.ativo === 'NAO').length;
+    if (inativos > 0) {
+      prep.notes.push(
+        `${inativos} produto(s) inativo(s) no legado entram inativos: ` +
+          `ficam no histórico das vendas, fora da listagem.`,
       );
     }
   }

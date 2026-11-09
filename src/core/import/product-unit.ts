@@ -1,0 +1,119 @@
+import type { UnitKind } from '@prisma/client';
+
+/**
+ * Unidades cujo preço total depende de uma medida (área, comprimento, peso…).
+ * Para elas o `unitCost` é uma taxa por unidade bruta (R$/mm², R$/segundo…) e
+ * só vira total quando multiplicado pela medida.
+ */
+export const DIMENSIONAL_UNIT_KINDS: UnitKind[] = [
+  'AREA',
+  'LENGTH',
+  'CAPACITY',
+  'WEIGHT',
+  'DISTANCE',
+  'DURATION',
+];
+
+/**
+ * Códigos de unidade que a importação reconhece. Inclui os do sistema legado,
+ * que cobra em UN, M2, M, KG, LT, HH e KM (tabela `ven_servico_un_com`).
+ */
+const UNIT_KIND_BY_CODE: Record<string, UnitKind> = {
+  M2: 'AREA',
+  'M²': 'AREA',
+  MT2: 'AREA',
+  'METRO QUADRADO': 'AREA',
+  M: 'LENGTH',
+  ML: 'LENGTH',
+  METRO: 'LENGTH',
+  'METRO LINEAR': 'LENGTH',
+  KG: 'WEIGHT',
+  QUILO: 'WEIGHT',
+  KILO: 'WEIGHT',
+  QUILOGRAMA: 'WEIGHT',
+  L: 'CAPACITY',
+  LT: 'CAPACITY',
+  LITRO: 'CAPACITY',
+  LITROS: 'CAPACITY',
+  KM: 'DISTANCE',
+  QUILOMETRO: 'DISTANCE',
+  H: 'DURATION',
+  HR: 'DURATION',
+  // A hora do legado. Sem ela, o serviço cobrado por hora entrava como unidade.
+  HH: 'DURATION',
+  HORA: 'DURATION',
+  HORAS: 'DURATION',
+};
+
+/**
+ * Tipo da unidade pelo código.
+ *
+ * Código vazio não diz nada e devolve nulo. Código que não é de medida (UN,
+ * PC, PECA…) é unidade avulsa.
+ */
+export function unitKindFromCode(
+  code: string | null | undefined,
+): UnitKind | null {
+  const normalized = (code ?? '').toUpperCase().trim();
+  if (!normalized) return null;
+  return UNIT_KIND_BY_CODE[normalized] ?? 'UNITY';
+}
+
+/** Quantas unidades brutas cabem numa unidade de exibição. */
+const RAW_PER_DISPLAY_UNIT: Partial<Record<UnitKind, number>> = {
+  AREA: 1_000_000, // m² → mm²
+  LENGTH: 1_000, // metro → mm
+  CAPACITY: 1_000, // litro → ml
+  WEIGHT: 1_000_000, // kg → mg
+  DISTANCE: 1_000, // km → metro
+  DURATION: 3_600, // hora → segundo
+};
+
+/**
+ * Converte o valor por unidade de exibição (R$/m²) para a taxa por unidade
+ * bruta que o banco guarda (R$/mm²). A tela faz a conversão inversa.
+ */
+export function displayToRawUnitCost(
+  valueInCents: number | null,
+  kind: UnitKind | null,
+): number | null {
+  if (valueInCents === null || valueInCents === 0) return valueInCents;
+  const divisor = kind ? RAW_PER_DISPLAY_UNIT[kind] : undefined;
+  return divisor ? valueInCents / divisor : valueInCents;
+}
+
+export interface ImportedItemMeasures {
+  widthMm?: number | null;
+  heightMm?: number | null;
+  durationSeconds?: number | null;
+}
+
+/**
+ * Custo e preço que a importação grava no item de um produto.
+ *
+ * `salePrice` é o total do item. Unidade avulsa tem o valor unitário como
+ * total. Unidade com medida só tem total quando a medida vem junto: sem ela,
+ * gravar a taxa por unidade bruta num campo de total faria a listagem exibir
+ * 0,00, então fica nulo e o total sai no orçamento, quando a medida é
+ * informada.
+ */
+export function importedItemPrices(
+  displayUnitCostCents: number | null,
+  kind: UnitKind | null,
+  measures: ImportedItemMeasures = {},
+): { unitCost: number | null; salePrice: number | null } {
+  const unitCost = displayToRawUnitCost(displayUnitCostCents, kind);
+  let salePrice: number | null = null;
+
+  if (unitCost && unitCost > 0) {
+    if (kind === 'AREA' && measures.widthMm && measures.heightMm) {
+      salePrice = unitCost * measures.widthMm * measures.heightMm;
+    } else if (kind === 'DURATION' && measures.durationSeconds) {
+      salePrice = unitCost * measures.durationSeconds;
+    } else if (!kind || !DIMENSIONAL_UNIT_KINDS.includes(kind)) {
+      salePrice = unitCost;
+    }
+  }
+
+  return { unitCost, salePrice };
+}
