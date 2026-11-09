@@ -988,17 +988,33 @@ export class InvoicyService {
 
     await auditAction;
 
-    // Certificado é GLOBAL: rebaixar TODOS os ambientes de TODOS os emissores da empresa
-    await this.prisma.invoicyEnvironmentConfig.updateMany({
-      where: {
-        invoicyConfig: { companyId },
+    // Certificado é GLOBAL: rebaixar TODOS os ambientes de TODOS os emissores
+    // da empresa. Vai com registro proprio: o CERTIFICATE_UPLOADED diz que o
+    // certificado mudou, nao que a ativacao caiu junto.
+    await this.fiscalAuditService.commitWithOutcome(
+      {
+        companyId,
+        emissorName: 'Todos os emissores da empresa',
+        action: FiscalConfigAction.ENVIRONMENT_DEMOTED,
+        actorType: ActorType.SYSTEM,
+        createdByName: 'Upload de certificado',
+        description:
+          'Certificado digital substituído: os ambientes fiscais de todos os ' +
+          'emissores voltaram para rascunho e exigem nova ativação.',
+        result: 'SUCCESS',
       },
-      data: {
-        status: 'DRAFT',
-        lastValidationAt: null,
-        lastValidationError: null,
-      },
-    });
+      (tx) =>
+        tx.invoicyEnvironmentConfig.updateMany({
+          where: {
+            invoicyConfig: { companyId },
+          },
+          data: {
+            status: 'DRAFT',
+            lastValidationAt: null,
+            lastValidationError: null,
+          },
+        }),
+    );
 
     this.invoicyHttpService.clearTokenCache(companyId);
     return { success: true, message: 'Certificado atualizado com sucesso' };
@@ -1429,6 +1445,25 @@ export class InvoicyService {
           status: 'DRAFT',
           lastValidationAt: null,
           lastValidationError: null,
+        },
+      });
+
+      // Ja' estamos dentro da transacao auditada da troca de chave, entao a
+      // linha e' criada aqui mesmo: o CREDENTIALS_ROTATE conta que a chave
+      // mudou, este conta que a ativacao caiu junto.
+      await tx.invoicyConfigHistory.create({
+        data: {
+          companyId,
+          emissorName: 'Todos os emissores da empresa',
+          action: FiscalConfigAction.ENVIRONMENT_DEMOTED,
+          actorType: ActorType.SYSTEM,
+          createdByName: 'Troca da chave de acesso',
+          environment,
+          result: 'SUCCESS',
+          correlationId: crypto.randomUUID(),
+          description:
+            `Chave de acesso de ${environment} substituída: os ambientes ` +
+            'desse ambiente voltaram para rascunho e exigem nova ativação.',
         },
       });
 

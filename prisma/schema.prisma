@@ -3172,6 +3172,10 @@ enum FiscalConfigAction {
   ENVIRONMENT_CONFIG_CREATE
   CREDENTIALS_ROTATE
   ENVIRONMENT_ACTIVATED
+  /// Ambiente que estava READY voltou para rascunho e exige nova ativacao.
+  /// Isso acontecia sem registro nenhum: o emissor perdia a ativacao de
+  /// producao e nada no historico dizia por que.
+  ENVIRONMENT_DEMOTED
   VALIDATION_RUN
   READ_CREDENTIALS
   CERTIFICATE_UPLOADED

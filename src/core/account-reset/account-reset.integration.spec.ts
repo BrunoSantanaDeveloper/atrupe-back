@@ -41,6 +41,7 @@ describeWithDb('zerar dados da conta — banco de verdade', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
     service = new AccountResetService(prisma as any, companyService);
     const admin = await prisma.user.create({

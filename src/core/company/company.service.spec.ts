@@ -8,6 +8,7 @@ import { Logger } from '@nestjs/common';
 import { EncryptionService } from 'src/shared/services/encryption.service';
 import { FiscalRolloutPolicyService } from '../fiscal/shared/fiscal-rollout-policy.service';
 import { FiscalCredentialResolverService } from '../fiscal/shared/fiscal-credential-resolver.service';
+import { FiscalAuditService } from '../fiscal/shared/fiscal-audit.service';
 import { InvoicyCompanyRegistrationService } from '../fiscal/invoicy/invoicy-company-registration.service';
 
 // Mock data
@@ -252,6 +253,9 @@ const mockPrismaService = {
   invoicyEnvironmentConfig: {
     updateMany: jest.fn(),
   },
+  invoicyConfigHistory: {
+    create: jest.fn(),
+  },
   $transaction: jest.fn((callback) => callback(mockPrismaService)),
 };
 
@@ -299,6 +303,17 @@ const mockInvoicyCompanyRegistrationService = {
   syncRegistrationData: jest.fn().mockResolvedValue([]),
 };
 
+/**
+ * O rebaixamento roda dentro de `commitWithOutcome`, que grava o historico na
+ * mesma transacao. O mock executa a acao com o prisma mockado para os testes
+ * continuarem vendo o `updateMany` — e para dar como assertar o registro.
+ */
+const mockFiscalAuditService = {
+  commitWithOutcome: jest.fn((_dados: any, acao: any) =>
+    acao(mockPrismaService),
+  ),
+};
+
 describe('CompanyService', () => {
   let service: CompanyService;
   let prisma: typeof mockPrismaService;
@@ -326,6 +341,10 @@ describe('CompanyService', () => {
         {
           provide: InvoicyCompanyRegistrationService,
           useValue: mockInvoicyCompanyRegistrationService,
+        },
+        {
+          provide: FiscalAuditService,
+          useValue: mockFiscalAuditService,
         },
       ],
     }).compile();
@@ -763,6 +782,35 @@ describe('CompanyService', () => {
             }),
           }),
         );
+      });
+
+      /**
+       * Antes o rebaixamento era um updateMany solto, sem nenhuma linha no
+       * historico fiscal: o emissor perdia a ativacao de producao e nao havia
+       * como descobrir por que. O registro e' o que torna o proximo caso
+       * diagnosticavel em segundos.
+       */
+      it('registra no histórico fiscal por que a ativação caiu', async () => {
+        await service.update(mockCompanyId, mockUpdateCompanyDto);
+
+        expect(mockFiscalAuditService.commitWithOutcome).toHaveBeenCalledWith(
+          expect.objectContaining({
+            companyId: mockCompanyId,
+            action: 'ENVIRONMENT_DEMOTED',
+            actorType: 'SYSTEM',
+            description: expect.stringContaining('Endereço alterado'),
+          }),
+          expect.any(Function),
+        );
+      });
+
+      it('não registra nada quando não houve rebaixamento', async () => {
+        await service.update(mockCompanyId, {
+          ...mockUpdateCompanyDto,
+          address: enderecoDoCadastro,
+        } as any);
+
+        expect(mockFiscalAuditService.commitWithOutcome).not.toHaveBeenCalled();
       });
 
       it('rebaixa quando a empresa ainda nao tem endereco gravado', async () => {
