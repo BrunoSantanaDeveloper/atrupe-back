@@ -57,6 +57,7 @@ import {
 } from './dtos/nfce.dto';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { montarImpostosNfe } from '../utils/nfe-imposto-payload.util';
+import { resolveCommercialQuantity } from '../utils/commercial-quantity.util';
 import { isRegimeNormal } from '../utils/regime-tributario.util';
 import {
   aliquotasReformaTributaria,
@@ -125,7 +126,85 @@ export class NfceService {
     private readonly fiscalCredentialResolver: FiscalCredentialResolverService,
   ) {}
 
-  async prepareStandalone(companyId: string) {
+  /**
+   * Itens de uma O.S. prontos para a NFC-e.
+   *
+   * A tela montava isso sozinha a partir de `/sale/order/:id` e errava duas
+   * coisas que a emissao por NF-e ja' acertava:
+   *
+   * - os valores do orcamento ficam em CENTAVOS. Um copo de R$ 35,00 chegava
+   *   a' nota como R$ 3.500,00, e o total de R$ 70,00 como R$ 7.000,00.
+   * - a quantidade comercial nao e' a "Qtd. Item" (1), e' a medida do que foi
+   *   vendido (2 un). A tela lia o campo errado e ainda assim exibia o valor
+   *   final das duas pecas, entao nem o proprio resumo fechava.
+   *
+   * Quantidade e valor de documento fiscal nao se calculam no cliente: a
+   * conta e' a mesma de `NfeService.prepareFromOrder`, com o mesmo util.
+   */
+  private async itensDaOrdemParaNfce(
+    companyId: string,
+    orderId: string,
+    config: any,
+  ) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, quotation: { companyId } },
+      include: {
+        quotation: {
+          include: {
+            quotationProduct: {
+              include: {
+                items: true,
+                product: { include: { fiscalData: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order?.quotation?.quotationProduct?.length) return [];
+
+    return order.quotation.quotationProduct.map((qp: any, index: number) => {
+      const totalValueCents = qp.finalValue || qp.totalValue || 0;
+      const totalValueReais = totalValueCents / 100;
+      const comercial = resolveCommercialQuantity(qp.quantity, qp.items);
+      const unitValue =
+        comercial.quantity > 0 ? totalValueReais / comercial.quantity : 0;
+      const fiscalData = qp.product?.fiscalData;
+
+      return {
+        itemNumber: index + 1,
+        productId: qp.productId,
+        productCode: qp.product?.code || '',
+        description: qp.description || qp.product?.name || 'Produto',
+        ncm: fiscalData?.ncm || '',
+        // NFC-e e' venda presencial dentro do estado: CFOP interno sempre.
+        cfop: fiscalData?.cfopInState || config.defaultCfop || '5102',
+        cstIcms: fiscalData?.icmsCst || '',
+        cstIpi: '',
+        cstPis: fiscalData?.pisCst || '',
+        cstCofins: fiscalData?.cofinsCst || '',
+        unit: comercial.unit,
+        uCom: comercial.unit,
+        ean: fiscalData?.cean || '',
+        ceantrib: '',
+        quantity: comercial.quantity,
+        unitValue,
+        discount: Number(((qp.discount || 0) / 100).toFixed(2)),
+        freight: 0,
+        insurance: 0,
+        totalValue: Number(totalValueReais.toFixed(2)),
+        isService: false,
+        needsConfiguration:
+          !fiscalData?.ncm ||
+          !fiscalData?.icmsCst ||
+          !fiscalData?.pisCst ||
+          !fiscalData?.cofinsCst,
+      };
+    });
+  }
+
+  async prepareStandalone(companyId: string, orderId?: string) {
     const config = await this.invoicyService.getConfig(companyId);
     if (!config) {
       throw new BadRequestException(
@@ -158,6 +237,9 @@ export class NfceService {
       naturezaOperacao: 'Venda de mercadoria',
       informacoesComplementares: config.taxInfoText || '',
       prazoCancelamentoMinutos: config.prazoCancelamentoNfce ?? 30,
+      itens: orderId
+        ? await this.itensDaOrdemParaNfce(companyId, orderId, config)
+        : [],
     };
   }
 

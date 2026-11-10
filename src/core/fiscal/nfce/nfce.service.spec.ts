@@ -522,6 +522,64 @@ describe('NfceService', () => {
       expect(invoicyService.getConfig).toHaveBeenCalledWith(mockCompanyId);
     });
 
+    /**
+     * Caso real da Terabyte (O.S. T1-5473): copo de R$ 35,00, 2 unidades,
+     * total R$ 70,00. A tela montava os itens sozinha e mandava R$ 3.500,00 de
+     * unitario com quantidade 1 — centavo lido como real e "Qtd. Item" no
+     * lugar da quantidade comercial.
+     */
+    it('monta os itens da O.S. em reais e com a quantidade comercial', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce({
+        id: mockOrderId,
+        quotation: {
+          quotationProduct: [
+            {
+              productId: 'prod-copo',
+              description: 'COPO ESTILO STANLEY',
+              quantity: 1,
+              finalValue: 7000,
+              totalValue: 7000,
+              discount: 0,
+              items: [{ quantity: 2, unitKind: 'UNITY' }],
+              product: {
+                code: 'CP01',
+                name: 'COPO ESTILO STANLEY',
+                fiscalData: {
+                  ncm: '49119900',
+                  cfopInState: '5102',
+                  icmsCst: '102',
+                  pisCst: '99',
+                  cofinsCst: '99',
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      const resultado = await service.prepareStandalone(
+        mockCompanyId,
+        mockOrderId,
+      );
+
+      expect(resultado.itens).toHaveLength(1);
+      expect(resultado.itens[0]).toMatchObject({
+        description: 'COPO ESTILO STANLEY',
+        quantity: 2,
+        unitValue: 35,
+        totalValue: 70,
+        unit: 'UN',
+        cfop: '5102',
+      });
+    });
+
+    it('não busca ordem nenhuma quando a nota é avulsa de verdade', async () => {
+      const resultado = await service.prepareStandalone(mockCompanyId);
+
+      expect(resultado.itens).toEqual([]);
+      expect(prisma.order.findFirst).not.toHaveBeenCalled();
+    });
+
     it('should reject NFC-e when linked order is canceled', async () => {
       prisma.order.findFirst.mockResolvedValueOnce({
         id: mockOrderId,

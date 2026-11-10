@@ -58,8 +58,9 @@ export class NfceController {
   @Get('prepare-standalone')
   @HasPermission('create', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Preparar dados para NFC-e avulsa' })
-  async prepareStandalone(@Req() req) {
-    return this.nfceService.prepareStandalone(req.user.companyId);
+  async prepareStandalone(@Req() req, @Query('orderId') orderId?: string) {
+    // Com `orderId`, a resposta ja' traz os itens da O.S. calculados aqui.
+    return this.nfceService.prepareStandalone(req.user.companyId, orderId);
   }
 
   @Get(':id')
