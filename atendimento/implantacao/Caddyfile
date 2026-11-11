@@ -22,6 +22,13 @@ atendimento.atrupe.com.br {
 		reverse_proxy robo:8080
 	}
 
+	# O ícone do Atrupe no painel (LOGO_THUMBNAIL, marca.icone em escolhas.json), servido daqui para
+	# não depender de um deploy do front. O Chatwoot o desenha num quadrado: o arquivo é quadrado.
+	handle_path /atrupe-marca/* {
+		root * /srv/marca
+		file_server
+	}
+
 	handle {
 		reverse_proxy chatwoot-rails:3000
 	}
