@@ -286,7 +286,7 @@ export const FEATURE_ENFORCEMENT: Record<
   credit_limit_enforcement: {
     level: 'api',
     detail:
-      'Aprovação do orçamento recusada com cliente bloqueado, condição fora das permitidas ou saldo acima do limite (antes da data de CREDIT_LIMIT_ENFORCE_FROM, só registra).',
+      'Aprovação do orçamento recusada com cliente bloqueado, condição fora das permitidas ou saldo acima do limite.',
   },
   paper_register: {
     level: 'api',

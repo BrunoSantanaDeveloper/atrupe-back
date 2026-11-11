@@ -1,11 +1,7 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { ClientKind, Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
-import { isObservingNow } from '../../plan/decorators/observe-feature.decorator';
 import { PlanControlService } from '../../plan/plan-control.service';
-
-/** A data (AAAA-MM-DD) em que a aprovação passa a ser recusada. */
-export const CREDIT_ENFORCE_ENV = 'CREDIT_LIMIT_ENFORCE_FROM';
 
 /** Cartão: o cliente pagou no ato; as parcelas são da operadora. */
 const CARD_METHODS = ['CRD', 'DEB'];
@@ -34,7 +30,7 @@ export type CreditIssue =
 export type ClientCredit = {
   /** O plano confere o crédito (`credit_limit_enforcement`). */
   applies: boolean;
-  /** A aprovação já é recusada (a data de CREDIT_LIMIT_ENFORCE_FROM chegou). */
+  /** A aprovação é recusada (sempre, desde 11/11/2026; a tela ainda lê). */
   enforcing: boolean;
   blockClient: boolean;
   /** Centavos; null sem limite cadastrado (não confere). */
@@ -136,14 +132,12 @@ function parcelsOf(payment: PaymentParcels | null): Parcel[] {
  * - cliente bloqueado e condição fora das permitidas também recusam;
  * - concluir só avisa; a aprovação recusa, e ninguém aprova acima do limite.
  *
- * Até a data de CREDIT_LIMIT_ENFORCE_FROM a aprovação só registra no log o
- * que recusaria: o padrão da empresa nasce com limite e todo cliente o recebe
- * no cadastro, então ligar sem olhar travaria vendas de quem nunca o definiu.
+ * A recusa vale sempre (11/11/2026). Antes havia um período de observação
+ * (CREDIT_LIMIT_ENFORCE_FROM) para não travar quem nunca definiu limite; o
+ * limite de crédito é do LITE, e nenhuma empresa usa o LITE ainda.
  */
 @Injectable()
 export class CreditCheckService {
-  private readonly logger = new Logger(CreditCheckService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly planControl: PlanControlService,
@@ -244,9 +238,8 @@ export class CreditCheckService {
   }
 
   /**
-   * Na aprovação: recusa (409) quando o plano confere e há motivo; antes da
-   * data de corte, só registra. A mensagem não leva valores: quem aprova
-   * pode não ver os do financeiro.
+   * Na aprovação: recusa (409) quando o plano confere e há motivo. A
+   * mensagem não leva valores: quem aprova pode não ver os do financeiro.
    */
   async assertApproval(quotationId: string): Promise<void> {
     const credit = await this.quotationCredit(quotationId);
@@ -256,14 +249,6 @@ export class CreditCheckService {
       ...credit.issues.map((issue) => issue.message),
       CREDIT_APPROVAL_HINT,
     ].join(' ');
-    if (!credit.enforcing) {
-      this.logger.warn(
-        `[CREDIT] observando: a aprovação do orçamento ${quotationId} seria recusada (${credit.issues
-          .map((issue) => issue.code)
-          .join(', ')})`,
-      );
-      return;
-    }
     throw new ConflictException({
       statusCode: 409,
       code: 'CREDIT_CHECK',
@@ -321,7 +306,7 @@ export class CreditCheckService {
     const used = openBalance + pendingApproved;
     return {
       applies,
-      enforcing: !isObservingNow({ untilEnv: CREDIT_ENFORCE_ENV }),
+      enforcing: true,
       blockClient: client.blockClient,
       limit,
       openBalance,

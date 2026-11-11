@@ -1,6 +1,5 @@
-import { ConflictException, Logger } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 import {
-  CREDIT_ENFORCE_ENV,
   CREDIT_LIMIT_EXCEEDED_MESSAGE,
   CreditCheckService,
   creditPartOf,
@@ -52,7 +51,6 @@ describe('creditPartOf', () => {
 });
 
 describe('CreditCheckService', () => {
-  const env = process.env[CREDIT_ENFORCE_ENV];
   let prisma: any;
   let plan: { hasFeature: jest.Mock };
   let service: CreditCheckService;
@@ -92,7 +90,6 @@ describe('CreditCheckService', () => {
   });
 
   beforeEach(() => {
-    delete process.env[CREDIT_ENFORCE_ENV];
     prisma = {
       client: { findFirst: jest.fn().mockResolvedValue(client()) },
       quotation: {
@@ -111,11 +108,6 @@ describe('CreditCheckService', () => {
     };
     plan = { hasFeature: jest.fn().mockResolvedValue(true) };
     service = new CreditCheckService(prisma, plan as any);
-  });
-
-  afterAll(() => {
-    if (env === undefined) delete process.env[CREDIT_ENFORCE_ENV];
-    else process.env[CREDIT_ENFORCE_ENV] = env;
   });
 
   it('em aberto + esta venda acima do limite do cliente: recusa pelo limite', async () => {
@@ -243,17 +235,7 @@ describe('CreditCheckService', () => {
       });
     });
 
-    it('antes da data de corte só registra no log', async () => {
-      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-      await expect(service.assertApproval('orc-1')).resolves.toBeUndefined();
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('CREDIT_LIMIT_EXCEEDED'),
-      );
-      warn.mockRestore();
-    });
-
-    it('depois da data, recusa com 409 sem valores na mensagem', async () => {
-      process.env[CREDIT_ENFORCE_ENV] = '2026-01-01';
+    it('recusa com 409 sem valores na mensagem, sem data de corte', async () => {
       const error = await service.assertApproval('orc-1').catch((e) => e);
       expect(error).toBeInstanceOf(ConflictException);
       const body = error.getResponse();
@@ -266,7 +248,6 @@ describe('CreditCheckService', () => {
     });
 
     it('plano sem a chave não confere', async () => {
-      process.env[CREDIT_ENFORCE_ENV] = '2026-01-01';
       plan.hasFeature.mockResolvedValue(false);
       await expect(service.assertApproval('orc-1')).resolves.toBeUndefined();
       expect(plan.hasFeature).toHaveBeenCalledWith(
@@ -276,7 +257,6 @@ describe('CreditCheckService', () => {
     });
 
     it('venda sem cliente não confere', async () => {
-      process.env[CREDIT_ENFORCE_ENV] = '2026-01-01';
       prisma.quotation.findUnique.mockResolvedValue(
         quotation({ client: null }),
       );

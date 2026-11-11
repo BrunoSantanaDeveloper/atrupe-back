@@ -253,7 +253,6 @@ export class AiLiteQueryService {
       limit: credit.limit,
       used: credit.used,
       available: credit.available,
-      // Antes da data de CREDIT_LIMIT_ENFORCE_FROM o limite só é registrado
       enforcing: credit.applies && credit.enforcing,
     };
   }
