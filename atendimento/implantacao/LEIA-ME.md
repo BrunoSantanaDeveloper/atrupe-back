@@ -4,71 +4,101 @@ O suporte do Atrupe pelo WhatsApp roda sobre o Chatwoot 4.19.1 (imagem `-ce`), c
 `whatsapp-support` 1.0.0 e a API do Atrupe (`src/core/atendimento`). O contexto do robô só o superadmin
 edita, em **Super Admin › Atendimento › Robô**.
 
+O Chatwoot, o robô e o OpenWA ficam numa **instância própria**, separada do servidor da API, para não
+disputar memória com a produção. A API do Atrupe chama essa instância pelos endereços públicos.
+
 | Peça | Onde |
 |---|---|
+| Instância | "Atendimento - Atrupe" (`i-0dc1b8fb4d310e6bc`), `52.6.18.128`, t4g.medium (ARM, 2 vCPU, 4 GB), Ubuntu 24.04, us-east-1, 30 GB |
 | Painel da equipe | `https://atendimento.atrupe.com.br` |
 | Robô | `https://atendimento.atrupe.com.br/robo/` (o Chatwoot avisa em `/robo/chatwoot`) |
-| Rotas que o robô chama na API | `https://api.atrupe.com.br/atendimento/robo/*` (assinadas com `SUPPORT_BOT_SECRET`) |
 | OpenWA (conexão não oficial) | `https://wa.atrupe.com.br/api/*` (só a API; o painel do OpenWA não fica público) |
-| Stack | `docker-stack.atendimento.yml`, no mesmo Swarm e atrás do mesmo Traefik da API |
+| Rotas que o robô chama na API | `https://api.atrupe.com.br/atendimento/robo/*` (assinadas com `SUPPORT_BOT_SECRET`) |
+| Arquivos | `compose.yml`, `Caddyfile`, `preparar-servidor.sh` e `implantar.sh`, nesta pasta |
 
-## Antes da primeira implantação
+## Acesso à instância
 
-1. **Servidor.** O Chatwoot com Postgres e Redis pede uns 2 vCPU e 4 GB a mais do que a máquina já usa
-   (regra de bolso do kit), e o OpenWA mais 300 a 500 MB por número conectado (um Chromium por sessão).
-   Confira a folga com `free -m` e `docker stats` antes de subir.
-2. **DNS.** `atendimento.atrupe.com.br` e `wa.atrupe.com.br` apontando para o servidor do Swarm. O Traefik
-   emite os certificados.
-3. **Segredos.** Copie para o servidor, fora do git, com `chmod 600`:
-   - `atendimento/segredos/chatwoot.env` → `/home/ubuntu/atendimento/chatwoot.env`
-   - `atendimento/segredos/robo.env` → `/home/ubuntu/atendimento/robo.env`
-     (preencha `ANTHROPIC_API_KEY`, ou outro provedor: veja `api.env.example`)
-   - `atendimento/segredos/openwa.env` → `/home/ubuntu/atendimento/openwa.env`
-   - as linhas de `atendimento/segredos/api.env` no `.env` da API de produção
-     (`/home/ubuntu/atrupe-back/.env.prod`)
-
-   Os arquivos de `atendimento/segredos/` foram gerados com valores aleatórios e não vão para o git.
-   Os modelos comentados ficam nesta pasta (`*.env.example`).
-
-## Implantar (e a cada atualização do kit ou do tema)
+A porta 22 da instância só aceita o servidor da API (`18.214.154.178`). Entre passando por ele, com a chave
+de deploy (`antigravity-deploy@atrupe`, acrescentada ao usuário `ubuntu` das duas máquinas):
 
 ```
-cd /home/ubuntu/atrupe-back && git pull
-bash atendimento/implantacao/implantar.sh
+ssh -i ~/.ssh/atrupe_deploy -o IdentitiesOnly=yes \
+  -o ProxyCommand="ssh -i ~/.ssh/atrupe_deploy -W %h:%p ubuntu@18.214.154.178" ubuntu@52.6.18.128
 ```
 
-O roteiro constrói a imagem do robô, sobe o stack, prepara o banco do Chatwoot e aplica a marca e o tema
-do Atrupe (`atendimento/gerado/`). Pode rodar de novo quantas vezes precisar.
+Nos comandos abaixo, `<acesso>` é esse comando `ssh` inteiro, com o `ubuntu@52.6.18.128` no fim.
 
-## Depois da primeira implantação
+## Como fica no servidor
 
-1. Abra `https://atendimento.atrupe.com.br` e crie o **super administrador do Chatwoot**
-   (`/installation/onboarding`). Guarde a senha no cofre: ninguém da equipe usa essa conta no dia a dia.
-2. Em `https://atendimento.atrupe.com.br/super_admin`, **Platform Apps › Novo**, nome "Atrupe". O token
-   vira `CHATWOOT_PLATFORM_TOKEN` no `.env` da API. Reimplante a API.
-3. No Atrupe, **Super Admin › Atendimento › WhatsApp**, conecte o número por uma das duas formas:
+```
+/home/ubuntu/atendimento/
+  base/  gerado/  implantacao/  kit.json  escolhas.json   do git (a pasta atendimento/ do atrupe-back)
+  segredos/  chatwoot.env  robo.env  openwa.env           fora do git (pasta 700, arquivos 600)
+```
+
+## Primeira implantação
+
+1. **Arquivos.** Da raiz do `atrupe-back`, na máquina com os segredos:
+
+   ```
+   git archive HEAD atendimento/base atendimento/gerado atendimento/implantacao atendimento/kit.json \
+     atendimento/escolhas.json | <acesso> 'mkdir -p ~/atendimento && tar -x --strip-components=1 -C ~/atendimento'
+   tar -C atendimento -cf - segredos/chatwoot.env segredos/robo.env segredos/openwa.env \
+     | <acesso> 'umask 077 && tar -x -C ~/atendimento && chmod 700 ~/atendimento/segredos'
+   ```
+
+   O `robo.env` precisa da `ANTHROPIC_API_KEY` (ou de outro provedor: veja `api.env.example`).
+2. **Servidor**, uma vez só: `sudo bash ~/atendimento/implantacao/preparar-servidor.sh` (swap de 2 GB,
+   Docker e teto para os logs). Depois, abra outra sessão de SSH para o grupo `docker` valer.
+3. **Atendimento:** `bash ~/atendimento/implantacao/implantar.sh`. Ele baixa as imagens, constrói o robô,
+   prepara o banco do Chatwoot, sobe tudo, espera os três endereços públicos responderem e aplica a marca
+   e o tema do Atrupe. O Caddy emite os certificados na primeira subida.
+4. **Super administrador do Chatwoot.** A página que o cria fica fechada no Caddy, para ninguém chegar
+   antes. Para criar:
+
+   ```
+   cd ~/atendimento/implantacao && ATENDIMENTO_ONBOARDING=aberto docker compose up -d caddy
+   ```
+
+   Abra `https://atendimento.atrupe.com.br/installation/onboarding`, crie o super administrador e guarde a
+   senha no cofre: ninguém da equipe usa essa conta no dia a dia. Depois feche a página de novo:
+   `docker compose up -d caddy`.
+5. **Platform App.** Em `https://atendimento.atrupe.com.br/super_admin`, **Platform Apps › Novo**, nome
+   "Atrupe". O token vira `CHATWOOT_PLATFORM_TOKEN` no `segredos/api.env`.
+6. **API.** Acrescente as linhas de `segredos/api.env` ao `/home/ubuntu/atrupe-back/.env.prod` do servidor
+   da API e refaça o job `deploy-prod` da última execução do `main` no GitHub Actions: o
+   `scripts/prepare-stack.py` só lê o `.env.prod` no deploy. Sem essas variáveis, a API sobe normal, as
+   rotinas não rodam e as telas dizem que o atendimento não está configurado.
+7. **Número.** No Atrupe, **Super Admin › Atendimento › WhatsApp**, conecte o número por uma das duas formas:
    - **Pelo WhatsApp Web (não oficial)**: a tela mostra o aviso de risco e, depois do aceite, o QR. No
      celular do número: WhatsApp › Aparelhos conectados › Conectar um aparelho. O celular precisa ficar
      ligado e com internet.
    - **API oficial**: Phone number ID, WABA ID e token permanente da Meta. A tela devolve a URL de retorno
      e o token de verificação para cadastrar no app da Meta, assinando o campo `messages`.
-4. **Super Admin › Atendimento › Robô**: confira o contexto (vem da base de suporte do Start de 29/10/2026)
-   e o modo. O robô começa **sugerindo** respostas à equipe; passe para "responde sozinho" quando estiver
-   bom.
-5. **Abrir painel** leva o superadmin ao Chatwoot já logado. A equipe do painel são os superadmins ativos;
-   quem deixa de ser sai do painel na conferência diária (04:20).
+8. **Robô.** Em **Super Admin › Atendimento › Robô**, confira o contexto (vem da base de suporte do Start de
+   29/10/2026) e o modo. O robô começa **sugerindo** respostas à equipe; passe para "responde sozinho"
+   quando estiver bom.
+9. **Painel.** **Abrir painel** leva o superadmin ao Chatwoot já logado. A equipe do painel são os
+   superadmins ativos; quem deixa de ser sai do painel na conferência diária (04:20).
 
-## Produção e homolog
+## Atualizar (kit, tema ou estes arquivos)
 
-O atendimento vai direto à produção: o robô chama `https://api.atrupe.com.br/atendimento/robo` e as
-variáveis ficam só no `.env.prod`. Sem elas, a API sobe normal: as rotinas não rodam e as telas dizem que
-o atendimento não está configurado. Por isso o código pode ir ao `main` antes do Chatwoot existir.
+Repita o envio dos arquivos do passo 1 (os segredos só quando mudarem) e rode o `implantar.sh` de novo. Ele
+migra o banco do Chatwoot, recria só o que mudou e reaplica a marca e o tema.
 
-Para testar no homolog, o mesmo stack serve: variáveis no `.env.dev` e `PROJECT_URL` do robô em
-`https://dev.atrupe.com.br/atendimento/robo`. Uma API só por vez: a conta do Chatwoot é criada pela API
-que a usa. Ao voltar para a produção, **tire as variáveis do `.env.dev`** e conecte o número de novo pela
-tela de produção. Sem tirar, a rotina do homolog segue conferindo o número antigo e mandando aos
-superadmins, uma vez por dia, um e-mail de que ele parou (com `[Homolog]` no assunto).
+## Backup
+
+A AWS Backup copia o disco da instância todo dia às 02:00 (horário de Brasília) e guarda 7 dias. O disco
+tem o banco do Chatwoot, os anexos das conversas e as sessões do OpenWA (volumes do Docker). Restaurar é
+restaurar o volume pela AWS, com a empresa que cuida da infraestrutura.
+
+## Homolog
+
+Uma API por vez: a conta do Chatwoot é criada pela API que a usa. Para testar com a API do homolog, ponha as
+variáveis no `.env.dev` e o `PROJECT_URL` do robô em `https://dev.atrupe.com.br/atendimento/robo`. Ao voltar
+para a produção, **tire as variáveis do `.env.dev`** e conecte o número de novo pela tela de produção. Sem
+tirar, a rotina do homolog segue conferindo o número antigo e mandando aos superadmins, uma vez por dia, um
+e-mail de que ele parou (com `[Homolog]` no assunto).
 
 ## Quando o número para
 
@@ -84,6 +114,8 @@ a API confere o número atual a cada 15 minutos (a sessão no OpenWA, ou a saúd
 - **Como voltar:** em **Super Admin › Atendimento › WhatsApp**, que mostra o que a conferência viu. "Ler o QR
   de novo" (WhatsApp Web) ou "Trocar o token da Meta" (API oficial) retomam a mesma caixa, e as conversas
   continuam nela. "Conectar outro número" cria uma caixa nova.
+- **Instância fora do ar:** `cd ~/atendimento/implantacao && docker compose ps` e `docker compose logs
+  --tail 100 <serviço>`; `bash implantar.sh` sobe de novo o que tiver caído.
 
 A conferência não vê uma mensagem que se perde no caminho com tudo dizendo que está bem: depois de implantar
 e de cada atualização, mande uma mensagem de outro celular e veja a resposta chegar.

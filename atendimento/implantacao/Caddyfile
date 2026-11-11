@@ -1,0 +1,35 @@
+# Proxy da instância do atendimento, com TLS automático (Let's Encrypt). Adaptado de
+# atendimento/modelos/implantacao/Caddyfile.
+
+atendimento.atrupe.com.br {
+	encode gzip
+
+	# A página que cria o super administrador do Chatwoot fica fechada. Ela só abre com
+	# ATENDIMENTO_ONBOARDING=aberto no compose (implantacao/LEIA-ME.md, "Primeira implantação"),
+	# para ninguém criar o super administrador antes de nós.
+	@onboarding {
+		path /installation /installation/*
+		expression `'{$ATENDIMENTO_ONBOARDING:fechado}' != 'aberto'`
+	}
+	respond @onboarding 404
+
+	# O robô recebe os avisos do Chatwoot em https://atendimento.atrupe.com.br/robo/chatwoot.
+	handle_path /robo/* {
+		reverse_proxy robo:8080
+	}
+
+	handle {
+		reverse_proxy chatwoot-rails:3000
+	}
+}
+
+wa.atrupe.com.br {
+	# Só a API (protegida pela chave) e os avisos assinados do Chatwoot. O painel do OpenWA não fica exposto.
+	@api path /api/*
+	handle @api {
+		reverse_proxy openwa:2785
+	}
+	handle {
+		respond 404
+	}
+}

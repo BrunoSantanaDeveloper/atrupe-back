@@ -1,0 +1,160 @@
+# Atendimento no WhatsApp (kit whatsapp-support 1.0.0) na instância própria (Atendimento - Atrupe,
+# 52.6.18.128): Chatwoot, Postgres, Redis, o robô, o OpenWA e o Caddy com TLS. Adaptado de
+# atendimento/modelos/implantacao/compose.yml. Quem implanta é o implantar.sh, nesta pasta.
+#
+#   https://atendimento.atrupe.com.br         painel do Chatwoot
+#   https://atendimento.atrupe.com.br/robo/   o robô (o Chatwoot avisa em /robo/chatwoot)
+#   https://wa.atrupe.com.br/api/             o OpenWA (conexão não oficial pelo WhatsApp Web)
+#
+# No servidor, esta pasta fica em /home/ubuntu/atendimento/implantacao, ao lado de base/, gerado/ e
+# segredos/ (os .env, fora do git). Os nomes "atendimento-*" na rede interna são os que os segredos usam.
+# A API do Atrupe, no outro servidor, chama o Chatwoot e o OpenWA pelos endereços públicos.
+
+name: atendimento
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+x-chatwoot: &chatwoot
+  image: chatwoot/chatwoot:v4.19.1-ce
+  env_file: ../segredos/chatwoot.env
+  environment:
+    NODE_ENV: production
+    RAILS_ENV: production
+    INSTALLATION_ENV: docker
+    # O docker/entrypoints/rails.sh da imagem monta o pg_isready com a porta.
+    POSTGRES_PORT: "5432"
+  volumes:
+    - chatwoot_storage:/app/storage
+  restart: unless-stopped
+  logging: *logging
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_started
+
+services:
+  chatwoot-rails:
+    <<: *chatwoot
+    entrypoint: docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    mem_limit: 1536m
+    networks:
+      default:
+        aliases:
+          - atendimento-chatwoot
+
+  chatwoot-sidekiq:
+    <<: *chatwoot
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    mem_limit: 1024m
+
+  # A marca e o tema do Atrupe no Chatwoot. O implantar.sh roda uma vez a cada implantação.
+  chatwoot-config:
+    <<: *chatwoot
+    profiles: ["config"]
+    restart: "no"
+    env_file:
+      - ../segredos/chatwoot.env
+      - ../gerado/marca.env
+    command: ["bundle", "exec", "rails", "runner", "/kit/apply-config.rb"]
+    volumes:
+      - chatwoot_storage:/app/storage
+      - ../base/deploy/apply-config.rb:/kit/apply-config.rb:ro
+      - ../gerado:/kit/gerado:ro
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    env_file: ../segredos/chatwoot.env
+    environment:
+      POSTGRES_DB: chatwoot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: 512m
+    logging: *logging
+    networks:
+      default:
+        aliases:
+          - atendimento-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d chatwoot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    env_file: ../segredos/chatwoot.env
+    command: ["sh", "-c", "redis-server --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis_data:/data
+    mem_limit: 256m
+    logging: *logging
+    networks:
+      default:
+        aliases:
+          - atendimento-redis
+
+  robo:
+    build: ../base/bot
+    image: ${ATENDIMENTO_ROBO_IMAGE:-atrupe/atendimento-robo:kit-1.0.0}
+    restart: unless-stopped
+    env_file: ../segredos/robo.env
+    mem_limit: 256m
+    logging: *logging
+    networks:
+      default:
+        aliases:
+          - atendimento-robo
+
+  # Rota não oficial: o número conectado como um aparelho do WhatsApp Web (QR), com o plugin
+  # chatwoot-adapter, que a API do Atrupe instala na primeira conexão. Só /api fica público
+  # (protegido pela API_MASTER_KEY e pelos avisos assinados do Chatwoot).
+  openwa:
+    image: ghcr.io/rmyndharis/openwa:0.29.1
+    restart: unless-stopped
+    env_file: ../segredos/openwa.env
+    security_opt:
+      - "no-new-privileges:true"
+    volumes:
+      - openwa_data:/app/data
+    # O Chromium do whatsapp-web.js precisa de mais que os 64 MB padrão de /dev/shm.
+    shm_size: 256m
+    mem_limit: 1536m
+    logging: *logging
+    networks:
+      default:
+        aliases:
+          - atendimento-openwa
+
+  # TLS automático (Let's Encrypt) e as rotas públicas. A página de criação do super administrador
+  # (/installation) fica fechada; para abrir na primeira implantação:
+  #   ATENDIMENTO_ONBOARDING=aberto docker compose up -d caddy
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      ATENDIMENTO_ONBOARDING: ${ATENDIMENTO_ONBOARDING:-fechado}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 128m
+    logging: *logging
+
+volumes:
+  chatwoot_storage:
+  postgres_data:
+  redis_data:
+  openwa_data:
+  caddy_data:
+  caddy_config:
