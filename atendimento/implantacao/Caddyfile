@@ -4,13 +4,14 @@
 atendimento.atrupe.com.br {
 	encode gzip
 
-	# A página que cria o super administrador do Chatwoot fica fechada. Ela só abre com
-	# ATENDIMENTO_ONBOARDING=aberto no compose (implantacao/LEIA-ME.md, "Primeira implantação"),
-	# para ninguém criar o super administrador antes de nós. Fica num handle porque os blocos handle
-	# são exclusivos entre si e o Caddy roda um respond solto só depois deles.
+	# A página que cria o super administrador do Chatwoot fica fechada para todos: robôs de varredura
+	# visitam um domínio novo minutos depois do certificado. Ela só abre para o IP de quem vai criar a
+	# conta, com ATENDIMENTO_ONBOARDING_IP no compose (implantacao/LEIA-ME.md, "Primeira implantação").
+	# Fica num handle porque os blocos handle são exclusivos entre si e o Caddy roda um respond solto
+	# só depois deles.
 	@onboarding {
 		path /installation /installation/*
-		expression `'{$ATENDIMENTO_ONBOARDING:fechado}' != 'aberto'`
+		not remote_ip {$ATENDIMENTO_ONBOARDING_IP:127.0.0.1/32}
 	}
 	handle @onboarding {
 		respond 404

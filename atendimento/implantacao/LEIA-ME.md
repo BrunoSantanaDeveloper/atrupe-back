@@ -53,11 +53,12 @@ Nos comandos abaixo, `<acesso>` é esse comando `ssh` inteiro, com o `ubuntu@52.
 3. **Atendimento:** `bash ~/atendimento/implantacao/implantar.sh`. Ele baixa as imagens, constrói o robô,
    prepara o banco do Chatwoot, sobe tudo, espera os três endereços públicos responderem e aplica a marca
    e o tema do Atrupe. O Caddy emite os certificados na primeira subida.
-4. **Super administrador do Chatwoot.** A página que o cria fica fechada no Caddy, para ninguém chegar
-   antes. Para criar:
+4. **Super administrador do Chatwoot.** A página que o cria fica fechada no Caddy para todos, porque
+   robôs de varredura visitam o domínio minutos depois do certificado. Para criar, abra só para o IP de
+   quem vai criar a conta (o de `https://checkip.amazonaws.com`, na máquina dessa pessoa):
 
    ```
-   cd ~/atendimento/implantacao && ATENDIMENTO_ONBOARDING=aberto docker compose up -d caddy
+   cd ~/atendimento/implantacao && ATENDIMENTO_ONBOARDING_IP=<ip>/32 docker compose up -d caddy
    ```
 
    Abra `https://atendimento.atrupe.com.br/installation/onboarding`, crie o super administrador e guarde a

@@ -134,13 +134,13 @@ services:
           - atendimento-openwa
 
   # TLS automático (Let's Encrypt) e as rotas públicas. A página de criação do super administrador
-  # (/installation) fica fechada; para abrir na primeira implantação:
-  #   ATENDIMENTO_ONBOARDING=aberto docker compose up -d caddy
+  # (/installation) fica fechada; para abrir só para um IP na primeira implantação:
+  #   ATENDIMENTO_ONBOARDING_IP=<ip>/32 docker compose up -d caddy
   caddy:
     image: caddy:2
     restart: unless-stopped
     environment:
-      ATENDIMENTO_ONBOARDING: ${ATENDIMENTO_ONBOARDING:-fechado}
+      ATENDIMENTO_ONBOARDING_IP: ${ATENDIMENTO_ONBOARDING_IP:-127.0.0.1/32}
     ports:
       - "80:80"
       - "443:443"
