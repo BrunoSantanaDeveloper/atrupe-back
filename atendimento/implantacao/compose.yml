@@ -137,7 +137,8 @@ services:
   # (/installation) fica fechada; para abrir só para um IP na primeira implantação:
   #   ATENDIMENTO_ONBOARDING_IP=<ip>/32 docker compose up -d caddy
   caddy:
-    image: caddy:2
+    # Versão fixa: a 2.11.4 passou a descartar cabeçalhos com sublinhado sem aviso (ver o Caddyfile).
+    image: caddy:2.11.9
     restart: unless-stopped
     environment:
       ATENDIMENTO_ONBOARDING_IP: ${ATENDIMENTO_ONBOARDING_IP:-127.0.0.1/32}
