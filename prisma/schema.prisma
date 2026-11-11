@@ -91,6 +91,7 @@ model Company {
   invoicyConfigs        InvoicyConfig[]
   fiscalOnboarding      FiscalOnboardingRequest[]
   environmentCredentials CompanyEnvironmentCredential[]
+  fiscalDrafts           FiscalStandaloneDraft[]
   nfes                  Nfe[]
   nfses                 Nfse[]
   nfseServicos          NfseServico[]
@@ -3157,6 +3158,35 @@ enum FiscalDocType {
   NFE
   NFSE
   NFCE
+}
+
+/// Nota avulsa que ainda esta' sendo digitada.
+///
+/// Fica em tabela propria, e nao nas tabelas de nota: um rascunho nao e'
+/// documento fiscal. Na NFC-e isso seria impossivel de qualquer forma, porque
+/// `nfces` tem unique de (empresa, numero, serie, ambiente) e dois rascunhos
+/// colidiriam entre si — ou com a numeracao de uma emissao futura.
+///
+/// `payload` guarda o corpo do formulario como ele e' enviado na emissao, para
+/// a tela retomar exatamente de onde parou.
+model FiscalStandaloneDraft {
+  id            String        @id @default(uuid())
+  companyId     String
+  docType       FiscalDocType
+  /// Resumo para a listagem, sem precisar abrir o payload.
+  description   String?
+  totalValue    Float         @default(0)
+  payload       Json
+  createdBy     String?
+  createdByName String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, docType])
+  @@index([companyId, updatedAt])
+  @@map("fiscal_standalone_drafts")
 }
 
 enum FiscalEnvironmentStatus {

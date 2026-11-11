@@ -8,6 +8,7 @@ import { CfopModule } from './cfop/cfop.module';
 import { OperationNatureModule } from './operation-nature/operation-nature.module';
 import { FiscalOnboardingModule } from './onboarding/fiscal-onboarding.module';
 import { FiscalSecurityModule } from './shared/fiscal-security.module';
+import { FiscalDraftModule } from './drafts/fiscal-draft.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { FiscalSecurityModule } from './shared/fiscal-security.module';
     CfopModule,
     OperationNatureModule,
     FiscalOnboardingModule,
+    FiscalDraftModule,
   ],
   exports: [
     FiscalSecurityModule,

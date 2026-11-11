@@ -216,6 +216,9 @@ const mockPrismaService = {
   nfeOrder: {
     createMany: jest.fn(),
   },
+  fiscalStandaloneDraft: {
+    findMany: jest.fn(),
+  },
   nfeCorrectionEvent: {
     findFirst: jest.fn(),
     create: jest.fn(),
@@ -376,6 +379,7 @@ describe('NfeService', () => {
       prisma.nfse.count.mockResolvedValue(0);
       prisma.nfce.findMany.mockResolvedValue([]);
       prisma.nfce.count.mockResolvedValue(0);
+      prisma.fiscalStandaloneDraft.findMany.mockResolvedValue([]);
       prisma.order.findMany.mockResolvedValue([]);
       prisma.order.count.mockResolvedValue(0);
       // clearAllMocks preserva implementações, então um teste que troque o
@@ -658,6 +662,71 @@ describe('NfeService', () => {
           expect.arrayContaining([
             { nfes: { some: { status: 'CANCELLED', ambiente: 1 } } },
           ]),
+        );
+      });
+    });
+
+    /**
+     * Rascunho de nota avulsa nao e' documento fiscal e vive em tabela
+     * propria, mas precisa aparecer aqui: era isso que a pessoa procurava
+     * quando dizia que a tela "nao salva nada em digitacao".
+     */
+    describe('rascunho de nota avulsa na listagem', () => {
+      const rascunho = {
+        id: 'rasc-1',
+        docType: 'NFCE',
+        description: 'NATALHA AFONSO',
+        totalValue: 70,
+        updatedAt: new Date('2026-11-10T13:00:00.000Z'),
+      };
+
+      afterEach(() => {
+        prisma.fiscalStandaloneDraft.findMany.mockResolvedValue([]);
+      });
+
+      it('aparece como item próprio, com o que já foi digitado', async () => {
+        prisma.fiscalStandaloneDraft.findMany.mockResolvedValue([rascunho]);
+
+        const result = await service.findUnified(mockCompanyId, {
+          recordType: 'NOTAS_AVULSAS',
+        });
+
+        const item = result.data.flatMap((g: any) => g.items)[0];
+        expect(item).toMatchObject({
+          type: 'RASCUNHO_AVULSO',
+          id: 'rasc-1',
+          docType: 'NFCE',
+          status: 'DRAFT',
+          clientName: 'NATALHA AFONSO',
+          totalValue: 70,
+          reference: 'NFC-e avulsa',
+        });
+      });
+
+      /** Nao emitido nao pode cair num filtro que pede nota emitida. */
+      it('fica de fora quando o filtro pede documento já emitido', async () => {
+        prisma.fiscalStandaloneDraft.findMany.mockResolvedValue([rascunho]);
+
+        await service.findUnified(mockCompanyId, {
+          recordType: 'NOTAS_AVULSAS',
+          status: 'EMITIDA',
+        });
+
+        expect(prisma.fiscalStandaloneDraft.findMany).not.toHaveBeenCalled();
+      });
+
+      it('respeita a aba de tipo de documento', async () => {
+        prisma.fiscalStandaloneDraft.findMany.mockResolvedValue([]);
+
+        await service.findUnified(mockCompanyId, {
+          recordType: 'NOTAS_AVULSAS',
+          docType: 'NFSE',
+        });
+
+        expect(prisma.fiscalStandaloneDraft.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ docType: { in: ['NFSE'] } }),
+          }),
         );
       });
     });

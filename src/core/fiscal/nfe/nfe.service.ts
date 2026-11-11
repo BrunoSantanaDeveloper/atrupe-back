@@ -4860,6 +4860,9 @@ export class NfeService {
     let nfseAvulsasPromise = Promise.resolve([]);
     let nfceAvulsasPromise = Promise.resolve([]);
 
+    // Rascunho de nota avulsa: nao e' documento fiscal, vive em tabela
+    // propria, e aparece aqui para a pessoa achar o que deixou pela metade.
+    let rascunhosPromise = Promise.resolve([] as any[]);
     let ordersCountPromise = Promise.resolve(0);
     let nfeCountPromise = Promise.resolve(0);
     let nfseCountPromise = Promise.resolve(0);
@@ -5336,11 +5339,35 @@ export class NfeService {
       }
     }
 
+    // So' entram quando o filtro de status admite algo ainda nao emitido.
+    const statusAceitaRascunho =
+      status === 'TODOS' || status === 'EM_DIGITACAO';
+    if (
+      statusAceitaRascunho &&
+      (recordType === 'TODOS' || recordType === 'NOTAS_AVULSAS')
+    ) {
+      const docTypesDoRascunho = [
+        ...(includeNfe ? ['NFE'] : []),
+        ...(includeNfse ? ['NFSE'] : []),
+        ...(includeNfce ? ['NFCE'] : []),
+      ];
+      rascunhosPromise = this.prisma.fiscalStandaloneDraft.findMany({
+        where: {
+          companyId,
+          docType: { in: docTypesDoRascunho as any },
+          ...(nfeWhere.createdAt ? { updatedAt: nfeWhere.createdAt } : {}),
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: itemsToFetch,
+      }) as any;
+    }
+
     const [
       orders,
       nfeAvulsas,
       nfseAvulsas,
       nfceAvulsas,
+      rascunhos,
       ordersCount,
       nfeCount,
       nfseCount,
@@ -5350,6 +5377,7 @@ export class NfeService {
       nfeAvulsasPromise,
       nfseAvulsasPromise,
       nfceAvulsasPromise,
+      rascunhosPromise,
       ordersCountPromise,
       nfeCountPromise,
       nfseCountPromise,
@@ -5517,6 +5545,27 @@ export class NfeService {
       });
     }
 
+    const rotuloDoDoc: Record<string, string> = {
+      NFE: 'NF-e',
+      NFSE: 'NFS-e',
+      NFCE: 'NFC-e',
+    };
+    for (const r of rascunhos as any[]) {
+      unifiedItems.push({
+        type: 'RASCUNHO_AVULSO',
+        id: r.id,
+        // Ordena pela ultima edicao: e' o que a pessoa quer achar primeiro.
+        createdAt: r.updatedAt,
+        status: 'DRAFT',
+        docType: r.docType,
+        clientName: r.description || 'Sem destinatário',
+        reference: `${rotuloDoDoc[r.docType] || r.docType} avulsa`,
+        totalValue: r.totalValue || 0,
+        nfes: [],
+        originalData: r,
+      });
+    }
+
     unifiedItems.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     const startIndex = (page - 1) * limit;
@@ -5544,6 +5593,7 @@ export class NfeService {
     const totalCount =
       Math.max((ordersCount as number) - ordensAbsorvidas, 0) +
       consolidadasEmitidas.size +
+      (rascunhos as any[]).length +
       (nfeCount as number) +
       (nfseCount as number) +
       (nfceCount as number);
