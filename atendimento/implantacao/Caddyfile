@@ -6,12 +6,15 @@ atendimento.atrupe.com.br {
 
 	# A página que cria o super administrador do Chatwoot fica fechada. Ela só abre com
 	# ATENDIMENTO_ONBOARDING=aberto no compose (implantacao/LEIA-ME.md, "Primeira implantação"),
-	# para ninguém criar o super administrador antes de nós.
+	# para ninguém criar o super administrador antes de nós. Fica num handle porque os blocos handle
+	# são exclusivos entre si e o Caddy roda um respond solto só depois deles.
 	@onboarding {
 		path /installation /installation/*
 		expression `'{$ATENDIMENTO_ONBOARDING:fechado}' != 'aberto'`
 	}
-	respond @onboarding 404
+	handle @onboarding {
+		respond 404
+	}
 
 	# O robô recebe os avisos do Chatwoot em https://atendimento.atrupe.com.br/robo/chatwoot.
 	handle_path /robo/* {
