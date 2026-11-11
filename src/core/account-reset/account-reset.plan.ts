@@ -93,6 +93,15 @@ export const RESET_STEPS: ResetStep[] = [
     group: 'fiscal',
     where: (companyId) => ({ companyId }),
   },
+  {
+    // Nota avulsa que ficou pela metade. Vai junto com as notas: é trabalho
+    // da conta, e manter rascunho de uma empresa que foi zerada só faria
+    // reaparecer destinatário e itens antigos na próxima emissão.
+    model: 'FiscalStandaloneDraft',
+    label: 'Rascunhos de nota avulsa',
+    group: 'fiscal',
+    where: (companyId) => ({ companyId }),
+  },
 
   // Produção, entrega, O.S. e orçamentos.
   {
