@@ -38,6 +38,7 @@ function makeKit() {
       bot_token: 'bot',
       bot_secret: 'bs',
     })),
+    DEFAULT_UI_SETTINGS: { is_contact_attributes_open: true },
     ensureStaffUser: jest.fn(async ({ state, person }) => ({
       state: { ...state, staff: { ...(state.staff ?? {}), [person.key]: 42 } },
       userId: 42,
@@ -345,6 +346,33 @@ describe('AtendimentoService', () => {
         }),
       );
       expect(data.state.staff).toEqual({ 'u-admin': 42 });
+    });
+
+    it('na primeira entrada, a lista de conversas abre em "Todas"', async () => {
+      const { service, kit } = makeService();
+      await service.enterPanel(superadmin);
+      expect(kit.provision.ensureStaffUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          uiSettings: {
+            is_contact_attributes_open: true,
+            conversations_filter_by: {
+              status: 'all',
+              order_by: 'last_activity_at_desc',
+            },
+          },
+        }),
+      );
+    });
+
+    it('quem já está na equipe mantém o filtro que escolheu', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({
+          state: { account_id: 7, staff: { 'u-admin': 42 } },
+        }),
+      });
+      await service.enterPanel(superadmin);
+      const [input] = kit.provision.ensureStaffUser.mock.calls[0];
+      expect(input.uiSettings).toBeUndefined();
     });
 
     it('quem não é da equipe é recusado e sai do Chatwoot se estava lá', async () => {

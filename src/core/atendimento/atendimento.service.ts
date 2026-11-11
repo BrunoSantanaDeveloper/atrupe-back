@@ -76,6 +76,20 @@ const env = {
   openwaApiKey: () => required('OPENWA_API_KEY'),
 };
 
+/**
+ * O filtro da lista de conversas de quem entra no painel pela primeira vez. O
+ * Chatwoot abre em "Abertas", e a conversa que o robô está atendendo fica
+ * "Pendente": quem abria o painel não via conversa nenhuma. Vai só na primeira
+ * entrada, porque o Chatwoot guarda nas preferências da pessoa o filtro que
+ * ela escolher depois, e reaplicar a cada entrada desfaria a escolha.
+ */
+export const FILTRO_INICIAL_DO_PAINEL = {
+  conversations_filter_by: {
+    status: 'all',
+    order_by: 'last_activity_at_desc',
+  },
+};
+
 /** O atendimento está ligado neste ambiente (as variáveis do Chatwoot existem). */
 export function atendimentoConfigurado(): boolean {
   return [
@@ -289,11 +303,20 @@ export class AtendimentoService {
       };
     }
     const state = await this.ensureAccount();
+    const primeiraEntrada = !state.staff?.[person.key];
     const { state: next, userId } = await kit.provision.ensureStaffUser({
       chatwootUrl: env.chatwootUrl(),
       platformToken: env.platformToken(),
       state,
       person: { key: person.key, email: person.email, name: person.name },
+      // Sem uiSettings, o kit grava só as preferências do painel lateral. O
+      // tipo do kit diz booleanos, mas ele só mescla o objeto nas preferências.
+      uiSettings: primeiraEntrada
+        ? ({
+            ...kit.provision.DEFAULT_UI_SETTINGS,
+            ...FILTRO_INICIAL_DO_PAINEL,
+          } as unknown as Record<string, boolean>)
+        : undefined,
     });
     await this.store.saveState(PLATFORM_TENANT, next);
     const url = await kit.provision.ssoUrl({
