@@ -1,3 +1,4 @@
+import { PrintSpecDto } from '../../../print/print.dto';
 import {
   IsArray,
   IsBoolean,
@@ -581,4 +582,12 @@ export class AddItemDto {
   @Type(() => SaleChoicesDto)
   @ApiProperty({ required: false, type: SaleChoicesDto })
   composition?: SaleChoicesDto;
+
+  // Sangria, bloco e apostila deste item (gráfica rápida, 12/11/2026); nulo
+  // volta ao que o produto define
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PrintSpecDto)
+  @ApiProperty({ required: false, type: PrintSpecDto, nullable: true })
+  printSpec?: PrintSpecDto | null;
 }

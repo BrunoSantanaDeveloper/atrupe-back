@@ -1,4 +1,5 @@
 import { PAPER_SELECT } from '../../material/paper';
+import { PRINT_PRODUCT_SELECT } from '../../material/print-count';
 
 /**
  * Includes reutilizáveis para queries de PDF de Quotation
@@ -94,6 +95,8 @@ export const PDF_QUOTATION_PRODUCT_INCLUDE = {
       name: true,
       imageUrl: true,
       technicalDescription: true,
+      // A contagem de folhas na proposta (gráfica rápida, 12/11/2026)
+      ...PRINT_PRODUCT_SELECT,
     },
   },
   // O material de venda direta (ORG-1): o nome dele no lugar do produto

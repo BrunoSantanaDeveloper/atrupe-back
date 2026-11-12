@@ -5,7 +5,7 @@
 import { DEFAULT_IMAGE_SIZE, FALLBACK_IMAGE_SIZE } from './quotation.utils';
 import { itemProductName, itemValuesOf } from './item-origin';
 import { UNIT_SYMBOL } from '../../material/material-text';
-import { itemSheetCount } from '../../material/sheet-count';
+import { itemPrintCounts } from '../../material/print-count';
 
 /**
  * O nível de detalhe da proposta (IP-12): o resumo (só o descritivo), a
@@ -369,7 +369,10 @@ export function transformPdfQuotationItem(
     variation: qp.variation ? { name: qp.variation.name } : null,
     // A ficha da O.S. e a proposta: peças por folha e folhas do item, sem
     // custo (Papéis no LITE, 13/10/2026); nula sem papel na variação
-    sheetCount: itemSheetCount(qp),
+    // Sangria, folhas de acerto, bloco e apostila (gráfica rápida, 12/11/2026):
+    // uma contagem por parte impressa; sheetCount é a primeira
+    sheetCount: itemPrintCounts(qp)[0] ?? null,
+    sheetCounts: itemPrintCounts(qp),
     // O valor do item já inclui as linhas e o acréscimo embutido (ALT-25):
     // a proposta não tem linha própria de acréscimo
     addition: qp.addition ?? 0,

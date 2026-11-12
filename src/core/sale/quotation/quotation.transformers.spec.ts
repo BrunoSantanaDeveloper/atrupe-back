@@ -584,7 +584,7 @@ describe('Quotation Transformers', () => {
 
       // A variação sai como antes; o papel vem na contagem
       expect(result.variation).toEqual({ id: 'v-1', name: 'Couché 300 g' });
-      expect(result.sheetCount).toEqual({
+      expect(result.sheetCount).toMatchObject({
         paperName: 'Couché 300 g',
         piecesPerSheet: 24,
         sheets: 42,

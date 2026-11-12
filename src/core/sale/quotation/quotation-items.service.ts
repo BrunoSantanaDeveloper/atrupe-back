@@ -382,6 +382,8 @@ export class QuotationItemsService {
           allowEditDescription: product.allowEditDescription,
           allowEditValues: product.allowEditValues,
           variationId,
+          // Sangria, bloco e apostila do item (gráfica rápida, 12/11/2026)
+          ...(data.printSpec ? { printSpec: asJson(data.printSpec) } : {}),
           ...(composed
             ? {
                 composition: asJson(composed.composition),
@@ -582,6 +584,13 @@ export class QuotationItemsService {
             }),
             ...(data.addition !== undefined && { addition: data.addition }),
             ...(data.variationId !== undefined && !frozen && { variationId }),
+            ...(data.printSpec !== undefined &&
+              !frozen && {
+                printSpec:
+                  data.printSpec === null
+                    ? Prisma.DbNull
+                    : asJson(data.printSpec),
+              }),
             ...(composed && {
               composition: asJson(composed.composition),
               snapshot: {

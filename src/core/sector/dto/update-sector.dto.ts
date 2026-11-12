@@ -4,7 +4,9 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
+  Max,
   IsString,
   Matches,
   Min,
@@ -58,6 +60,30 @@ export class UpdateSectorDto {
     required: false,
   })
   color?: string | null;
+
+  // Gráfica rápida (GR-1.1, 12/11/2026): o padrão do setor. Nulo volta ao
+  // do sistema (sangria de 2 mm por lado, nenhuma folha de acerto)
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(20)
+  @ApiProperty({
+    description: 'Sangria padrão por lado, em mm (nulo = 2 mm)',
+    nullable: true,
+    required: false,
+  })
+  bleedMm?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  @ApiProperty({
+    description: 'Folhas de acerto por trabalho (nulo = nenhuma)',
+    nullable: true,
+    required: false,
+  })
+  setupSheets?: number | null;
 
   // O critério do rateio não entra aqui: muda só pela base de custos
   // (PUT /cost-base/sector/:id/allocation)

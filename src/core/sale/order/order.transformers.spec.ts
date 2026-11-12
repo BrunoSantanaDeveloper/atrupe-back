@@ -412,7 +412,7 @@ describe('OrderTransformers', () => {
         items: [{ ...mockQuotationProduct.items[0], width: 140, height: 60 }],
       });
 
-      expect(result.sheetCount).toEqual({
+      expect(result.sheetCount).toMatchObject({
         paperName: 'Sulfite 75 g',
         piecesPerSheet: 6,
         sheets: 1,

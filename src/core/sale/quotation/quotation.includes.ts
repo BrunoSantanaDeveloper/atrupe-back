@@ -1,4 +1,5 @@
 import { PAPER_SELECT } from '../../material/paper';
+import { PRINT_PRODUCT_SELECT } from '../../material/print-count';
 
 /**
  * Includes reutilizáveis para queries de Quotation
@@ -220,6 +221,8 @@ export const QUOTATION_PRODUCT_SELECT = {
       isActive: true,
       // A marca discreta do produto terceirizado (T-3, T-5)
       isOutsourced: true,
+      // A contagem de folhas da gráfica rápida (12/11/2026)
+      ...PRINT_PRODUCT_SELECT,
       // As faixas de quantidade do produto, para o preço base (FQ-1, ALT-8)
       priceTiers: {
         where: { variationId: null },
@@ -259,6 +262,8 @@ export const QUOTATION_PRODUCT_SELECT = {
   addition: true,
   // As escolhas da composição; o retrato (snapshot) tem custo e fica fora
   composition: true,
+  // Sangria, bloco e apostila do item (gráfica rápida, 12/11/2026)
+  printSpec: true,
   // As linhas acrescentadas (ORC-5), sem custo nem retrato (ORC-7)
   linesTotal: true,
   lines: {

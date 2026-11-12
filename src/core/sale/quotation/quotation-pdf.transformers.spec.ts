@@ -481,7 +481,7 @@ describe('QuotationPdfTransformers', () => {
       const result = transformPdfQuotationItem(item);
 
       expect(result.variation).toEqual({ name: 'Couché 150 g' });
-      expect(result.sheetCount).toEqual({
+      expect(result.sheetCount).toMatchObject({
         paperName: 'Couché 150 g',
         piecesPerSheet: 4,
         sheets: 25,

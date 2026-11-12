@@ -17,6 +17,7 @@ import { PricingCenterModule } from './pricing/pricing-center.module';
 import { ProductionModule } from './production/production.module';
 import { MaterialModule } from './material/material.module';
 import { ProductVariationModule } from './product-variation/product-variation.module';
+import { PrintModule } from './print/print.module';
 import { AssemblyModule } from './assembly/assembly.module';
 import { SaleModule } from './sale/sale.module';
 import { EmployeeModule } from './employee/employee.module';
@@ -68,6 +69,8 @@ import { AccountResetModule } from './account-reset/account-reset.module';
     ProductionModule,
     MaterialModule,
     ProductVariationModule,
+    // A impressão da gráfica rápida no LITE (12/11/2026)
+    PrintModule,
     AssemblyModule,
     SaleModule,
     EmployeeModule,

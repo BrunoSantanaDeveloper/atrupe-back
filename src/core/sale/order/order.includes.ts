@@ -1,5 +1,6 @@
 import { NfceStatus, NfseStatus } from '@prisma/client';
 import { PAPER_SELECT } from '../../material/paper';
+import { PRINT_PRODUCT_RELATIONS } from '../../material/print-count';
 
 /**
  * Includes reutilizáveis para queries de Order
@@ -165,7 +166,8 @@ export const ORDER_QUOTATION_PRODUCT_ITEMS_SELECT = {
 };
 
 export const ORDER_QUOTATION_PRODUCT_INCLUDE = {
-  product: true,
+  // A contagem de folhas da ficha (gráfica rápida, 12/11/2026)
+  product: { include: PRINT_PRODUCT_RELATIONS },
   // O material de venda direta (ORG-1)
   material: { select: { name: true } },
   materialVariation: { select: { brand: true, color: true } },

@@ -1,5 +1,6 @@
 import { itemProductName, itemValuesOf } from '../quotation/item-origin';
-import { SheetCountPaper, itemSheetCount } from '../../material/sheet-count';
+import { SheetCountPaper } from '../../material/sheet-count';
+import { PrintProduct, itemPrintCounts } from '../../material/print-count';
 /**
  * Transformadores para dados de Order
  * Extraídos do método findOne() para melhor testabilidade
@@ -109,11 +110,15 @@ type QuotationProductRaw = {
   quantity: number;
   finalValue: number;
   imageUrl: string | null;
-  product: {
-    name: string;
-    imageUrl: string | null;
-    isService: boolean;
-  } | null;
+  // Com o que a contagem de folhas lê (gráfica rápida, 12/11/2026)
+  product:
+    | ({
+        name: string;
+        imageUrl: string | null;
+        isService: boolean;
+      } & Partial<PrintProduct>)
+    | null;
+  printSpec?: unknown;
   items: ProductItemRaw[];
 };
 
@@ -313,7 +318,10 @@ export function transformOrderItem(qp: QuotationProductRaw) {
     image,
     // A variação com papel: peças por folha e folhas do item, sem custo
     // (Papéis no LITE, 13/10/2026); nula sem papel
-    sheetCount: itemSheetCount(qp),
+    // Sangria, folhas de acerto, bloco e apostila (gráfica rápida, 12/11/2026):
+    // uma contagem por parte impressa; sheetCount é a primeira
+    sheetCount: itemPrintCounts(qp)[0] ?? null,
+    sheetCounts: itemPrintCounts(qp),
     product: {
       originalProductId: qp.productId ?? null,
       name: itemProductName(qp),

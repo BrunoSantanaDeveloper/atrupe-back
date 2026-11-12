@@ -8,7 +8,7 @@ import {
   itemValuesOf,
   materialVariationName,
 } from './item-origin';
-import { itemSheetCount } from '../../material/sheet-count';
+import { itemPrintCounts } from '../../material/print-count';
 import { BasePriceContext, basePriceOf } from './item-base-price';
 
 type QuotationWithRelations = {
@@ -269,7 +269,11 @@ export function transformQuotationItem(qp: any, base?: BasePriceContext) {
       : null,
     // A variação com papel: peças por folha e folhas do item, sem custo
     // (Papéis no LITE, 13/10/2026); nula sem papel
-    sheetCount: itemSheetCount(qp),
+    // Sangria, folhas de acerto, bloco e apostila (gráfica rápida, 12/11/2026):
+    // uma contagem por parte impressa; sheetCount é a primeira
+    sheetCount: itemPrintCounts(qp)[0] ?? null,
+    sheetCounts: itemPrintCounts(qp),
+    printSpec: qp.printSpec ?? null,
     composition: qp.composition ?? null,
     image: getImage(),
     // O item montado na hora (ORC-11): o rascunho em que foi montado, a
