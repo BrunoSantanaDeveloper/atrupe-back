@@ -1471,28 +1471,44 @@ describe('QuotationWorkflowService', () => {
         service.reject('invalid-id', {}, mockUserId),
       ).rejects.toThrow(NotFoundException);
     });
+    // A desistência toma a venda numa transação (12/11/2026)
+    const holdTx = (over: { claimed?: number; status?: string } = {}) => {
+      const tx = {
+        quotation: {
+          updateMany: jest.fn().mockResolvedValue({ count: over.claimed ?? 1 }),
+        },
+        receivableInstallment: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              status: over.status ?? 'PENDING',
+              amount: 300000,
+              additionalFee: 0,
+              paidAmount: over.status === 'PAID' ? 300000 : null,
+              receivableId: 'rec-hold',
+            },
+          ]),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          count: jest.fn().mockResolvedValue(0),
+        },
+        receivable: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        receivableHistory: { createMany: jest.fn().mockResolvedValue({}) },
+      };
+      prisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
+      return tx;
+    };
+
     it('venda pendente com algo recebido: recusa e diz para estornar (PA-8)', async () => {
       prisma.quotation.findUnique.mockResolvedValue({
         ...mockQuotation,
         status: QuotationStatus.PENDING_PAYMENT,
       });
-      (prisma as any).receivableInstallment = {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            id: 'inst-1',
-            status: 'PAID',
-            amount: 300000,
-            additionalFee: 0,
-            paidAmount: 300000,
-            receivableId: 'rec-hold',
-          },
-        ]),
-      };
+      const tx = holdTx({ status: 'PAID' });
       const error = await service
         .reject(mockQuotationId, {}, mockUserId)
         .catch((e) => e);
       expect(error).toBeInstanceOf(ConflictException);
       expect(error.message).toContain('estorne o recebimento');
+      expect(tx.receivable.updateMany).not.toHaveBeenCalled();
       expect(prisma.quotation.update).not.toHaveBeenCalled();
     });
 
@@ -1505,30 +1521,49 @@ describe('QuotationWorkflowService', () => {
         ...mockQuotation,
         status: QuotationStatus.REJECTED,
       });
-      const updateMany = jest.fn().mockReturnValue('op');
-      (prisma as any).receivableInstallment = {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            id: 'inst-1',
-            status: 'PENDING',
-            amount: 300000,
-            additionalFee: 0,
-            paidAmount: null,
-            receivableId: 'rec-hold',
-          },
-        ]),
-        updateMany,
-      };
-      (prisma as any).receivable.updateMany = jest.fn().mockReturnValue('op');
-      (prisma as any).receivableHistory = { create: jest.fn() };
-      prisma.$transaction.mockResolvedValue([]);
+      const tx = holdTx();
 
       await service.reject(mockQuotationId, {}, mockUserId);
 
-      expect((prisma as any).receivable.updateMany).toHaveBeenCalledWith({
+      expect(tx.quotation.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: mockQuotationId,
+          status: QuotationStatus.PENDING_PAYMENT,
+        },
+        data: { status: QuotationStatus.OPEN },
+      });
+      expect(tx.receivable.updateMany).toHaveBeenCalledWith({
         where: { id: { in: ['rec-hold'] } },
         data: { status: 'CANCELED', cancelReason: 'Venda pendente rejeitada' },
       });
+    });
+
+    it('a liberação ganhou antes: recusa sem cancelar o título', async () => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        ...mockQuotation,
+        status: QuotationStatus.PENDING_PAYMENT,
+      });
+      const tx = holdTx({ claimed: 0 });
+      const error = await service
+        .reject(mockQuotationId, {}, mockUserId)
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(tx.receivable.updateMany).not.toHaveBeenCalled();
+      expect(prisma.quotation.update).not.toHaveBeenCalled();
+    });
+
+    it('uma baixa no meio desfaz a desistência', async () => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        ...mockQuotation,
+        status: QuotationStatus.PENDING_PAYMENT,
+      });
+      const tx = holdTx();
+      tx.receivableInstallment.count.mockResolvedValue(1);
+      const error = await service
+        .reject(mockQuotationId, {}, mockUserId)
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(tx.receivable.updateMany).not.toHaveBeenCalled();
     });
   });
 

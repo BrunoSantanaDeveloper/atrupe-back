@@ -14,10 +14,13 @@ import {
   UseGuards,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
 import { AbacService } from 'src/core/auth/abac/abac.service';
 import { PaymentService } from './payment.service';
+import { isPendingPayment } from '../../quick-sale/quick-sale.rules';
+import { PENDING_PAYMENT_LOCKED } from '../quotation-workflow.service';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 import {
@@ -146,6 +149,10 @@ export class PaymentController {
     @Req() req,
   ) {
     await this.validateOwnership(quotationId, req.user);
+    // A venda pendente não muda o pagamento: a pendência nasceu dele
+    if (await isPendingPayment(this.prisma, quotationId)) {
+      throw new BadRequestException(PENDING_PAYMENT_LOCKED);
+    }
     await this.assertRefsOfCompany(req.user.companyId, {
       paymentConditionIds: [
         updatePaymentDto.paymentConditionId,

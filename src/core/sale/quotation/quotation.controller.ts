@@ -14,6 +14,7 @@ import {
   UseGuards,
   Query,
   BadRequestException,
+  ConflictException,
   Patch,
   NotFoundException,
   ForbiddenException,
@@ -24,7 +25,11 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { QuotationService } from './quotation.service';
-import { CreditCheckService } from './credit-check.service';
+import {
+  CreditCheckService,
+  creditRefusalWithoutValues,
+  creditWithoutValues,
+} from './credit-check.service';
 import { ComposedItemService, withoutCost } from './composed-item.service';
 import {
   AddComposedItemDto,
@@ -87,12 +92,20 @@ import {
 import { QuickSaleService } from '../quick-sale/quick-sale.service';
 import { FollowUpService } from './follow-up/follow-up.service';
 import { RegisterContactDto } from './follow-up/follow-up.dto';
-import { QUICK_SALE_LOCKED, isAtCashier } from '../quick-sale/quick-sale.rules';
+import {
+  QUICK_SALE_LOCKED,
+  isAtCashier,
+  isPendingPayment,
+} from '../quick-sale/quick-sale.rules';
+import { PENDING_PAYMENT_LOCKED } from './quotation-workflow.service';
 import { ReceiptDto } from '../../financial/cash-control/dto/receipt-part.dto';
 
 const RESOURCE = 'quotation';
 const UUID_ROUTE = ':id([0-9a-fA-F-]{36})';
 // Os valores da conferência de crédito: sem ver valores, só os motivos
+const QUICK_SALE_DISCARD_LOCKED =
+  'Esta venda rápida já foi aprovada ou enviada ao caixa e não pode ser descartada. Para desistir, cancele a venda no caixa ou a ordem de serviço.';
+
 const CREDIT_MONEY_FIELDS = [
   'limit',
   'openBalance',
@@ -100,6 +113,10 @@ const CREDIT_MONEY_FIELDS = [
   'used',
   'available',
   'requested',
+  // A entrada da diferença e a pendência (pagamento antecipado, 12/11/2026)
+  'excess',
+  'suggestedDownPayment',
+  'amount',
 ];
 
 // O terceirizado avulso (LOOSE) existe já no START (T-5); processo e produto
@@ -145,6 +162,9 @@ export class QuotationController {
     await this.validateOwnership(quotationId, user, 'edit');
     if (await isAtCashier(this.prisma, quotationId)) {
       throw new BadRequestException(QUICK_SALE_LOCKED);
+    }
+    if (await isPendingPayment(this.prisma, quotationId)) {
+      throw new BadRequestException(PENDING_PAYMENT_LOCKED);
     }
   }
 
@@ -1052,6 +1072,8 @@ export class QuotationController {
     return this.quotationService.duplicate(id, dto, userId);
   }
   @Post(':id/approve')
+  // A venda pendente devolve o valor exigido (pagamento antecipado)
+  @MoneyFields('holdAmount')
   @HasAnyPermission(
     { action: 'create', resource: 'sale:order' },
     { action: 'edit', resource: 'sale:quotation' },
@@ -1085,7 +1107,26 @@ export class QuotationController {
       id,
       !!req.user?.isAdmin,
     );
-    return this.quotationService.approve(id, req.user?.userId, approvedAt);
+    try {
+      return await this.quotationService.approve(
+        id,
+        req.user?.userId,
+        approvedAt,
+      );
+    } catch (error) {
+      // A recusa do crédito leva limite, uso e a entrada sugerida: sem a
+      // permissão de valores, sai sem os números (12/11/2026)
+      const body = error instanceof ConflictException && error.getResponse();
+      if (
+        body &&
+        typeof body === 'object' &&
+        (body as any).code === 'CREDIT_CHECK' &&
+        !(await canViewValues(req, this.abacService))
+      ) {
+        throw new ConflictException(creditRefusalWithoutValues(body as any));
+      }
+      throw error;
+    }
   }
 
   // Fora do contrato das telas (plano de 10/10, decisão D34): rota de
@@ -1304,7 +1345,11 @@ export class QuotationController {
       throw new BadRequestException('Invalid id');
     }
     await this.validateOwnership(id, req.user, 'view');
-    return this.creditCheck.quotationCredit(id);
+    const credit = await this.creditCheck.quotationCredit(id);
+    // O texto do limite leva R$: sem a permissão de valores, sai sem eles
+    return (await canViewValues(req, this.abacService))
+      ? credit
+      : creditWithoutValues(credit);
   }
 
   // A situação do cliente ao escolhê-lo no orçamento, antes de gravar
@@ -1476,6 +1521,22 @@ export class QuotationController {
   async remove(@Param('id') id: string, @Req() req) {
     // Sem a conferência, inativava o orçamento de qualquer empresa
     await this.validateOwnership(id, req.user, 'edit');
+    // "Descartar venda" da venda rápida (12/11/2026): só a que ainda está em
+    // digitação e fora do caixa; a aprovada, a pendente e a do caixa têm
+    // financeiro, O.S. ou cobrança andando
+    const sale = await this.prisma.quotation.findUnique({
+      where: { id },
+      select: { quickSale: true, status: true },
+    });
+    if (sale?.quickSale) {
+      if (
+        sale.status === 'APPROVED' ||
+        sale.status === 'PENDING_PAYMENT' ||
+        (await isAtCashier(this.prisma, id))
+      ) {
+        throw new BadRequestException(QUICK_SALE_DISCARD_LOCKED);
+      }
+    }
     return this.quotationService.remove(id);
   }
 

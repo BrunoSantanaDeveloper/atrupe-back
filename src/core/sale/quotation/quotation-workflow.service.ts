@@ -58,6 +58,8 @@ import {
 export const ALREADY_APPROVED_MESSAGE = 'Este orçamento já está aprovado.';
 export const ALREADY_PENDING_PAYMENT =
   'Esta venda já está pendente de pagamento: ela é aprovada quando o título "⚠️ Pendência" for pago no financeiro.';
+export const PREPAYMENT_NEEDS_INVOICE =
+  'Esta venda precisa ser paga antes de virar ordem de serviço, mas a cobrança sem nota não gera título no financeiro para receber. Mude a cobrança da venda, ou tire a exigência de pagamento antecipado no cadastro do cliente.';
 export const PENDING_PAYMENT_LOCKED =
   'Esta venda está pendente de pagamento. Para mudar algo, volte a venda para digitação: o título "⚠️ Pendência" é cancelado.';
 export const holdPaidMessage = (paid: number) =>
@@ -773,6 +775,11 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
     let hold: PaymentHold = null;
     if (options.creditCheck !== false && !atCheckout) {
       hold = await this.credit.assertApproval(quotationId);
+    }
+    // A cobrança sem nota não gera título: não há o que receber antes. Sem
+    // isso, a pendência quebrava no financeiro com um 400 sem caminho
+    if (hold && payment?.billing === 'NO_INVOICE') {
+      throw new ConflictException(PREPAYMENT_NEEDS_INVOICE);
     }
     if (hold) return this.holdForPayment(quotationId, hold, userId);
 
@@ -1959,7 +1966,7 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
           hold.reason === 'PREPAYMENT'
             ? 'Venda aprovada com pagamento antecipado'
             : 'Venda aprovada com entrada'
-        } por ${userName || 'Usuário'}: aguarda ${brl(hold.amount)} no financeiro para virar ordem de serviço`,
+        } por ${userName || 'Usuário'}: aguarda o pagamento no financeiro para virar ordem de serviço`,
         metadata: { holdReason: hold.reason, holdAmount: hold.amount },
         createdBy: userId,
         createdByName: userName,
@@ -2137,7 +2144,7 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
 
     const description = manual
       ? `Venda liberada sem o pagamento antecipado por ${userName || 'Usuário'}: ${options.manualReason.trim()}`
-      : `Pagamento antecipado de ${brl(current.holdAmount ?? 0)} recebido; venda aprovada`;
+      : `Pagamento antecipado recebido; venda aprovada`;
     await this.createQuotationHistoryEntry({
       quotationId,
       action: manual ? 'HOLD_RELEASED_MANUALLY' : 'HOLD_PAID',
@@ -2163,46 +2170,88 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
    * Cancela os títulos "⚠️ Pendência" da venda que desiste ou volta para
    * digitação (PA-8). Com algo já recebido, recusa e diz o caminho.
    */
+  /**
+   * Desfaz a pendência (PA-8): cancela o título "⚠️ Pendência" se nada foi
+   * recebido. Toma a venda numa transação, condicionada a PENDING_PAYMENT
+   * (passa a OPEN; quem chama grava a situação final): se a liberação ou a
+   * baixa ganhou antes, recusa em vez de cancelar o título de uma venda que
+   * já virou O.S. (12/11/2026).
+   */
   private async cancelHold(
     quotationId: string,
     reason: string,
     userId?: string,
   ): Promise<void> {
-    const installments = await this.heldInstallments(quotationId);
-    const paid = installments
-      .filter((item) => item.status === 'PAID')
-      .reduce(
-        (sum, item) =>
-          sum + (item.paidAmount ?? item.amount + (item.additionalFee || 0)),
-        0,
-      );
-    if (paid > 0)
-      throw new ConflictException(holdPaidMessage(Math.round(paid)));
-    const receivableIds = [...new Set(installments.map((i) => i.receivableId))];
-    if (!receivableIds.length) return;
     const userName = userId ? await this.resolveUserName(userId) : null;
-    await this.prisma.$transaction([
-      this.prisma.receivableInstallment.updateMany({
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.quotation.updateMany({
+        where: { id: quotationId, status: QuotationStatus.PENDING_PAYMENT },
+        data: { status: QuotationStatus.OPEN },
+      });
+      if (!claimed.count) {
+        throw new ConflictException(
+          'A venda mudou de situação (o pagamento pode ter acabado de entrar). Atualize a tela e confira antes de desistir.',
+        );
+      }
+      const installments = await tx.receivableInstallment.findMany({
+        where: {
+          status: { not: 'CANCELED' },
+          receivable: {
+            quotationId,
+            releasesQuotation: true,
+            status: { not: 'CANCELED' },
+          },
+        },
+        select: {
+          status: true,
+          amount: true,
+          additionalFee: true,
+          paidAmount: true,
+          receivableId: true,
+        },
+      });
+      const paid = installments
+        .filter((item) => item.status === 'PAID')
+        .reduce(
+          (sum, item) =>
+            sum + (item.paidAmount ?? item.amount + (item.additionalFee || 0)),
+          0,
+        );
+      if (paid > 0) {
+        throw new ConflictException(holdPaidMessage(Math.round(paid)));
+      }
+      const receivableIds = [
+        ...new Set(installments.map((i) => i.receivableId)),
+      ];
+      if (!receivableIds.length) return;
+      await tx.receivableInstallment.updateMany({
         where: { receivableId: { in: receivableIds }, status: { not: 'PAID' } },
         data: { status: 'CANCELED' },
-      }),
-      this.prisma.receivable.updateMany({
+      });
+      // Uma baixa que entrou no meio aparece aqui: desfaz tudo
+      const paidNow = await tx.receivableInstallment.count({
+        where: { receivableId: { in: receivableIds }, status: 'PAID' },
+      });
+      if (paidNow) {
+        throw new ConflictException(
+          'Entrou um pagamento do título "⚠️ Pendência" agora. Atualize a tela e confira antes de desistir.',
+        );
+      }
+      await tx.receivable.updateMany({
         where: { id: { in: receivableIds } },
         data: { status: 'CANCELED', cancelReason: reason },
-      }),
-      ...(userId
-        ? receivableIds.map((receivableId) =>
-            this.prisma.receivableHistory.create({
-              data: {
-                receivableId,
-                action: 'CANCEL',
-                description: reason,
-                createdBy: userId,
-                createdByName: userName,
-              },
-            }),
-          )
-        : []),
-    ]);
+      });
+      if (userId) {
+        await tx.receivableHistory.createMany({
+          data: receivableIds.map((receivableId) => ({
+            receivableId,
+            action: 'CANCEL',
+            description: reason,
+            createdBy: userId,
+            createdByName: userName,
+          })),
+        });
+      }
+    });
   }
 }

@@ -102,3 +102,20 @@ export async function isAtCashier(
   });
   return !!sale && !sale.cancelled;
 }
+
+/**
+ * A venda pendente de pagamento (PENDING_PAYMENT) não muda itens nem
+ * pagamento: o título "⚠️ Pendência" nasceu com os valores da aprovação, e a
+ * liberação gera o resto a partir deles (12/11/2026). Para mudar, volta para
+ * digitação.
+ */
+export async function isPendingPayment(
+  prisma: PrismaService | Tx,
+  quotationId: string,
+) {
+  const quotation = await prisma.quotation.findUnique({
+    where: { id: quotationId },
+    select: { status: true },
+  });
+  return quotation?.status === 'PENDING_PAYMENT';
+}

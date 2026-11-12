@@ -1,7 +1,17 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ClientKind, Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
+import { isObservingNow } from '../../plan/decorators/observe-feature.decorator';
 import { PlanControlService } from '../../plan/plan-control.service';
+
+/**
+ * A data (AAAA-MM-DD) em que a aprovação passa a ser recusada pelo crédito.
+ * Volta em 12/11/2026 (decisão do Bruno): o limite é do LITE para cima, e o
+ * padrão da empresa dá R$ 2.000/5.000 a todo cliente; travar sem a data
+ * reteria vendas de quem nunca definiu limite. O pagamento antecipado
+ * marcado no cliente vale sempre.
+ */
+export const CREDIT_ENFORCE_ENV = 'CREDIT_LIMIT_ENFORCE_FROM';
 
 /** Cartão: o cliente pagou no ato; as parcelas são da operadora. */
 const CARD_METHODS = ['CRD', 'DEB'];
@@ -34,6 +44,54 @@ export const creditExceededMessage = (values: {
     `Sugestão: uma entrada de ${brl(values.suggestedDownPayment)}, que precisa ser paga para liberar a venda.`,
     'Para mudar o limite, fale com o financeiro.',
   ].join(' ');
+/** O mesmo caminho, sem os números, para quem não vê valores. */
+export const CREDIT_EXCEEDED_NO_VALUES =
+  'Esta venda passa do limite de crédito do cliente. Uma entrada, paga antes, libera a venda. Para mudar o limite, fale com o financeiro.';
+
+/**
+ * A conferência sem os números do crédito, para quem não tem
+ * values:values:view: o @MoneyFields tira os campos, e aqui sai o texto do
+ * limite, que leva R$ (12/11/2026).
+ */
+export function creditWithoutValues<T extends { issues?: unknown[] }>(
+  credit: T,
+): T {
+  if (!credit?.issues) return credit;
+  return {
+    ...credit,
+    issues: credit.issues.map((issue: any) =>
+      issue?.code === 'CREDIT_LIMIT_EXCEEDED'
+        ? { ...issue, message: CREDIT_EXCEEDED_NO_VALUES }
+        : issue,
+    ),
+  };
+}
+
+/** O corpo do 409 do crédito sem os números, para quem não vê valores. */
+export function creditRefusalWithoutValues(body: {
+  message?: string;
+  issues?: { code: string }[];
+}) {
+  const issues = (body.issues ?? []).map((issue) =>
+    issue.code === 'CREDIT_LIMIT_EXCEEDED' ? { code: issue.code } : issue,
+  );
+  const hasLimit = issues.some(
+    (issue) => issue.code === 'CREDIT_LIMIT_EXCEEDED',
+  );
+  return {
+    ...body,
+    issues,
+    ...(hasLimit
+      ? {
+          message: (body.message ?? '').replace(
+            /Esta venda passa .*?Para mudar o limite, fale com o financeiro\./,
+            CREDIT_EXCEEDED_NO_VALUES,
+          ),
+        }
+      : {}),
+  };
+}
+
 export const conditionNotAllowedMessage = (names: string[]) =>
   names.length === 1
     ? `A condição ${names[0]} não está entre as permitidas para este cliente.`
@@ -73,7 +131,7 @@ export type PaymentHold = {
 export type ClientCredit = {
   /** O plano confere o crédito (`credit_limit_enforcement`). */
   applies: boolean;
-  /** A aprovação é recusada (sempre, desde 11/11/2026; a tela ainda lê). */
+  /** A aprovação já é recusada (a data de CREDIT_LIMIT_ENFORCE_FROM chegou). */
   enforcing: boolean;
   blockClient: boolean;
   /** "Exigir pagamento antecipado" no cadastro (PA-1) */
@@ -235,6 +293,8 @@ function parcelsOf(payment: PaymentParcels | null): Parcel[] {
  */
 @Injectable()
 export class CreditCheckService {
+  private readonly logger = new Logger(CreditCheckService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly planControl: PlanControlService,
@@ -280,7 +340,11 @@ export class CreditCheckService {
             downPaymentConditionId: true,
           },
         },
-        _count: { select: { receivable: true } },
+        // Título cancelado (a pendência desfeita ao voltar para digitação)
+        // não conta: a nova aprovação confere o crédito de novo
+        _count: {
+          select: { receivable: { where: { status: { not: 'CANCELED' } } } },
+        },
         client: {
           select: {
             id: true,
@@ -348,21 +412,41 @@ export class CreditCheckService {
         });
       }
     }
+    // Antes da data de corte o limite só é registrado: a pendência pelo
+    // limite espera a data, e a do pagamento antecipado do cliente vale já
     const hold =
-      credit.applies && !issues.length && quotation._count.receivable === 0
-        ? holdOf(credit, requested, parcelsOf(payment), payment, reference)
+      credit.applies &&
+      (!credit.enforcing || !issues.length) &&
+      quotation._count.receivable === 0
+        ? holdOf(
+            credit.enforcing ? credit : { ...credit, limit: null },
+            requested,
+            parcelsOf(payment),
+            payment,
+            reference,
+          )
         : null;
     return { ...credit, requested, issues, hold };
   }
 
   /**
-   * Na aprovação: recusa (409) quando o plano confere e há motivo. A
-   * mensagem não leva valores: quem aprova pode não ver os do financeiro.
+   * Na aprovação: recusa (409) quando o plano confere e há motivo; antes da
+   * data de corte, só registra (e a pendência do pagamento antecipado do
+   * cliente segue valendo). Os valores da recusa saem só para quem os vê:
+   * o controller tira os números do corpo (`withoutValues`).
    */
   async assertApproval(quotationId: string): Promise<PaymentHold> {
     const credit = await this.quotationCredit(quotationId);
     if (!credit?.applies) return null;
     if (!credit.issues.length) return credit.hold;
+    if (!credit.enforcing) {
+      this.logger.warn(
+        `[CREDIT] observando: a aprovação do orçamento ${quotationId} seria recusada (${credit.issues
+          .map((issue) => issue.code)
+          .join(', ')})`,
+      );
+      return credit.hold;
+    }
 
     // O limite estourado já diz o caminho (PA-2); o aviso do cadastro fica
     // para o bloqueio e a condição
@@ -440,7 +524,7 @@ export class CreditCheckService {
     const used = openBalance + pendingApproved;
     return {
       applies,
-      enforcing: true,
+      enforcing: !isObservingNow({ untilEnv: CREDIT_ENFORCE_ENV }),
       blockClient: client.blockClient,
       requirePrepayment: client.requirePrepayment,
       limit,
@@ -492,12 +576,21 @@ export class CreditCheckService {
         // A pendente pela entrada (PA-2) só tem o título da entrada: o resto
         // é crédito comprometido. A do pagamento antecipado já tem todos
         OR: [
-          { status: 'APPROVED', receivable: { none: {} } },
+          // Sem o título principal: a liberada pela entrada que fatura na
+          // entrega só tem o da entrada até a entrega
+          {
+            status: 'APPROVED',
+            receivable: {
+              none: { financialType: 'MAIN', status: { not: 'CANCELED' } },
+            },
+          },
           // Sem o título principal: só a entrada nasceu na pendência
           {
             status: 'PENDING_PAYMENT',
             holdReason: 'CREDIT_LIMIT',
-            receivable: { none: { financialType: 'MAIN' } },
+            receivable: {
+              none: { financialType: 'MAIN', status: { not: 'CANCELED' } },
+            },
           },
         ],
         NOT: [

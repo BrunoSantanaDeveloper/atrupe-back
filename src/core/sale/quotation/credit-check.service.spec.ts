@@ -1,7 +1,11 @@
 import { ConflictException } from '@nestjs/common';
 import {
+  CREDIT_ENFORCE_ENV,
+  CREDIT_EXCEEDED_NO_VALUES,
   CreditCheckService,
   creditPartOf,
+  creditRefusalWithoutValues,
+  creditWithoutValues,
   holdOf,
 } from './credit-check.service';
 
@@ -237,9 +241,60 @@ describe('CreditCheckService', () => {
   });
 
   describe('assertApproval', () => {
+    // A recusa espera a data de CREDIT_LIMIT_ENFORCE_FROM (12/11/2026)
+    const env = process.env[CREDIT_ENFORCE_ENV];
     beforeEach(() => {
+      process.env[CREDIT_ENFORCE_ENV] = '2026-01-01';
       prisma.receivableInstallment.aggregate.mockResolvedValue({
         _sum: { amount: 80000 },
+      });
+    });
+    afterEach(() => {
+      if (env === undefined) delete process.env[CREDIT_ENFORCE_ENV];
+      else process.env[CREDIT_ENFORCE_ENV] = env;
+    });
+
+    describe('antes da data de corte', () => {
+      beforeEach(() => {
+        delete process.env[CREDIT_ENFORCE_ENV];
+      });
+
+      it('o limite estourado só é registrado: aprova sem recusa nem pendência', async () => {
+        await expect(service.assertApproval('orc-1')).resolves.toBeNull();
+      });
+
+      it('a entrada que passaria do limite não vira pendência', async () => {
+        const today = new Date();
+        prisma.quotation.findUnique.mockResolvedValue(
+          quotation({
+            quotationPayment: {
+              ...quotation().quotationPayment,
+              downPayment: 10000,
+              downPaymentDueDate: today,
+              downPaymentCondition: { paymentMethod: { code: 'PIX' } },
+            },
+          }),
+        );
+        await expect(service.assertApproval('orc-1')).resolves.toBeNull();
+      });
+
+      it('o pagamento antecipado marcado no cliente vale já', async () => {
+        prisma.quotation.findUnique.mockResolvedValue(
+          quotation({ client: client({ requirePrepayment: true }) }),
+        );
+        await expect(service.assertApproval('orc-1')).resolves.toEqual({
+          reason: 'PREPAYMENT',
+          amount: 30000,
+          scope: 'ALL',
+        });
+      });
+    });
+
+    it('o título cancelado (pendência desfeita) não conta como financeiro gerado', async () => {
+      await service.quotationCredit('orc-1').catch(() => null);
+      const select = prisma.quotation.findUnique.mock.calls[0][0].select;
+      expect(select._count).toEqual({
+        select: { receivable: { where: { status: { not: 'CANCELED' } } } },
       });
     });
 
@@ -431,5 +486,44 @@ describe('holdOf', () => {
         APPROVAL,
       ),
     ).toEqual({ reason: 'PREPAYMENT', amount: 500000, scope: 'ALL' });
+  });
+});
+
+describe('o crédito sem os valores (quem não vê valores)', () => {
+  const limitIssue = {
+    code: 'CREDIT_LIMIT_EXCEEDED',
+    message: 'Esta venda passa R$ 100,00 do limite',
+    excess: 10000,
+    suggestedDownPayment: 10000,
+  };
+
+  it('a conferência troca o texto do limite, que leva R$', () => {
+    const credit = creditWithoutValues({
+      issues: [limitIssue, { code: 'CLIENT_BLOCKED', message: 'bloqueado' }],
+    });
+    expect(credit.issues).toEqual([
+      { ...limitIssue, message: CREDIT_EXCEEDED_NO_VALUES },
+      { code: 'CLIENT_BLOCKED', message: 'bloqueado' },
+    ]);
+  });
+
+  it('a recusa da aprovação sai sem os números', () => {
+    const body = creditRefusalWithoutValues({
+      message:
+        'Esta venda passa R$ 100,00 do limite de crédito do cliente (limite de R$ 1.000,00). Sugestão: uma entrada de R$ 100,00, que precisa ser paga para liberar a venda. Para mudar o limite, fale com o financeiro.',
+      issues: [
+        {
+          code: 'CREDIT_LIMIT_EXCEEDED',
+          limit: 100000,
+          used: 80000,
+          requested: 30000,
+          excess: 10000,
+          suggestedDownPayment: 10000,
+        } as any,
+      ],
+    });
+    expect(body.issues).toEqual([{ code: 'CREDIT_LIMIT_EXCEEDED' }]);
+    expect(body.message).toBe(CREDIT_EXCEEDED_NO_VALUES);
+    expect(body.message).not.toMatch(/R\$/);
   });
 });

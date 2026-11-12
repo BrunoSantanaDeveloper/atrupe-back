@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -103,7 +104,7 @@ export class ReceivableService {
     },
   ) {
     if (!options.isAdmin) {
-      throw new BadRequestException(HOLD_RELEASE_ADMIN_ONLY);
+      throw new ForbiddenException(HOLD_RELEASE_ADMIN_ONLY);
     }
     const receivable = await this.prisma.receivable.findUnique({
       where: { id },
@@ -123,6 +124,9 @@ export class ReceivableService {
       userId: options.userId,
       manualReason: options.reason ?? '',
     });
+    // Outra liberação (ou a baixa) pode ter ganhado no meio: só registra a
+    // que liberou de fato
+    if (!result.released) return result;
     await this.historyService.createReceivableHistory({
       receivableId: id,
       action: 'RELEASE_SALE',
