@@ -15,9 +15,25 @@ describe('AtendimentoNumeroCron', () => {
     logger.error = jest.fn();
     return logger;
   };
-  const make = (checkWhatsapp: jest.Mock) => {
-    const cron = new AtendimentoNumeroCron({ checkWhatsapp } as any);
-    return { cron, logger: silent(cron) };
+  const make = (
+    checkWhatsapp: jest.Mock,
+    extra: { syncWhatsappGroups?: jest.Mock; syncTeamGroups?: jest.Mock } = {},
+  ) => {
+    const service = {
+      checkWhatsapp,
+      syncWhatsappGroups:
+        extra.syncWhatsappGroups ??
+        jest.fn().mockResolvedValue({ skipped: 'no_unofficial' }),
+      syncTeamGroups:
+        extra.syncTeamGroups ??
+        jest.fn().mockResolvedValue({
+          skipped: 'no_groups',
+          reopened: [],
+          pruned: [],
+        }),
+    };
+    const cron = new AtendimentoNumeroCron(service as any);
+    return { cron, logger: silent(cron), service };
   };
 
   beforeEach(() => {
@@ -52,6 +68,33 @@ describe('AtendimentoNumeroCron', () => {
     await expect(cron.handleCron()).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('smtp fora'),
+    );
+  });
+
+  it('na mesma volta confere os grupos; uma parte que falha não impede as outras', async () => {
+    const check = jest.fn().mockRejectedValue(new Error('smtp fora'));
+    const syncWhatsappGroups = jest
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('fora'), { code: 'openwa_unreachable' }),
+      );
+    const syncTeamGroups = jest.fn().mockResolvedValue({
+      skipped: null,
+      reopened: ['g-1'],
+      pruned: [],
+    });
+    const { cron, logger } = make(check, {
+      syncWhatsappGroups,
+      syncTeamGroups,
+    });
+    await cron.handleCron();
+    expect(syncWhatsappGroups).toHaveBeenCalled();
+    expect(syncTeamGroups).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('openwa_unreachable'),
+    );
+    expect(logger.log).toHaveBeenCalledWith(
+      expect.stringContaining('1 reaberto(s)'),
     );
   });
 

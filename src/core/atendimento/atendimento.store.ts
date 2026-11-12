@@ -140,6 +140,25 @@ export class AtendimentoStore {
   }
 
   /**
+   * As mesmas pessoas de listPanelPeople, com nome e e-mail, para escolher
+   * quem entra num grupo da equipe.
+   */
+  async teamPeople(): Promise<
+    Array<{ key: string; name: string; email: string }>
+  > {
+    const users = await this.prisma.user.findMany({
+      where: ACTIVE_SUPERADMIN,
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' },
+    });
+    return users.map((user) => ({
+      key: user.id,
+      name: user.name,
+      email: user.email,
+    }));
+  }
+
+  /**
    * Avisa os superadmins ativos que o WhatsApp parou, pede atenção ou voltou,
    * pelo e-mail, o canal de avisos que o Atrupe tem. Lança quando ninguém
    * recebeu: a conferência não grava a memória e o aviso volta na próxima. Quem

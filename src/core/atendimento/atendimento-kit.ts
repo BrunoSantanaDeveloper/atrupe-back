@@ -34,7 +34,12 @@ export type AtendimentoKit = {
 
 export interface AtendimentoEscolhas {
   modelo?: string;
-  chatwoot?: { features_off?: string[]; moldura?: boolean };
+  chatwoot?: {
+    features_off?: string[];
+    moldura?: boolean;
+    /** Horas paradas até a conversa aberta voltar ao robô; padrão 8, 0 desliga. */
+    resolver_apos_horas?: number | null;
+  };
   robo?: { nome?: string };
   marca?: { nome?: string };
 }

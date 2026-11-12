@@ -117,8 +117,20 @@ a API confere o número atual a cada 15 minutos (a sessão no OpenWA, ou a saúd
   continuam nela. "Conectar outro número" cria uma caixa nova.
 - **Instância fora do ar:** `cd ~/atendimento/implantacao && docker compose ps` e `docker compose logs
   --tail 100 <serviço>`; `bash implantar.sh` sobe de novo o que tiver caído.
+- **"A ponte entre o OpenWA e o painel está ligada, mas com erro" (`adaptador_com_erro`):** o adaptador
+  desistiu de alguma mensagem depois de 5 tentativas (o e-mail traz o último erro, como um 401 do
+  Chatwoot). Essa mensagem se perdeu e não volta pelo reenvio. O OpenWA só zera essa contagem quando o
+  plugin é religado, então o aviso continua mesmo depois que as mensagens voltam a passar. Corrija a causa,
+  mande uma mensagem de teste e religue o plugin na instância (a chave fica dentro do contêiner):
 
-A conferência não vê uma mensagem que se perde no caminho com tudo dizendo que está bem: depois de implantar
+  ```
+  cd ~/atendimento/implantacao
+  docker compose exec -T openwa sh -c 'for a in disable enable; do curl -s -X POST -H "X-API-Key: $API_MASTER_KEY" http://127.0.0.1:2785/api/plugins/chatwoot-adapter/$a; echo; done; curl -s -H "X-API-Key: $API_MASTER_KEY" http://127.0.0.1:2785/api/plugins/chatwoot-adapter/health; echo'
+  ```
+
+  A última linha deve mostrar `"healthy":true`. A fila de reenvio fica guardada à parte e não se perde.
+
+A conferência não vê uma mensagem que se perde no caminho antes de chegar ao adaptador: depois de implantar
 e de cada atualização, mande uma mensagem de outro celular e veja a resposta chegar.
 
 ## Conferir

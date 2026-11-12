@@ -38,7 +38,6 @@ function makeKit() {
       bot_token: 'bot',
       bot_secret: 'bs',
     })),
-    DEFAULT_UI_SETTINGS: { is_contact_attributes_open: true },
     ensureStaffUser: jest.fn(async ({ state, person }) => ({
       state: { ...state, staff: { ...(state.staff ?? {}), [person.key]: 42 } },
       userId: 42,
@@ -57,6 +56,41 @@ function makeKit() {
     reconnectOpenWA: jest.fn(),
     updateCloudApi: jest.fn(),
     conversationHistory: jest.fn(async () => []),
+    syncOpenWAGroups: jest.fn(async () => ({
+      sessions: 1,
+      changed: 1,
+      renamed: 0,
+      unread: 0,
+    })),
+    saveTeamGroup: jest.fn(async ({ state, group }) => ({
+      state: {
+        ...state,
+        team_groups: {
+          ...(state.team_groups ?? {}),
+          [group.key]: {
+            inbox_id: 30,
+            contact_id: 31,
+            conversation_id: 32,
+            name: group.name,
+            members: group.members,
+            labels: group.labels,
+            archived: false,
+          },
+        },
+      },
+      missing: [],
+    })),
+    archiveTeamGroup: jest.fn(async ({ state, key }) => ({
+      state: {
+        ...state,
+        team_groups: {
+          ...state.team_groups,
+          [key]: { ...state.team_groups[key], members: [], archived: true },
+        },
+      },
+      archived: true,
+    })),
+    syncTeamGroups: jest.fn(),
   };
   const settings = {
     defaultPlatformSettings: (brand: string) => ({
@@ -72,6 +106,11 @@ function makeKit() {
       value?.mode ? [] : [{ field: 'mode', message: 'Escolha o modo.' }],
     ),
     knowledgeOwner: () => 'plataforma',
+    groupSettings: jest.fn(({ platform }) => ({
+      mode: platform?.groups?.mode ?? 'fora',
+      call_words: platform?.groups?.call_words ?? [],
+      team_id: null,
+    })),
     botConfig: jest.fn(({ platform, tools, ai }) => ({
       mode: platform.mode,
       ai,
@@ -123,6 +162,10 @@ function makeStore(initial: Record<string, unknown> = {}) {
       data.platform = settings;
     }),
     listPanelPeople: jest.fn(async () => ['u-admin']),
+    teamPeople: jest.fn(async () => [
+      { key: 'u-admin', name: 'Admin', email: 'admin@atrupe.com.br' },
+      { key: 'u-ana', name: 'Ana', email: 'ana@atrupe.com.br' },
+    ]),
     alertWhatsapp: jest.fn(async () => undefined),
     addSuggestions: jest.fn(),
     listSuggestions: jest.fn(async () => data.suggestions ?? []),
@@ -133,14 +176,20 @@ function makeStore(initial: Record<string, unknown> = {}) {
   return { store, data };
 }
 
-function makeService(options: { modelo?: string; store?: any } = {}) {
+function makeService(
+  options: {
+    modelo?: string;
+    store?: any;
+    chatwoot?: { features_off?: string[]; resolver_apos_horas?: number };
+  } = {},
+) {
   const kit = makeKit();
   const { store, data } = options.store ?? makeStore();
   const source: AtendimentoKitSource = {
     load: async () => kit as any,
     escolhas: () => ({
       modelo: options.modelo ?? 'plataforma',
-      chatwoot: { features_off: ['campaigns'] },
+      chatwoot: options.chatwoot ?? { features_off: ['campaigns'] },
       robo: { nome: 'Assistente Atrupe' },
     }),
     defaultBase: () => ({
@@ -348,23 +397,7 @@ describe('AtendimentoService', () => {
       expect(data.state.staff).toEqual({ 'u-admin': 42 });
     });
 
-    it('na primeira entrada, a lista de conversas abre em "Todas"', async () => {
-      const { service, kit } = makeService();
-      await service.enterPanel(superadmin);
-      expect(kit.provision.ensureStaffUser).toHaveBeenCalledWith(
-        expect.objectContaining({
-          uiSettings: {
-            is_contact_attributes_open: true,
-            conversations_filter_by: {
-              status: 'all',
-              order_by: 'last_activity_at_desc',
-            },
-          },
-        }),
-      );
-    });
-
-    it('quem já está na equipe mantém o filtro que escolheu', async () => {
+    it('as preferências do painel ficam com a base: a lista em "Todas" só na primeira entrada', async () => {
       const { service, kit } = makeService({
         store: makeStore({
           state: { account_id: 7, staff: { 'u-admin': 42 } },
@@ -372,7 +405,29 @@ describe('AtendimentoService', () => {
       });
       await service.enterPanel(superadmin);
       const [input] = kit.provision.ensureStaffUser.mock.calls[0];
-      expect(input.uiSettings).toBeUndefined();
+      // Sem os dois campos, valem os padrões da base: o painel lateral a cada
+      // entrada e o filtro inicial só para quem entra na equipe.
+      expect(input).not.toHaveProperty('uiSettings');
+      expect(input).not.toHaveProperty('initialUiSettings');
+    });
+
+    it('a conversa parada volta ao robô no tempo de escolhas.json (sem ele, o padrão da base)', async () => {
+      const padrao = makeService();
+      await padrao.service.enterPanel(superadmin);
+      expect(
+        padrao.kit.provision.provisionAccount.mock.calls[0][0].input
+          .autoResolveHours,
+      ).toBeUndefined();
+
+      const escolhido = makeService({
+        chatwoot: { features_off: [], resolver_apos_horas: 0 },
+      });
+      await escolhido.service.enterPanel(superadmin);
+      expect(escolhido.kit.provision.provisionAccount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({ autoResolveHours: 0 }),
+        }),
+      );
     });
 
     it('quem não é da equipe é recusado e sai do Chatwoot se estava lá', async () => {
@@ -874,6 +929,8 @@ describe('AtendimentoService', () => {
             chatwootPublicUrl: 'https://atendimento.atrupe.com.br',
             openwaUrl: 'http://atendimento-openwa:2785',
             openwaPublicUrl: 'https://wa.atrupe.com.br',
+            // Sem escolha sobre os grupos, eles ficam fora do painel.
+            relayGroups: false,
           }),
         }),
       );
@@ -898,6 +955,258 @@ describe('AtendimentoService', () => {
           .status,
       ).toBe(403);
       expect(kit.provision.connectOpenWA).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('grupos do WhatsApp', () => {
+    const conectado = {
+      account_id: 7,
+      service_token: 's',
+      inboxes: [{ id: 1, route: 'nao_oficial', session_id: 's1' }],
+    };
+    beforeEach(() => {
+      Object.assign(process.env, {
+        OPENWA_URL: 'http://atendimento-openwa:2785',
+        OPENWA_PUBLIC_URL: 'https://wa.atrupe.com.br',
+        OPENWA_API_KEY: 'chave',
+      });
+    });
+
+    it('mudar os grupos ao salvar leva a escolha ao OpenWA na hora', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({ state: conectado, platform: { mode: 'auto' } }),
+      });
+      const answer = await service.writeSettings(superadmin, 'plataforma', {
+        mode: 'auto',
+        groups: { mode: 'equipe', call_words: [], team_id: null },
+      });
+      expect(answer).toEqual({ status: 200, body: { ok: true } });
+      expect(kit.provision.syncOpenWAGroups).toHaveBeenCalledWith(
+        expect.objectContaining({
+          relay: true,
+          openwaUrl: 'http://atendimento-openwa:2785',
+          state: conectado,
+        }),
+      );
+    });
+
+    it('salvar sem mexer nos grupos não chama o OpenWA', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({ state: conectado, platform: { mode: 'auto' } }),
+      });
+      await service.writeSettings(superadmin, 'plataforma', {
+        mode: 'sugestao',
+      });
+      expect(kit.provision.syncOpenWAGroups).not.toHaveBeenCalled();
+    });
+
+    it('com o OpenWA fora, salva e avisa que os grupos mudam na próxima conferência', async () => {
+      const { service, kit, store } = makeService({
+        store: makeStore({ state: conectado, platform: { mode: 'auto' } }),
+      });
+      kit.provision.syncOpenWAGroups.mockRejectedValue(
+        Object.assign(new Error('fora'), { code: 'openwa_unreachable' }),
+      );
+      (service as any).logger.warn = jest.fn();
+      const answer = await service.writeSettings(superadmin, 'plataforma', {
+        mode: 'auto',
+        groups: { mode: 'equipe', call_words: [], team_id: null },
+      });
+      expect(answer.status).toBe(200);
+      expect((answer.body as any).aviso).toContain('próxima conferência');
+      expect(store.savePlatformSettings).toHaveBeenCalled();
+    });
+
+    it('sem número pelo WhatsApp Web, a conferência dos grupos não faz nada', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({ state: { account_id: 7, inboxes: [] } }),
+      });
+      expect(await service.syncWhatsappGroups()).toEqual({
+        skipped: 'no_unofficial',
+      });
+      expect(kit.provision.syncOpenWAGroups).not.toHaveBeenCalled();
+    });
+
+    it('a conferência leva ao OpenWA o que a configuração diz (fora: desliga o repasse)', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({ state: conectado, platform: { mode: 'auto' } }),
+      });
+      const result = await service.syncWhatsappGroups();
+      expect(result).toMatchObject({ skipped: null, mode: 'fora' });
+      expect(kit.provision.syncOpenWAGroups).toHaveBeenCalledWith(
+        expect.objectContaining({ relay: false }),
+      );
+    });
+  });
+
+  describe('grupos da equipe', () => {
+    const comGrupo = {
+      account_id: 7,
+      service_token: 's',
+      staff: { 'u-admin': 42 },
+      team_groups: {
+        'g-1': {
+          inbox_id: 30,
+          contact_id: 31,
+          conversation_id: 32,
+          name: 'Financeiro',
+          members: ['u-admin'],
+          labels: ['cobranca'],
+          archived: false,
+        },
+      },
+    };
+
+    it('só o superadmin vê, cria, muda e arquiva grupos', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({ state: comGrupo }),
+      });
+      expect((await service.teamGroups(outsider)).status).toBe(403);
+      expect(
+        (await service.saveTeamGroup(outsider, { nome: 'X', membros: [] }))
+          .status,
+      ).toBe(403);
+      expect((await service.archiveTeamGroup(outsider, 'g-1')).status).toBe(
+        403,
+      );
+      expect(kit.provision.saveTeamGroup).not.toHaveBeenCalled();
+      expect(kit.provision.archiveTeamGroup).not.toHaveBeenCalled();
+    });
+
+    it('lista os grupos e as pessoas que podem entrar neles', async () => {
+      const { service } = makeService({
+        store: makeStore({ state: comGrupo }),
+      });
+      const answer = await service.teamGroups(superadmin);
+      expect(answer).toEqual({
+        status: 200,
+        body: {
+          grupos: [
+            {
+              chave: 'g-1',
+              nome: 'Financeiro',
+              membros: ['u-admin'],
+              etiquetas: ['cobranca'],
+              arquivado: false,
+            },
+          ],
+          pessoas: [
+            { chave: 'u-admin', nome: 'Admin' },
+            { chave: 'u-ana', nome: 'Ana' },
+          ],
+        },
+      });
+    });
+
+    it('criar um grupo põe na equipe quem ainda não entrou e ignora quem não pode atender', async () => {
+      const { service, kit, data } = makeService({
+        store: makeStore({
+          state: {
+            account_id: 7,
+            service_token: 's',
+            staff: { 'u-admin': 42 },
+          },
+        }),
+      });
+      const answer = await service.saveTeamGroup(superadmin, {
+        nome: 'Suporte',
+        membros: ['u-admin', 'u-ana', 'u-intruso'],
+        etiquetas: ['urgente'],
+      });
+      expect(answer.status).toBe(200);
+      const chave = (answer.body as any).chave;
+      expect(chave).toMatch(/^g-[0-9a-f]{8}$/);
+      // Só a Ana entra na equipe agora: o admin já estava, o intruso não atende.
+      expect(kit.provision.ensureStaffUser).toHaveBeenCalledTimes(1);
+      expect(kit.provision.ensureStaffUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          person: { key: 'u-ana', email: 'ana@atrupe.com.br', name: 'Ana' },
+        }),
+      );
+      expect(kit.provision.saveTeamGroup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          group: {
+            key: chave,
+            name: 'Suporte',
+            members: ['u-admin', 'u-ana'],
+            labels: ['urgente'],
+          },
+        }),
+      );
+      expect(data.state.team_groups[chave].members).toEqual([
+        'u-admin',
+        'u-ana',
+      ]);
+    });
+
+    it('arquivar um grupo que não existe é 404; um que existe, arquiva', async () => {
+      const { service, kit, data } = makeService({
+        store: makeStore({ state: comGrupo }),
+      });
+      expect((await service.archiveTeamGroup(superadmin, 'g-9')).status).toBe(
+        404,
+      );
+      expect((await service.archiveTeamGroup(superadmin, 'g-1')).status).toBe(
+        200,
+      );
+      expect(kit.provision.archiveTeamGroup).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 'g-1' }),
+      );
+      expect(data.state.team_groups['g-1'].archived).toBe(true);
+    });
+
+    it('a rotina tira dos grupos quem saiu da equipe, sem apagar o que mudou no meio-tempo', async () => {
+      const { service, kit, store, data } = makeService({
+        store: makeStore({
+          state: {
+            ...comGrupo,
+            team_groups: {
+              'g-1': {
+                ...comGrupo.team_groups['g-1'],
+                members: ['u-admin', 'u-saiu'],
+              },
+            },
+          },
+        }),
+      });
+      kit.provision.syncTeamGroups.mockImplementation(async ({ state }) => {
+        // Enquanto o Chatwoot respondia, alguém conectou um número.
+        data.state = {
+          ...data.state,
+          inboxes: [{ id: 1, route: 'nao_oficial' }],
+        };
+        return {
+          state: {
+            ...state,
+            team_groups: {
+              'g-1': { ...state.team_groups['g-1'], members: ['u-admin'] },
+            },
+          },
+          reopened: ['g-1'],
+          pruned: ['g-1'],
+        };
+      });
+      const result = await service.syncTeamGroups();
+      expect(result).toEqual({
+        skipped: null,
+        reopened: ['g-1'],
+        pruned: ['g-1'],
+      });
+      expect(store.saveState).toHaveBeenCalledTimes(1);
+      expect(data.state.inboxes).toEqual([{ id: 1, route: 'nao_oficial' }]);
+      expect(data.state.team_groups['g-1'].members).toEqual(['u-admin']);
+    });
+
+    it('sem grupos, a rotina não chama o Chatwoot', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({ state: { account_id: 7 } }),
+      });
+      expect(await service.syncTeamGroups()).toEqual({
+        skipped: 'no_groups',
+        reopened: [],
+        pruned: [],
+      });
+      expect(kit.provision.syncTeamGroups).not.toHaveBeenCalled();
     });
   });
 

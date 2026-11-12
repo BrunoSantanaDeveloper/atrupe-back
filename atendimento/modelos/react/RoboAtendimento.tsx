@@ -6,7 +6,17 @@
 
 import { useEffect, useState } from "react";
 
-import { DAYS, LIMITS, PERMISSION_GROUPS, validateSettings, type Day, type PermissionGroup, type PlatformSettings, type Scope } from "../atendimento/base/shared/settings.mjs";
+import {
+  DAYS,
+  LIMITS,
+  PERMISSION_GROUPS,
+  validateSettings,
+  type Day,
+  type GroupSettings,
+  type PermissionGroup,
+  type PlatformSettings,
+  type Scope,
+} from "../atendimento/base/shared/settings.mjs";
 import { supportApi, type SettingsResponse } from "../atendimento/base/ui/client.mjs";
 import { Alert, Button, Card, Choice, Loading, Stack, Text, TextArea, TextField, Toggle } from "./primitives";
 
@@ -22,13 +32,15 @@ const GROUP_LABELS: Record<PermissionGroup, string> = {
   transferencia: "Quando passar para a equipe",
   consultas: "Quais consultas ao sistema ligar",
   modo: "Como o robô trabalha",
+  grupos: "Grupos do WhatsApp",
 };
+const SEM_GRUPOS: GroupSettings = { mode: "fora", call_words: [], team_id: null };
 
 export function RoboAtendimento({ escopo = "cliente" }: { escopo?: Scope }) {
   const [data, setData] = useState<SettingsResponse | null>(null);
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
   const [problemas, setProblemas] = useState<Record<string, string>>({});
-  const [aviso, setAviso] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
+  const [aviso, setAviso] = useState<{ tone: "success" | "info" | "danger"; text: string } | null>(null);
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
@@ -60,8 +72,8 @@ export function RoboAtendimento({ escopo = "cliente" }: { escopo?: Scope }) {
     }
     setSalvando(true);
     try {
-      await api.saveSettings(settings, escopo);
-      setAviso({ tone: "success", text: "Robô atualizado. Vale a partir da próxima mensagem, em até um minuto." });
+      const result = await api.saveSettings(settings, escopo);
+      setAviso(result.aviso ? { tone: "info", text: result.aviso } : { tone: "success", text: "Robô atualizado. Vale a partir da próxima mensagem, em até um minuto." });
     } catch (error) {
       setAviso({ tone: "danger", text: (error as Error).message });
     } finally {
@@ -78,6 +90,7 @@ export function RoboAtendimento({ escopo = "cliente" }: { escopo?: Scope }) {
       .map((part) => part.split(/\s*(?:a|às|as)\s*/).slice(0, 2) as [string, string]);
     update({ hours: { ...hours, days: { ...hours.days, [day]: ranges } } });
   };
+  const grupos = settings.groups ?? SEM_GRUPOS;
   const toggleList = (list: string[] | null | undefined, name: string, on: boolean) => {
     const current = list ?? [];
     return on ? [...new Set([...current, name])] : current.filter((item) => item !== name);
@@ -247,6 +260,38 @@ export function RoboAtendimento({ escopo = "cliente" }: { escopo?: Scope }) {
                 ))}
               </>
             ) : null}
+          </Stack>
+        </Card>
+      ) : null}
+
+      {can("grupos") ? (
+        <Card title="Grupos do WhatsApp">
+          <Stack>
+            <Text tone="muted">Valem para o número conectado pelo WhatsApp Web. Pela API oficial, os grupos não chegam ao atendimento.</Text>
+            <Choice
+              label="O que fazer com os grupos de que o número participa"
+              value={grupos.mode}
+              onChange={(mode) => update({ groups: { ...grupos, mode } })}
+              options={[
+                { value: "fora", label: "Deixar fora do atendimento", hint: "Só as conversas com uma pessoa entram no painel." },
+                { value: "equipe", label: "A equipe atende e o robô fica calado", hint: "Cada grupo vira uma conversa no painel, com o nome do grupo. O robô nunca escreve nele." },
+                {
+                  value: "chamado",
+                  label: "O robô responde quando chamado",
+                  hint: "A equipe atende o grupo, e o robô responde só à mensagem que o chama por uma das palavras abaixo, sem consultar dados de ninguém.",
+                },
+              ]}
+            />
+            {grupos.mode === "chamado" ? (
+              <TextField
+                label="Palavras que chamam o robô no grupo"
+                hint="Separadas por vírgula, como o nome do robô. Chame pelo nome escrito: a menção com @ ao número não conta."
+                value={grupos.call_words.join(", ")}
+                error={problemas["groups.call_words"]}
+                onChange={(text) => update({ groups: { ...grupos, call_words: text.split(",").map((word) => word.trim()).filter(Boolean) } })}
+              />
+            ) : null}
+            {grupos.mode !== "fora" ? <Text tone="muted">As mensagens chegam a partir de agora; o que foi escrito antes no grupo não entra.</Text> : null}
           </Stack>
         </Card>
       ) : null}

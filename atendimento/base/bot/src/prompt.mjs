@@ -85,7 +85,18 @@ function toolsText(tools) {
 const dropBlankRuns = (lines) => lines.filter((line, index) => line !== null && !(line === "" && lines[index - 1] === "")).join("\n").trim();
 
 /** { stable, volatile }: a parte fixa da conta e a parte que muda a cada mensagem. */
-export function buildSystemPrompt(config, { now = new Date(), contactName = null } = {}) {
+/**
+ * O que muda numa conversa de grupo. Vai na parte variável, para a parte fixa da conta seguir no cache.
+ * Num grupo o robô fala só quando chamado e nunca consulta dados (invariantes 13 e 14 do plano).
+ */
+export const GROUP_RULES = [
+  "Esta conversa é um grupo do WhatsApp com várias pessoas, e todas leem o que você escreve.",
+  "Cada mensagem do grupo começa com o nome de quem escreveu entre asteriscos.",
+  "Você só fala aqui porque alguém chamou você: responda à última mensagem que chamou você, curto, sem repetir o nome de quem escreveu.",
+  "Neste grupo não há consultas: não fale de pedido, conta, valor ou dado de nenhuma pessoa. Se o pedido precisar disso ou da equipe, passe para a equipe.",
+].join("\n");
+
+export function buildSystemPrompt(config, { now = new Date(), contactName = null, group = false } = {}) {
   const brand = config.brand;
   const knowledge = clipKnowledge(knowledgeText(config.platform_knowledge), knowledgeText(config.knowledge));
   const hasPlatformRules = Boolean(config.platform_instructions || knowledge.platform);
@@ -135,6 +146,7 @@ export function buildSystemPrompt(config, { now = new Date(), contactName = null
   const volatile = dropBlankRuns([
     `Agora: ${local.date} ${local.time} (${timeZone}). ${available ? "A equipe está no horário de atendimento." : "A equipe está fora do horário de atendimento."}`,
     contactName ? `Nome da pessoa no WhatsApp: ${contactName}.` : "",
+    group ? GROUP_RULES : "",
   ]);
   return { stable, volatile };
 }

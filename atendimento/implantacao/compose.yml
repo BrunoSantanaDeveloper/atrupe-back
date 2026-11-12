@@ -70,7 +70,9 @@ services:
     restart: unless-stopped
     env_file: ../segredos/chatwoot.env
     environment:
-      POSTGRES_DB: chatwoot
+      # O banco que o Chatwoot usa (POSTGRES_DATABASE no chatwoot.env). Só vale num volume vazio: a
+      # instalação de 11/11 criou também um banco "chatwoot", que ficou vazio.
+      POSTGRES_DB: chatwoot_production
     volumes:
       - postgres_data:/var/lib/postgresql/data
     mem_limit: 512m
@@ -80,7 +82,7 @@ services:
         aliases:
           - atendimento-postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d chatwoot"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d chatwoot_production"]
       interval: 10s
       timeout: 5s
       retries: 10

@@ -123,3 +123,27 @@ describe('AtendimentoStore.alertWhatsapp', () => {
     expect(mail.sendEmail).not.toHaveBeenCalled();
   });
 });
+
+describe('AtendimentoStore.teamPeople', () => {
+  it('quem pode entrar num grupo da equipe: os superadmins ativos, com nome e e-mail', async () => {
+    const prisma = {
+      user: {
+        findMany: jest.fn(async () => [
+          { id: 'u-ana', name: 'Ana', email: 'ana@atrupe.com.br' },
+        ]),
+      },
+    };
+    const store = new AtendimentoStore(prisma as any, {} as any, {} as any);
+    expect(await store.teamPeople()).toEqual([
+      { key: 'u-ana', name: 'Ana', email: 'ana@atrupe.com.br' },
+    ]);
+    expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          isActive: true,
+          userRole: { some: { isSystemAdmin: true } },
+        },
+      }),
+    );
+  });
+});

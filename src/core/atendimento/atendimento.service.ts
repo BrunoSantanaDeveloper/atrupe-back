@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import {
   AtendimentoEscolhas,
   AtendimentoKit,
@@ -74,20 +75,6 @@ const env = {
   openwaUrl: () => required('OPENWA_URL'),
   openwaPublicUrl: () => required('OPENWA_PUBLIC_URL'),
   openwaApiKey: () => required('OPENWA_API_KEY'),
-};
-
-/**
- * O filtro da lista de conversas de quem entra no painel pela primeira vez. O
- * Chatwoot abre em "Abertas", e a conversa que o robô está atendendo fica
- * "Pendente": quem abria o painel não via conversa nenhuma. Vai só na primeira
- * entrada, porque o Chatwoot guarda nas preferências da pessoa o filtro que
- * ela escolher depois, e reaplicar a cada entrada desfaria a escolha.
- */
-export const FILTRO_INICIAL_DO_PAINEL = {
-  conversations_filter_by: {
-    status: 'all',
-    order_by: 'last_activity_at_desc',
-  },
 };
 
 /** O atendimento está ligado neste ambiente (as variáveis do Chatwoot existem). */
@@ -269,6 +256,9 @@ export class AtendimentoService {
         serviceEmail: `atendimento+${PLATFORM_TENANT}@${env.serviceEmailDomain()}`,
         botName: escolhas.robo?.nome ?? 'Assistente virtual',
         botUrl: env.botPublicUrl(),
+        // Conversa aberta e parada volta ao robô depois deste tempo (padrão
+        // da base: 8 horas; 0 desliga).
+        autoResolveHours: escolhas.chatwoot?.resolver_apos_horas,
       },
     });
     if (JSON.stringify(next) !== JSON.stringify(current)) {
@@ -303,20 +293,14 @@ export class AtendimentoService {
       };
     }
     const state = await this.ensureAccount();
-    const primeiraEntrada = !state.staff?.[person.key];
+    // A base grava as preferências do painel lateral a cada entrada e, só na
+    // primeira, a lista de conversas em "Todas": o Chatwoot abre em "Abertas",
+    // e a conversa que o robô atende fica "Pendente".
     const { state: next, userId } = await kit.provision.ensureStaffUser({
       chatwootUrl: env.chatwootUrl(),
       platformToken: env.platformToken(),
       state,
       person: { key: person.key, email: person.email, name: person.name },
-      // Sem uiSettings, o kit grava só as preferências do painel lateral. O
-      // tipo do kit diz booleanos, mas ele só mescla o objeto nas preferências.
-      uiSettings: primeiraEntrada
-        ? ({
-            ...kit.provision.DEFAULT_UI_SETTINGS,
-            ...FILTRO_INICIAL_DO_PAINEL,
-          } as unknown as Record<string, boolean>)
-        : undefined,
     });
     await this.store.saveState(PLATFORM_TENANT, next);
     const url = await kit.provision.ssoUrl({
@@ -419,9 +403,215 @@ export class AtendimentoService {
         },
       };
     }
+    const before = await this.platformSettings();
     await this.store.savePlatformSettings(incoming as PlatformSettings);
     this.logger.log(`Camada da plataforma do robô salva por ${person.key}.`);
+    const changed =
+      JSON.stringify(before.groups ?? null) !==
+      JSON.stringify((incoming as PlatformSettings).groups ?? null);
+    const aviso = changed ? await this.applyGroups() : null;
+    return { status: 200, body: { ok: true, ...(aviso ? { aviso } : {}) } };
+  }
+
+  /** O que vale para os grupos do WhatsApp: no modelo plataforma, a camada da plataforma. */
+  private async groupsFor() {
+    const kit = await this.kit();
+    return kit.settings.groupSettings({
+      model: 'plataforma',
+      platform: await this.platformSettings(),
+      client: null,
+    });
+  }
+
+  /**
+   * Grupos do WhatsApp (só na rota não oficial): liga ou desliga o repasse dos
+   * grupos no OpenWA conforme a configuração do robô e dá a cada grupo, no
+   * painel, o nome que ele tem no WhatsApp. Roda ao salvar a configuração e na
+   * conferência de 15 minutos, que nomeia os grupos novos.
+   */
+  async syncWhatsappGroups() {
+    const state = await this.store.loadState(PLATFORM_TENANT);
+    if (
+      !state?.account_id ||
+      !(state.inboxes ?? []).some((inbox) => inbox.route === 'nao_oficial')
+    ) {
+      return { skipped: 'no_unofficial' as const };
+    }
+    const kit = await this.kit();
+    const groups = await this.groupsFor();
+    const result = await kit.provision.syncOpenWAGroups({
+      chatwootUrl: env.chatwootUrl(),
+      state,
+      openwaUrl: env.openwaUrl(),
+      openwaApiKey: env.openwaApiKey(),
+      relay: groups.mode !== 'fora',
+    });
+    return { skipped: null, mode: groups.mode, ...result };
+  }
+
+  /** Depois de salvar uma mudança nos grupos: aplica na hora; se o OpenWA não responder, a rotina aplica depois. */
+  private async applyGroups(): Promise<string | null> {
+    try {
+      await this.syncWhatsappGroups();
+      return null;
+    } catch (error) {
+      this.logger.warn(
+        `Grupos do WhatsApp não aplicados ao salvar: ${(error as { code?: string }).code ?? (error as Error).message}`,
+      );
+      return 'A configuração foi salva. A mudança nos grupos vale na próxima conferência, porque o WhatsApp não respondeu agora.';
+    }
+  }
+
+  /** Os grupos da equipe e quem pode entrar neles, para a tela Grupos da equipe. */
+  async teamGroups(person: AtendimentoPerson | null): Promise<Answer> {
+    if (!person?.isSuperadmin) {
+      return forbidden(
+        'Só quem administra o atendimento cuida dos grupos da equipe.',
+      );
+    }
+    const [state, people] = await Promise.all([
+      this.store.loadState(PLATFORM_TENANT),
+      this.store.teamPeople(),
+    ]);
+    return {
+      status: 200,
+      body: {
+        grupos: Object.entries(state?.team_groups ?? {}).map(
+          ([chave, group]) => ({
+            chave,
+            nome: group.name,
+            membros: group.members,
+            etiquetas: group.labels,
+            arquivado: group.archived,
+          }),
+        ),
+        pessoas: people.map(({ key, name }) => ({ chave: key, nome: name })),
+      },
+    };
+  }
+
+  /**
+   * Cria (sem chave) ou muda um grupo da equipe: uma conversa interna no
+   * painel, vista só por quem está nela. Só entra quem pode atender (os
+   * superadmins ativos); quem ainda não abriu o painel entra na equipe agora.
+   */
+  async saveTeamGroup(
+    person: AtendimentoPerson | null,
+    body: {
+      chave?: string;
+      nome?: string;
+      membros?: string[];
+      etiquetas?: string[];
+    },
+  ): Promise<Answer> {
+    if (!person?.isSuperadmin) {
+      return forbidden('Você não pode mudar os grupos da equipe.');
+    }
+    const kit = await this.kit();
+    const people = new Map(
+      (await this.store.teamPeople()).map((item) => [item.key, item]),
+    );
+    const members = (Array.isArray(body.membros) ? body.membros : []).filter(
+      (key) => typeof key === 'string' && people.has(key),
+    );
+    let state = await this.ensureAccount();
+    for (const key of members) {
+      if (state.staff?.[key]) continue;
+      const item = people.get(key)!;
+      state = (
+        await kit.provision.ensureStaffUser({
+          chatwootUrl: env.chatwootUrl(),
+          platformToken: env.platformToken(),
+          state,
+          person: { key, email: item.email, name: item.name },
+        })
+      ).state;
+    }
+    await this.store.saveState(PLATFORM_TENANT, state);
+    const chave =
+      (typeof body.chave === 'string' && body.chave.trim()) ||
+      `g-${randomUUID().slice(0, 8)}`;
+    const result = await kit.provision.saveTeamGroup({
+      chatwootUrl: env.chatwootUrl(),
+      state,
+      group: {
+        key: chave,
+        name: typeof body.nome === 'string' ? body.nome : '',
+        members,
+        labels: Array.isArray(body.etiquetas) ? body.etiquetas : [],
+      },
+    });
+    await this.store.saveState(PLATFORM_TENANT, result.state);
+    this.logger.log(`Grupo da equipe ${chave} salvo por ${person.key}.`);
+    return { status: 200, body: { ok: true, chave, fora: result.missing } };
+  }
+
+  /** Arquiva um grupo da equipe: todos saem dele e o histórico fica guardado. */
+  async archiveTeamGroup(
+    person: AtendimentoPerson | null,
+    chave: string,
+  ): Promise<Answer> {
+    if (!person?.isSuperadmin) {
+      return forbidden('Você não pode mudar os grupos da equipe.');
+    }
+    const state = await this.store.loadState(PLATFORM_TENANT);
+    if (!chave || !state?.team_groups?.[chave]) {
+      return {
+        status: 404,
+        body: { code: 'not_found', message: 'Este grupo não existe.' },
+      };
+    }
+    const kit = await this.kit();
+    const result = await kit.provision.archiveTeamGroup({
+      chatwootUrl: env.chatwootUrl(),
+      state,
+      key: chave,
+    });
+    await this.store.saveState(PLATFORM_TENANT, result.state);
+    this.logger.log(`Grupo da equipe ${chave} arquivado por ${person.key}.`);
     return { status: 200, body: { ok: true } };
+  }
+
+  /**
+   * A rotina dos grupos da equipe: reabre o grupo que a resolução automática
+   * fechou e tira da lista quem saiu da equipe.
+   */
+  async syncTeamGroups() {
+    const state = await this.store.loadState(PLATFORM_TENANT);
+    if (!state?.team_groups || !state.account_id) {
+      return { skipped: 'no_groups' as const, reopened: [], pruned: [] };
+    }
+    const kit = await this.kit();
+    const result = await kit.provision.syncTeamGroups({
+      chatwootUrl: env.chatwootUrl(),
+      state,
+    });
+    if (result.pruned.length) {
+      // Relê antes de gravar, como na conferência do número: o estado pode ter
+      // mudado (um número conectado, um grupo salvo) enquanto o Chatwoot
+      // respondia. Só os grupos podados mudam, e pela equipe relida.
+      const fresh = (await this.store.loadState(PLATFORM_TENANT)) ?? state;
+      const groups = { ...(fresh.team_groups ?? {}) };
+      for (const key of result.pruned) {
+        const group = groups[key];
+        if (!group) continue;
+        groups[key] = {
+          ...group,
+          members: (group.members ?? []).filter((member) =>
+            Boolean(fresh.staff?.[member]),
+          ),
+        };
+      }
+      await this.store.saveState(PLATFORM_TENANT, {
+        ...fresh,
+        team_groups: groups,
+      });
+    }
+    return {
+      skipped: null,
+      reopened: result.reopened,
+      pruned: result.pruned,
+    };
   }
 
   async listSuggestions(
@@ -711,6 +901,9 @@ export class AtendimentoService {
         openwaUrl: env.openwaUrl(),
         openwaPublicUrl: env.openwaPublicUrl(),
         openwaApiKey: env.openwaApiKey(),
+        // Os grupos de que o número participa só chegam ao painel se a
+        // configuração do robô disser o que fazer com eles.
+        relayGroups: (await this.groupsFor()).mode !== 'fora',
       },
     });
     await this.store.saveState(PLATFORM_TENANT, result.state);

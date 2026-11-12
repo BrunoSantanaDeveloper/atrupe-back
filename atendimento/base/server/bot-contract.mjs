@@ -92,10 +92,12 @@ export async function handleBotRequest(request, handlers) {
  * Executor das consultas que o projeto declara. tools: [{ name, description, input_schema, run }].
  * isEnabled(accountId, name) diz se o cliente ligou a consulta na tela do robô; desligada, não roda.
  * run recebe { accountId, conversationId, inboxId, contact, input } e devolve só dados da pessoa da conversa.
+ * Conversa de grupo nunca consulta (o contato é o grupo, e todos leem a resposta): devolve group_chat.
  */
 export function createToolRunner(tools, { isEnabled = async () => true } = {}) {
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
   return async (name, payload) => {
+    if (/@g\.us$/i.test(String(payload?.contact?.identifier ?? "").trim())) return { ok: false, code: "group_chat" };
     const tool = byName.get(name);
     if (!tool) return { ok: false, code: "tool_unknown" };
     const accountId = Number(payload?.account_id);

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Logger,
   Param,
@@ -55,6 +56,15 @@ export async function sendAnswer(
     logger.warn(
       `Atendimento: ${failure.code ?? 'error'} — ${failure.message ?? ''}`,
     );
+    // Grupo da equipe inválido (nome, etiqueta, membros): a base confere antes
+    // de chamar o Chatwoot e traz a frase e a correção para a tela.
+    if (failure.code?.startsWith('team_group_')) {
+      res.status(422).json({
+        code: failure.code,
+        message: `${failure.message ?? ''} ${failure.fix ?? ''}`.trim(),
+      });
+      return;
+    }
     res.status(502).json({
       code: failure.code ?? 'error',
       message:
@@ -178,6 +188,49 @@ export class AtendimentoController {
     const days = Math.min(Math.max(Number(dias) || 30, 1), 365);
     await sendAnswer(res, this.logger, async () =>
       this.atendimento.gaps(await this.person(req), scopeOf(escopo), days),
+    );
+  }
+
+  @Get('grupos')
+  @ApiOperation({
+    summary: 'Os grupos da equipe no painel e quem pode entrar neles',
+  })
+  async teamGroups(@Req() req, @Res() res: Response) {
+    await sendAnswer(res, this.logger, async () =>
+      this.atendimento.teamGroups(await this.person(req)),
+    );
+  }
+
+  @Post('grupos')
+  @ApiOperation({
+    summary: 'Cria (sem chave) ou muda um grupo da equipe no painel',
+  })
+  async saveTeamGroup(
+    @Req() req,
+    @Body() body: Record<string, unknown>,
+    @Res() res: Response,
+  ) {
+    await sendAnswer(res, this.logger, async () =>
+      this.atendimento.saveTeamGroup(await this.person(req), {
+        chave: body?.chave as string | undefined,
+        nome: body?.nome as string | undefined,
+        membros: body?.membros as string[] | undefined,
+        etiquetas: body?.etiquetas as string[] | undefined,
+      }),
+    );
+  }
+
+  @Delete('grupos')
+  @ApiOperation({
+    summary: 'Arquiva um grupo da equipe: todos saem e o histórico fica',
+  })
+  async archiveTeamGroup(
+    @Req() req,
+    @Query('chave') chave: string,
+    @Res() res: Response,
+  ) {
+    await sendAnswer(res, this.logger, async () =>
+      this.atendimento.archiveTeamGroup(await this.person(req), chave ?? ''),
     );
   }
 

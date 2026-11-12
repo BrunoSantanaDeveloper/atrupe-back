@@ -3,7 +3,7 @@
 // correção e quem corrige. Aqui nada se grava: o projeto guarda a memória (healthAlerts) e escolhe o canal do aviso.
 
 import { chatwootAccount } from "./chatwoot.mjs";
-import { ADAPTER_ID, openwaClient } from "./openwa.mjs";
+import { ADAPTER_ID, adapterEnabled, openwaClient } from "./openwa.mjs";
 
 /** ok: funcionando. atencao: funciona, mas pede um olhar. fora: mensagens não chegam ou não saem. */
 export const LEVELS = ["ok", "atencao", "fora"];
@@ -207,8 +207,22 @@ async function unofficialFindings({ inbox, account, openwa, fetchImpl }) {
   const findings = classifySession(session);
   try {
     const adapter = (await client.plugins()).find((plugin) => plugin.id === ADAPTER_ID);
-    if (!adapter?.enabled) {
+    if (!adapterEnabled(adapter)) {
       findings.push(finding("fora", "adaptador_desligado", "A ponte entre o OpenWA e o painel está desligada: as mensagens não passam de um para o outro.", "Ligue o chatwoot-adapter no OpenWA ou conecte o número de novo.", "tecnico"));
+    } else {
+      // Ligado não basta: em erro de configuração, o número conecta e nenhuma mensagem chega ao painel.
+      const health = await client.pluginHealth(ADAPTER_ID);
+      if (health?.healthy !== true) {
+        findings.push(
+          finding(
+            "fora",
+            "adaptador_com_erro",
+            `A ponte entre o OpenWA e o painel está ligada, mas com erro${health?.message ? `: ${String(health.message).slice(0, 160)}` : ""}. As mensagens não chegam ao painel.`,
+            "Confira os logs do OpenWA (chatwoot-adapter), a configuração base do plugin e se o Chatwoot responde pelo endereço público.",
+            "tecnico",
+          ),
+        );
+      }
     }
   } catch {
     // A sessão já foi lida; sem a lista de plugins, o achado da sessão continua valendo.
