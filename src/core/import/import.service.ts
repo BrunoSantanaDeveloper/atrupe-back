@@ -3946,14 +3946,30 @@ export class ImportService {
         const isReceivable = firstItem.Tipo.toUpperCase() === 'RECEITA';
 
         // Buscar cliente (se for receita)
+        //
+        // A condicao testava so o CPF/CNPJ, mas resolveClient resolve antes
+        // pelo ClienteCodigoLegado — que o schema documenta como o unico
+        // caminho para cliente sem documento. Linha com codigo legado e sem
+        // documento nem chegava a procurar o cliente, e o lancamento era
+        // criado sem ninguem, em silencio (2.270 de 2.273 numa migracao).
         let clientId: string | null = null;
-        if (isReceivable && firstItem.ClienteCpfCnpj) {
+        if (
+          isReceivable &&
+          (firstItem.ClienteCodigoLegado || firstItem.ClienteCpfCnpj)
+        ) {
           const client = this.resolveClient(clientIndex, firstItem);
 
           if (!client) {
             throw new Error(this.clientNotFoundMessage(firstItem));
           }
           clientId = client.id;
+        } else if (isReceivable) {
+          // Sem identificacao nenhuma o lancamento entra sem cliente. Nao da
+          // para adivinhar, mas tem de ficar no log: depois da carga nao ha
+          // como saber de quem era a cobranca.
+          console.warn(
+            `Receita sem identificacao de cliente (ClienteCodigoLegado e ClienteCpfCnpj vazios): "${firstItem.Descricao}" — lancamento criado sem cliente.`,
+          );
         }
 
         // Buscar fornecedor (se for despesa)

@@ -199,6 +199,7 @@ export class ConditionService {
       if (filter.companyId) where['companyId'] = filter.companyId;
       if (filter.paymentMethodId)
         where['paymentMethodId'] = filter.paymentMethodId;
+      if (filter.isActive !== undefined) where['isActive'] = filter.isActive;
 
       // Obter o total de condições para paginação
       const total = await this.prisma.paymentCondition.count({
