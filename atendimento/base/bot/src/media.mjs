@@ -1,7 +1,10 @@
 // Imagem, áudio e vídeo que a pessoa manda (D28 do plano). O ffmpeg do contêiner faz o que é ferramenta,
 // sem custo de API: separa o som, corta em partes, monta a grade de quadros do vídeo e reduz imagem grande.
 // A transcrição é de um modelo (o Gemini, mais barato, ou a OpenAI), porque transcrever na CPU de uma VPS
-// dividida sai mais lento e pior em português. A imagem e a grade vão para a IA que já atende a conversa.
+// dividida sai mais lento e pior em português. Quando o projeto declara ai.transcription "project", a
+// transcrição vai à rota transcribe dele, para quem não põe chave de IA no contêiner do robô.
+// A imagem e a grade vão para a IA que já atende a conversa. PDF, planilha, CSV e documento de texto
+// (D29) são lidos por documents.mjs, também sem custo de API.
 // Nada aqui lança para o robô: o que não deu certo volta em skipped, com o código.
 
 import { spawn } from "node:child_process";
@@ -9,6 +12,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { DOCUMENT_EXTENSIONS, DOCUMENT_LIMITS, documentFormat, documentName, readDocument } from "./documents.mjs";
 import { requestJson } from "./http.mjs";
 
 /** Tipos de imagem que as três IAs do kit leem direto; os outros viram JPEG pelo ffmpeg. */
@@ -21,6 +25,8 @@ export const MEDIA_LIMITS = {
   imageSide: 1568,
   /** Partes de áudio de 10 minutos: em MP3 de 32 kbps, cerca de 2,4 MB cada. */
   chunkSeconds: 600,
+  /** Para a rota transcribe do projeto, partes de 5 minutos: cerca de 1,6 MB no corpo, em base64. */
+  projectChunkSeconds: 300,
   /** Quadros na grade do vídeo, em colunas de 4, cada um com 320 pixels de largura. */
   gridFrames: 12,
   gridColumns: 4,
@@ -40,9 +46,10 @@ const EXTENSIONS = {
   image: /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i,
   audio: /\.(ogg|oga|opus|mp3|m4a|aac|wav|amr|flac|weba)$/i,
   video: /\.(mp4|mov|3gp|webm|mkv|avi|m4v)$/i,
+  document: DOCUMENT_EXTENSIONS,
 };
 
-/** image, audio, video ou null, pelo file_type do Chatwoot e, sem ele, pela extensão do endereço. */
+/** image, audio, video, document ou null, pelo file_type do Chatwoot e, sem ele, pela extensão do endereço. */
 export function mediaKind(attachment) {
   const type = String(attachment?.file_type ?? "").toLowerCase();
   if (["image", "audio", "video"].includes(type)) return type;
@@ -57,6 +64,12 @@ export function transcriberFor(keys, env = {}) {
   if (keys?.OPENAI_API_KEY) return { provider: "openai", model: env.openaiTranscribeModel || "gpt-4o-mini-transcribe", key: keys.OPENAI_API_KEY };
   return null;
 }
+
+/**
+ * O próprio projeto transcreve (ai.transcription "project" na configuração da conta). call manda
+ * { mime, data, part, parts } assinado à rota transcribe e devolve { text }.
+ */
+export const projectTranscriber = (call) => ({ provider: "project", model: "project", call });
 
 /** A grade do vídeo: quantos quadros, de quanto em quanto tempo, em quantas colunas e linhas. */
 export function gridPlan(duration) {
@@ -166,8 +179,16 @@ export const toolTimeout = (duration) => Math.max(60000, Math.ceil((Number(durat
 const TRANSCRIBE_PROMPT =
   "Transcreva a fala deste áudio, palavra por palavra, no idioma falado. Responda só com a transcrição, sem comentários e sem marcar tempos. Se não houver fala, responda com o texto vazio.";
 
-/** Transcreve uma parte de áudio (MP3). Devolve o texto, que pode ser vazio. */
-export async function transcribe({ transcriber, buffer, fetchImpl = fetch, timeoutMs = 120000 }) {
+/**
+ * Transcreve uma parte de áudio (MP3). Devolve o texto, que pode ser vazio. part e parts contam as partes;
+ * kind ("audio" ou "video") e seconds (a duração da parte, null quando não se sabe) vão ao projeto.
+ */
+export async function transcribe({ transcriber, buffer, fetchImpl = fetch, timeoutMs = 120000, part = 1, parts = 1, kind = "audio", seconds = null }) {
+  if (transcriber.provider === "project") {
+    const result = await transcriber.call({ kind, mime: "audio/mpeg", seconds, data: buffer.toString("base64"), part, parts });
+    if (typeof result?.text !== "string") throw new MediaError(result?.code ?? "project_empty", "o projeto não devolveu a transcrição");
+    return result.text.trim();
+  }
   if (transcriber.provider === "gemini") {
     const base = (transcriber.baseUrl || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
     const body = {
@@ -221,30 +242,39 @@ const minutes = (seconds) => {
 };
 
 /**
- * env: { chatwootUrl, ffmpegPath, ffprobePath, mediaMaxBytes, mediaMaxMinutes, mediaConcurrency,
- * geminiTranscribeModel, openaiTranscribeModel, keys }. run e transcribeImpl trocam nos testes.
+ * env: { chatwootUrl, ffmpegPath, ffprobePath, pdftotextPath, pdftoppmPath, mediaMaxBytes, mediaMaxMinutes,
+ * mediaConcurrency, geminiTranscribeModel, openaiTranscribeModel, keys }. run e transcribeImpl trocam nos testes.
  */
 export function createMedia({ env, fetchImpl = fetch, run = runProgram, transcribeImpl = transcribe }) {
   const ffmpeg = env.ffmpegPath || "ffmpeg";
   const ffprobe = env.ffprobePath || "ffprobe";
+  const pdftotext = env.pdftotextPath || "pdftotext";
+  const pdftoppm = env.pdftoppmPath || "pdftoppm";
   const maxBytes = env.mediaMaxBytes || 100 * 1024 * 1024;
   const maxSeconds = (env.mediaMaxMinutes || 30) * 60;
   const limit = semaphore(env.mediaConcurrency || 2);
   let available = null;
+  let pdfReady = null;
 
-  async function audioChunks(dir, input, duration) {
+  async function audioChunks(dir, input, duration, chunkSeconds) {
     const pattern = join(dir, "parte-%03d.mp3");
     const args = ["-v", "error", "-y", "-i", input, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "32k", "-t", String(maxSeconds)];
-    args.push("-f", "segment", "-segment_time", String(MEDIA_LIMITS.chunkSeconds), "-reset_timestamps", "1", pattern);
+    args.push("-f", "segment", "-segment_time", String(chunkSeconds), "-reset_timestamps", "1", pattern);
     await run(ffmpeg, args, { timeoutMs: toolTimeout(Math.min(duration ?? maxSeconds, maxSeconds)) });
     const names = (await readdir(dir)).filter((name) => /^parte-\d{3}\.mp3$/.test(name)).sort();
     return Promise.all(names.map((name) => readFile(join(dir, name))));
   }
 
-  async function transcribeAll(dir, input, duration, transcriber) {
-    const parts = [];
-    for (const chunk of await audioChunks(dir, input, duration)) parts.push(await transcribeImpl({ transcriber, buffer: chunk, fetchImpl }));
-    return parts.filter(Boolean).join(" ").trim();
+  async function transcribeAll(dir, input, duration, transcriber, kind) {
+    const size = transcriber.provider === "project" ? MEDIA_LIMITS.projectChunkSeconds : MEDIA_LIMITS.chunkSeconds;
+    const chunks = await audioChunks(dir, input, duration, size);
+    const total = Number.isFinite(duration) && duration > 0 ? Math.min(duration, maxSeconds) : null;
+    const spoken = [];
+    for (const [index, chunk] of chunks.entries()) {
+      const seconds = total === null ? null : Math.max(0, Math.round(Math.min(size, total - index * size)));
+      spoken.push(await transcribeImpl({ transcriber, buffer: chunk, fetchImpl, part: index + 1, parts: chunks.length, kind, seconds }));
+    }
+    return spoken.filter(Boolean).join(" ").trim();
   }
 
   async function image(dir, file) {
@@ -271,10 +301,11 @@ export function createMedia({ env, fetchImpl = fetch, run = runProgram, transcri
         mime: "image/jpeg",
         data: (await readFile(output)).toString("base64"),
         caption: `Vídeo de ${minutes(info.duration ?? plan.frames)}, mostrado numa grade de ${plan.frames} quadros, da esquerda para a direita e de cima para baixo, um a cada ${minutes(plan.interval)}.`,
+        memo: "[a pessoa mandou um vídeo]",
       };
     }
     if (info.hasAudio && transcriber) {
-      const spoken = await transcribeAll(dir, input, info.duration, transcriber);
+      const spoken = await transcribeAll(dir, input, info.duration, transcriber, "video");
       const cut = info.duration && info.duration > maxSeconds ? ` (só os primeiros ${minutes(maxSeconds)})` : "";
       result.text = spoken ? `Fala do vídeo que a pessoa mandou, transcrita${cut}: "${spoken}"` : "O vídeo que a pessoa mandou não tem fala.";
       if (spoken) result.note = `Transcrição da fala do vídeo${cut}: ${spoken}`;
@@ -290,12 +321,30 @@ export function createMedia({ env, fetchImpl = fetch, run = runProgram, transcri
     },
 
     /**
-     * attachments: os anexos das mensagens que chegaram juntas. wants: { images, audio, video, transcription_note }.
-     * Devolve { images: [{ mime, data, caption? }], texts: [...], notes: [...], skipped: [{ kind, code }] }.
+     * O leitor de PDF (pdftotext, do poppler) está no contêiner? Vai para o /health do robô. Ele sai com
+     * código diferente de zero ao mostrar a versão em algumas edições: só a falta do programa conta.
      */
-    async prepare({ attachments, wants }) {
-      const result = { images: [], texts: [], notes: [], skipped: [] };
-      const transcriber = transcriberFor(env.keys, env);
+    async pdfAvailable() {
+      if (pdfReady === null) pdfReady = await run(pdftotext, ["-v"], { timeoutMs: 10000 }).then(() => true, (error) => error?.code !== "tool_missing");
+      return pdfReady;
+    },
+
+    /** Quem transcreve pelas chaves do contêiner ("gemini", "openai" ou null). Vai para o /health do robô. */
+    transcriber() {
+      return transcriberFor(env.keys, env)?.provider ?? null;
+    },
+
+    /**
+     * attachments: os anexos das mensagens que chegaram juntas.
+     * wants: { images, audio, video, documents, transcription_note }.
+     * transcriber: quem transcreve nesta conta (projectTranscriber); sem ele, as chaves do contêiner.
+     * Devolve { images: [{ mime, data, caption?, memo? }], texts: [...], notes: [...], skipped: [{ kind, code }],
+     * documents: quantos arquivos foram lidos }.
+     */
+    async prepare({ attachments, wants, transcriber: chosen = null }) {
+      const result = { images: [], texts: [], notes: [], skipped: [], documents: 0 };
+      const transcriber = chosen ?? transcriberFor(env.keys, env);
+      let documentsTried = 0;
       for (const attachment of attachments) {
         const kind = mediaKind(attachment);
         if (!kind) {
@@ -306,11 +355,17 @@ export function createMedia({ env, fetchImpl = fetch, run = runProgram, transcri
           result.skipped.push({ kind, code: "no_url" });
           continue;
         }
-        const enabled = kind === "image" ? wants.images : kind === "audio" ? wants.audio : wants.video || wants.audio;
+        const enabled =
+          kind === "image" ? wants.images : kind === "audio" ? wants.audio : kind === "document" ? wants.documents !== false : wants.video || wants.audio;
         if (!enabled) {
           result.skipped.push({ kind, code: "disabled" });
           continue;
         }
+        if (kind === "document" && documentsTried >= DOCUMENT_LIMITS.perTurn) {
+          result.skipped.push({ kind, code: "too_many" });
+          continue;
+        }
+        if (kind === "document") documentsTried += 1;
         if (kind === "audio" && !transcriber) {
           result.skipped.push({ kind, code: "no_transcriber" });
           continue;
@@ -325,11 +380,21 @@ export function createMedia({ env, fetchImpl = fetch, run = runProgram, transcri
             const file = await downloadAttachment(attachment.data_url, { chatwootUrl: env.chatwootUrl, maxBytes, fetchImpl });
             if (kind === "image") {
               result.images.push(await image(dir, file));
+            } else if (kind === "document") {
+              const name = documentName(attachment);
+              const format = documentFormat({ name, mime: file.mime, buffer: file.buffer });
+              const read = await readDocument({ dir, buffer: file.buffer, name, format, run, pdftotext, pdftoppm, imageSide: MEDIA_LIMITS.imageSide });
+              if (read.images) {
+                const room = MEDIA_LIMITS.imagesPerTurn - result.images.length;
+                if (room <= 0) throw new MediaError("too_many", "imagens demais nesta mensagem");
+                result.images.push(...read.images.slice(0, room));
+              } else result.texts.push(read.text);
+              result.documents += 1;
             } else if (kind === "audio") {
               const input = join(dir, "entrada");
               await writeFile(input, file.buffer);
               const info = await probe(input, { ffprobe, run }).catch(() => ({ duration: null }));
-              const spoken = await transcribeAll(dir, input, info.duration, transcriber);
+              const spoken = await transcribeAll(dir, input, info.duration, transcriber, "audio");
               const cut = info.duration && info.duration > maxSeconds ? ` (só os primeiros ${minutes(maxSeconds)})` : "";
               result.texts.push(spoken ? `Áudio que a pessoa mandou, transcrito${cut}: "${spoken}"` : "A pessoa mandou um áudio sem fala.");
               if (spoken) result.notes.push(`Transcrição do áudio${cut}: ${spoken}`);

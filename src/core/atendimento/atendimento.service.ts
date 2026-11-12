@@ -367,16 +367,36 @@ export class AtendimentoService {
       this.platformSettings(),
       this.declaredTools(),
     ]);
+    const editable = kit.settings.editableGroups(scope, 'plataforma', settings);
     return {
       status: 200,
       body: {
         model: 'plataforma',
         scope,
         settings,
-        editable: kit.settings.editableGroups(scope, 'plataforma', settings),
+        editable,
         tools: tools.map(({ name, description }) => ({ name, description })),
+        media: await this.mediaSupport(kit, editable, settings),
       },
     };
+  }
+
+  /**
+   * O robô consegue ouvir áudio? A tela esconde "Ouvir áudios" quando ele não
+   * tem quem transcreva (o /health dele diz). Sem o endereço do robô neste
+   * ambiente (homolog), não se sabe: null, e a tela mostra tudo.
+   */
+  private async mediaSupport(
+    kit: AtendimentoKit,
+    editable: string[],
+    settings: PlatformSettings,
+  ): Promise<{ audio: boolean | null }> {
+    const botUrl = process.env.SUPPORT_BOT_PUBLIC_URL?.trim();
+    if (!editable.includes('midia') || !botUrl) return { audio: null };
+    return kit.contract.mediaSupport({
+      ai: { ...defaultAi(), ...(settings.ai ?? {}) },
+      botUrl,
+    });
   }
 
   async writeSettings(

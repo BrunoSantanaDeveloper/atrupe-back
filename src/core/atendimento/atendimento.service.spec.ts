@@ -128,6 +128,7 @@ function makeKit() {
             : { ok: false, code: 'tool_disabled' },
     ),
     handleBotRequest: jest.fn(),
+    mediaSupport: jest.fn(async () => ({ audio: false })),
   };
   const report = {
     summarizeGaps: jest.fn(() => [{ topic: 'nota', count: 1 }]),
@@ -245,6 +246,27 @@ describe('AtendimentoService', () => {
           { name: 'situacao_da_conta', description: 'Situação da conta' },
         ],
       });
+    });
+
+    it('a tela sabe se o robô ouve áudio, pelo /health dele', async () => {
+      const { service, kit } = makeService();
+      kit.settings.editableGroups = () => ['midia', 'aprendizado'];
+      const answer = await service.readSettings(superadmin, 'plataforma');
+      expect((answer.body as any).media).toEqual({ audio: false });
+      expect(kit.contract.mediaSupport).toHaveBeenCalledWith({
+        ai: expect.objectContaining({ provider: 'anthropic' }),
+        botUrl: 'https://atendimento.atrupe.com.br/robo/chatwoot',
+      });
+    });
+
+    it('sem o endereço do robô (homolog), a tela abre e não se sabe do áudio', async () => {
+      delete process.env.SUPPORT_BOT_PUBLIC_URL;
+      const { service, kit } = makeService();
+      kit.settings.editableGroups = () => ['midia', 'aprendizado'];
+      const answer = await service.readSettings(superadmin, 'plataforma');
+      expect(answer.status).toBe(200);
+      expect((answer.body as any).media).toEqual({ audio: null });
+      expect(kit.contract.mediaSupport).not.toHaveBeenCalled();
     });
 
     it('sem nada salvo, parte da base de suporte, sugerindo, sem consultar contas e no horário da equipe', async () => {

@@ -29,6 +29,9 @@ export function readEnv(source = process.env) {
     // Imagem, áudio e vídeo (media.mjs). O ffmpeg vem no Dockerfile do robô.
     ffmpegPath: String(source.FFMPEG_PATH ?? "").trim() || "ffmpeg",
     ffprobePath: String(source.FFPROBE_PATH ?? "").trim() || "ffprobe",
+    // PDF (documents.mjs). O poppler vem no Dockerfile do robô.
+    pdftotextPath: String(source.PDFTOTEXT_PATH ?? "").trim() || "pdftotext",
+    pdftoppmPath: String(source.PDFTOPPM_PATH ?? "").trim() || "pdftoppm",
     mediaMaxBytes: number("MEDIA_MAX_MB", 100) * 1024 * 1024,
     mediaMaxMinutes: number("MEDIA_MAX_MINUTES", 30),
     mediaConcurrency: Math.max(1, number("MEDIA_CONCURRENCY", 2)),
@@ -59,7 +62,7 @@ export function startServer({ env = readEnv(), logger = createLogger(), fetchImp
   const bot = createBot({ env, logger, fetchImpl });
   // Sem ffmpeg, imagem pequena ainda passa; áudio e vídeo não. O /health mostra o que foi conferido.
   bot.checkMedia().then(
-    (ready) => logger.info({ event: "media", status: ready ? "ffmpeg" : "sem_ffmpeg" }),
+    (ready) => logger.info({ event: "media", status: `${ready ? "ffmpeg" : "sem_ffmpeg"},${bot.health().media.pdf === false ? "sem_pdf" : "pdf"}` }),
     () => logger.warn({ event: "media", status: "sem_ffmpeg" }),
   );
   const send = (response, status, body) => {

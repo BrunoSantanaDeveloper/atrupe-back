@@ -25,7 +25,14 @@ import {
   type PlatformSettings,
   type Scope,
 } from "../atendimento/base/shared/settings.mjs";
-import { createToolRunner, handleBotRequest, type BotRequest, type GapEventPayload, type ProjectTool } from "../atendimento/base/server/bot-contract.mjs";
+import {
+  createToolRunner,
+  handleBotRequest,
+  mediaSupport,
+  type BotRequest,
+  type GapEventPayload,
+  type ProjectTool,
+} from "../atendimento/base/server/bot-contract.mjs";
 import { checkWhatsappHealth, currentInbox, healthAlerts, type WhatsappAlert } from "../atendimento/base/server/health.mjs";
 import {
   archiveTeamGroup,
@@ -187,7 +194,11 @@ export const tools: ProjectTool[] = [
 
 const declaredTools = tools.map((tool) => tool.name);
 
-/** O provedor de IA padrão do projeto; o superadmin pode trocar na camada da plataforma (ai). */
+/**
+ * O provedor de IA padrão do projeto; o superadmin pode trocar na camada da plataforma (ai). Um projeto
+ * que não põe chave de IA no robô usa provider "project" e transcription "project", e implementa as rotas
+ * generate e transcribe em botHandler (references/contratos.md, "Rotas que o projeto expõe ao robô").
+ */
 export const defaultAi = { provider: "anthropic", model: "claude-opus-5-5", effort: "low" } as const;
 
 async function platformSettings(): Promise<PlatformSettings> {
@@ -422,12 +433,18 @@ export async function readSettings(request: Request, scope: Scope) {
   const settings = scope === "plataforma" ? platform : (await store.loadSettings(person!.tenantId)) ?? defaultSettings(await store.tenantName(person!.tenantId));
   const offered = Array.isArray(platform.tools_available) ? platform.tools_available : declaredTools;
   const visibleTools = scope === "plataforma" ? tools : tools.filter((tool) => offered.includes(tool.name));
+  const editable = editableGroups(scope, MODEL, platform);
+  // A tela esconde "Ouvir áudios" quando o robô não tem quem transcreva (o /health dele e ai.transcription).
+  const media = editable.includes("midia")
+    ? await mediaSupport({ ai: { ...defaultAi, ...(platform.ai ?? {}) }, botUrl: env.botPublicUrl() })
+    : { audio: null };
   return {
     model: MODEL,
     scope,
     settings,
-    editable: editableGroups(scope, MODEL, platform),
+    editable,
     tools: visibleTools.map(({ name, description }) => ({ name, description })),
+    media,
   };
 }
 

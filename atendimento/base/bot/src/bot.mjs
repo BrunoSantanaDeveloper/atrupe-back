@@ -12,7 +12,7 @@ import { asksForTeam, callsBot, isGroupContact, normalizeConfig, teamAvailable }
 import { scrub } from "./privacy.mjs";
 import { projectClient } from "./project.mjs";
 import { buildSuggestionPrompt, buildSystemPrompt, parseSuggestions, SUGGESTION_SCHEMA, toMessages } from "./prompt.mjs";
-import { createMedia } from "./media.mjs";
+import { createMedia, projectTranscriber } from "./media.mjs";
 import { createConversationQueue } from "./queue.mjs";
 import { verifyChatwoot } from "./signature.mjs";
 
@@ -61,7 +61,7 @@ function contactOf(payload) {
   };
 }
 
-const EMPTY_MEDIA = { images: [], texts: [], notes: [], skipped: [] };
+const EMPTY_MEDIA = { images: [], texts: [], notes: [], skipped: [], documents: 0 };
 
 /**
  * Põe as imagens (fotos, prints e a grade do vídeo) na última mensagem da pessoa, em partes neutras
@@ -87,6 +87,7 @@ export function attachImages(messages, images) {
 export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logger = silentLogger, chatwootFactory = chatwootClient, mediaFactory = createMedia }) {
   const mediaTools = mediaFactory({ env, fetchImpl });
   let mediaReady = null;
+  let pdfReady = null;
   const project = projectClient({ baseUrl: env.projectUrl, secret: env.secret, fetchImpl });
   const memory = createMemory({ now });
   const seen = createSeenSet();
@@ -259,13 +260,21 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
       // Imagem, áudio e vídeo (D28): o que der para entender entra na mensagem, e a equipe só é chamada
       // quando nada do que a pessoa mandou pôde ser lido. Num grupo, só chega aqui a mensagem que chamou o robô.
       const attachments = items.flatMap((item) => (Array.isArray(item.payload.attachments) ? item.payload.attachments : []));
-      const media = attachments.length ? await mediaTools.prepare({ attachments, wants: config.media }) : EMPTY_MEDIA;
+      // Com ai.transcription "project", o áudio é transcrito pelo projeto, e o contêiner fica sem chave de IA.
+      const transcriber =
+        config.ai.transcription === "project"
+          ? projectTranscriber((part) => project.transcribe({ account_id: accountId, conversation_id: conversationId, ...part }))
+          : null;
+      const media = attachments.length ? await mediaTools.prepare({ attachments, wants: config.media, transcriber }) : EMPTY_MEDIA;
       if (attachments.length) {
         const skipped = media.skipped.map((item) => `${item.kind}:${item.code}`).join(",");
         log({ event: "media", items: attachments.length, ...(skipped ? { code: skipped } : {}) });
       }
       for (const text of media.texts) memory.add(key, { role: "cliente", text });
-      for (const image of media.images) memory.add(key, { role: "cliente", text: image.caption ? "[a pessoa mandou um vídeo]" : "[a pessoa mandou uma imagem]" });
+      for (const image of media.images) {
+        const memo = image.memo ?? "[a pessoa mandou uma imagem]";
+        if (memo) memory.add(key, { role: "cliente", text: memo });
+      }
       const heard = [...texts, ...media.texts];
       excerpt = heard.join(" ");
       if (!heard.length && !media.images.length) {
@@ -305,6 +314,7 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
         contactName: !group && config.share_contact_name ? firstName(last.payload.sender?.name) : null,
         group,
         media: media.images.length > 0,
+        documents: media.documents > 0,
       });
       const messages = toMessages(memory.transcript(key));
       if (!messages.length) messages.push({ role: "user", content: heard.join("\n") || "A pessoa mandou uma imagem." });
@@ -478,10 +488,18 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
 
   return {
     receive,
-    health: () => ({ ok: true, version: VERSION, conversations: memory.size(), queued: queue.size, media: { ffmpeg: mediaReady } }),
+    health: () => ({
+      ok: true,
+      version: VERSION,
+      conversations: memory.size(),
+      queued: queue.size,
+      // transcriber: quem transcreve pelas chaves do contêiner; o projeto que transcreve não aparece aqui.
+      media: { ffmpeg: mediaReady, transcriber: mediaTools.transcriber?.() ?? null, pdf: pdfReady },
+    }),
     /** Confere se o ffmpeg está no contêiner; o /health mostra o resultado (null antes de conferir). */
     checkMedia: async () => {
       mediaReady = await mediaTools.available();
+      pdfReady = mediaTools.pdfAvailable ? await mediaTools.pdfAvailable() : null;
       return mediaReady;
     },
     idle: () => queue.idle(),
