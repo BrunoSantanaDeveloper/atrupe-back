@@ -117,11 +117,13 @@ a API confere o número atual a cada 15 minutos (a sessão no OpenWA, ou a saúd
   continuam nela. "Conectar outro número" cria uma caixa nova.
 - **Instância fora do ar:** `cd ~/atendimento/implantacao && docker compose ps` e `docker compose logs
   --tail 100 <serviço>`; `bash implantar.sh` sobe de novo o que tiver caído.
-- **"A ponte entre o OpenWA e o painel está ligada, mas com erro" (`adaptador_com_erro`):** o adaptador
-  desistiu de alguma mensagem depois de 5 tentativas (o e-mail traz o último erro, como um 401 do
-  Chatwoot). Essa mensagem se perdeu e não volta pelo reenvio. O OpenWA só zera essa contagem quando o
-  plugin é religado, então o aviso continua mesmo depois que as mensagens voltam a passar. Corrija a causa,
-  mande uma mensagem de teste e religue o plugin na instância (a chave fica dentro do contêiner):
+- **"Uma mensagem do WhatsApp não chegou ao painel depois de todas as tentativas"
+  (`adaptador_mensagens_perdidas`, atenção):** o adaptador desistiu de uma mensagem depois de 5 tentativas,
+  30 segundos entre elas. O e-mail traz o último erro, como um 401 do Chatwoot. Essa mensagem se perdeu e
+  não volta pelo reenvio. O aviso sai de novo se a contagem crescer. O OpenWA só zera a contagem quando o
+  plugin é religado. Com `adaptador_com_erro` (fora), a fila encheu ou a mensagem se perdeu antes dela.
+  Nos dois casos, corrija a causa, mande uma mensagem de teste e religue o plugin na instância (a chave
+  fica dentro do contêiner):
 
   ```
   cd ~/atendimento/implantacao
