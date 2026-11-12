@@ -68,6 +68,13 @@ export function normalizeConfig(raw) {
       team_id: Number.isInteger(handoff.team_id) ? handoff.team_id : null,
     },
     groups: normalizeGroups(raw.groups),
+    // Imagem, áudio e vídeo (D28): ligados quando a configuração não diz o contrário.
+    media: {
+      images: raw.media?.images !== false,
+      audio: raw.media?.audio !== false,
+      video: raw.media?.video !== false,
+      transcription_note: raw.media?.transcription_note !== false,
+    },
     tools: Array.isArray(raw.tools) ? raw.tools.filter((tool) => tool && /^[a-z0-9_]{1,64}$/.test(tool.name)) : [],
     suggest_on_open: raw.suggest_on_open !== false,
     history_from_project: raw.history_from_project !== false,

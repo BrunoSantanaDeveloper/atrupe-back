@@ -13,6 +13,7 @@ import {
   validateSettings,
   type Day,
   type GroupSettings,
+  type MediaSettings,
   type PermissionGroup,
   type PlatformSettings,
   type Scope,
@@ -33,8 +34,10 @@ const GROUP_LABELS: Record<PermissionGroup, string> = {
   consultas: "Quais consultas ao sistema ligar",
   modo: "Como o robô trabalha",
   grupos: "Grupos do WhatsApp",
+  midia: "Imagens, áudios e vídeos",
 };
 const SEM_GRUPOS: GroupSettings = { mode: "fora", call_words: [], team_id: null };
+const MIDIA_PADRAO: MediaSettings = { images: true, audio: true, video: true, transcription_note: true };
 
 export function RoboAtendimento({ escopo = "cliente" }: { escopo?: Scope }) {
   const [data, setData] = useState<SettingsResponse | null>(null);
@@ -91,6 +94,7 @@ export function RoboAtendimento({ escopo = "cliente" }: { escopo?: Scope }) {
     update({ hours: { ...hours, days: { ...hours.days, [day]: ranges } } });
   };
   const grupos = settings.groups ?? SEM_GRUPOS;
+  const midia = settings.media ?? MIDIA_PADRAO;
   const toggleList = (list: string[] | null | undefined, name: string, on: boolean) => {
     const current = list ?? [];
     return on ? [...new Set([...current, name])] : current.filter((item) => item !== name);
@@ -260,6 +264,30 @@ export function RoboAtendimento({ escopo = "cliente" }: { escopo?: Scope }) {
                 ))}
               </>
             ) : null}
+          </Stack>
+        </Card>
+      ) : null}
+
+      {can("midia") ? (
+        <Card title="Imagens, áudios e vídeos">
+          <Stack gap={8}>
+            <Text tone="muted">
+              O robô lê o que a pessoa manda e só passa para a equipe quando não consegue. Áudio e fala de vídeo precisam da chave do Gemini ou da OpenAI no robô.
+            </Text>
+            <Toggle label="Ler imagens e prints" checked={midia.images} onChange={(images) => update({ media: { ...midia, images } })} />
+            <Toggle label="Ouvir áudios" checked={midia.audio} onChange={(audio) => update({ media: { ...midia, audio } })} />
+            <Toggle
+              label="Ver vídeos"
+              hint="O robô vê uma grade de quadros do vídeo e ouve a fala, também em vídeo longo."
+              checked={midia.video}
+              onChange={(video) => update({ media: { ...midia, video } })}
+            />
+            <Toggle
+              label="Deixar a transcrição para a equipe"
+              hint="Uma nota interna com o que foi falado, para quem atende ler sem ouvir."
+              checked={midia.transcription_note}
+              onChange={(transcription_note) => update({ media: { ...midia, transcription_note } })}
+            />
           </Stack>
         </Card>
       ) : null}

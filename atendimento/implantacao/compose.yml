@@ -106,7 +106,8 @@ services:
     image: ${ATENDIMENTO_ROBO_IMAGE:-atrupe/atendimento-robo:kit-1.0.0}
     restart: unless-stopped
     env_file: ../segredos/robo.env
-    mem_limit: 256m
+    # O ffmpeg do robô trabalha aqui (imagem, áudio e vídeo), até duas mídias de cada vez.
+    mem_limit: 768m
     logging: *logging
     networks:
       default:

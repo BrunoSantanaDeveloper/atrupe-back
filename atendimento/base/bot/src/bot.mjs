@@ -12,6 +12,7 @@ import { asksForTeam, callsBot, isGroupContact, normalizeConfig, teamAvailable }
 import { scrub } from "./privacy.mjs";
 import { projectClient } from "./project.mjs";
 import { buildSuggestionPrompt, buildSystemPrompt, parseSuggestions, SUGGESTION_SCHEMA, toMessages } from "./prompt.mjs";
+import { createMedia } from "./media.mjs";
 import { createConversationQueue } from "./queue.mjs";
 import { verifyChatwoot } from "./signature.mjs";
 
@@ -60,7 +61,32 @@ function contactOf(payload) {
   };
 }
 
-export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logger = silentLogger, chatwootFactory = chatwootClient }) {
+const EMPTY_MEDIA = { images: [], texts: [], notes: [], skipped: [] };
+
+/**
+ * Põe as imagens (fotos, prints e a grade do vídeo) na última mensagem da pessoa, em partes neutras
+ * ({ type: "text" } e { type: "image", mime, data }) que cada adaptador de IA traduz para o seu formato.
+ */
+export function attachImages(messages, images) {
+  let index = messages.length - 1;
+  while (index >= 0 && messages[index].role !== "user") index -= 1;
+  if (index < 0) {
+    messages.push({ role: "user", content: "" });
+    index = messages.length - 1;
+  }
+  const current = messages[index].content;
+  const parts = typeof current === "string" ? (current.trim() ? [{ type: "text", text: current }] : []) : [...current];
+  for (const image of images) {
+    if (image.caption) parts.push({ type: "text", text: image.caption });
+    parts.push({ type: "image", mime: image.mime, data: image.data });
+  }
+  messages[index] = { ...messages[index], content: parts };
+  return messages;
+}
+
+export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logger = silentLogger, chatwootFactory = chatwootClient, mediaFactory = createMedia }) {
+  const mediaTools = mediaFactory({ env, fetchImpl });
+  let mediaReady = null;
   const project = projectClient({ baseUrl: env.projectUrl, secret: env.secret, fetchImpl });
   const memory = createMemory({ now });
   const seen = createSeenSet();
@@ -190,7 +216,7 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
     const log = (fields) => logger.info({ account: accountId, conversation: conversationId, mode: config.mode, ...fields });
     let pending = last.payload.conversation.status === "pending";
     const texts = items.map((item) => String(item.payload.content ?? "").trim()).filter(Boolean);
-    const excerpt = texts.join(" ");
+    let excerpt = texts.join(" ");
     const contact = contactOf(last.payload);
     const group = isGroupContact(contact);
     let called = false;
@@ -230,14 +256,27 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
         }
       }
 
-      const attachments = items.some((item) => Array.isArray(item.payload.attachments) && item.payload.attachments.length > 0);
-      if (!texts.length) {
-        if (attachments && pending) {
-          await handoffFlow({ cw, ids, config, pending, text: config.messages.anexo, reason: "a pessoa mandou um arquivo", category: "anexo", topic: "arquivo enviado" });
+      // Imagem, áudio e vídeo (D28): o que der para entender entra na mensagem, e a equipe só é chamada
+      // quando nada do que a pessoa mandou pôde ser lido. Num grupo, só chega aqui a mensagem que chamou o robô.
+      const attachments = items.flatMap((item) => (Array.isArray(item.payload.attachments) ? item.payload.attachments : []));
+      const media = attachments.length ? await mediaTools.prepare({ attachments, wants: config.media }) : EMPTY_MEDIA;
+      if (attachments.length) {
+        const skipped = media.skipped.map((item) => `${item.kind}:${item.code}`).join(",");
+        log({ event: "media", items: attachments.length, ...(skipped ? { code: skipped } : {}) });
+      }
+      for (const text of media.texts) memory.add(key, { role: "cliente", text });
+      for (const image of media.images) memory.add(key, { role: "cliente", text: image.caption ? "[a pessoa mandou um vídeo]" : "[a pessoa mandou uma imagem]" });
+      const heard = [...texts, ...media.texts];
+      excerpt = heard.join(" ");
+      if (!heard.length && !media.images.length) {
+        if (attachments.length && pending) {
+          await handoffFlow({ cw, ids, config, pending, text: config.messages.anexo, reason: "a pessoa mandou um arquivo que o robô não conseguiu ler", category: "anexo", topic: "arquivo enviado" });
           log({ event: "handled", action: "handoff", code: "attachment" });
         } else log({ event: "skipped", code: "empty" });
         return;
       }
+      // A transcrição também fica para a equipe, numa nota interna: quem atende lê sem ouvir.
+      for (const note of media.notes) await cw.send(accountId, conversationId, { content: note, privateNote: true }).catch(() => {});
 
       if (pending && asksForTeam(excerpt, config.handoff.keywords)) {
         await handoffFlow({ cw, ids, config, pending, text: "", reason: "a pessoa pediu a equipe", category: "pedido_da_pessoa", excerpt });
@@ -265,9 +304,11 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
         now: new Date(now()),
         contactName: !group && config.share_contact_name ? firstName(last.payload.sender?.name) : null,
         group,
+        media: media.images.length > 0,
       });
       const messages = toMessages(memory.transcript(key));
-      if (!messages.length) messages.push({ role: "user", content: texts.join("\n") });
+      if (!messages.length) messages.push({ role: "user", content: heard.join("\n") || "A pessoa mandou uma imagem." });
+      if (media.images.length) attachImages(messages, media.images);
       const providerGenerate = providerFor(config.ai.provider);
       const generate = ({ system: prompt, messages: history, schema }) =>
         providerGenerate({ ai: config.ai, system: prompt, messages: history, schema, keys: env.keys, fetchImpl, project, ids, tools, purpose: "acao" });
@@ -437,7 +478,12 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
 
   return {
     receive,
-    health: () => ({ ok: true, version: VERSION, conversations: memory.size(), queued: queue.size }),
+    health: () => ({ ok: true, version: VERSION, conversations: memory.size(), queued: queue.size, media: { ffmpeg: mediaReady } }),
+    /** Confere se o ffmpeg está no contêiner; o /health mostra o resultado (null antes de conferir). */
+    checkMedia: async () => {
+      mediaReady = await mediaTools.available();
+      return mediaReady;
+    },
     idle: () => queue.idle(),
   };
 }
