@@ -1597,7 +1597,11 @@ export class ReportService {
 
       installments.forEach((inst) => {
         const status = this.getInstallmentStatus(inst);
-        const amount = inst.paidAmount || inst.amount;
+        // O realizado e o que foi pago. O fallback para `amount` mascarava
+        // parcela marcada como paga sem valor registrado, inflando o card
+        // de recebidos/pagos com o valor de face da parcela.
+        const valorPago = inst.paidAmount ?? 0;
+        const valorPrevisto = inst.amount;
         const isPaidInPeriod =
           inst.paidDate &&
           inst.paidDate >= startDate &&
@@ -1607,18 +1611,18 @@ export class ReportService {
 
         if (status === 'received') {
           if (isPaidInPeriod) {
-            result.received += amount;
+            result.received += valorPago;
             result.receivedCount++;
           }
         } else if (isDueInPeriod) {
           if (status === 'confirmed') {
-            result.confirmed += amount;
+            result.confirmed += valorPrevisto;
             result.confirmedCount++;
           } else if (status === 'overdue') {
-            result.overdue += amount;
+            result.overdue += valorPrevisto;
             result.overdueCount++;
           } else {
-            result.toReceive += amount;
+            result.toReceive += valorPrevisto;
             result.toReceiveCount++;
           }
         }
@@ -1653,7 +1657,11 @@ export class ReportService {
 
       installments.forEach((inst) => {
         const status = this.getInstallmentStatus(inst);
-        const amount = inst.paidAmount || inst.amount;
+        // O realizado e o que foi pago. O fallback para `amount` mascarava
+        // parcela marcada como paga sem valor registrado, inflando o card
+        // de recebidos/pagos com o valor de face da parcela.
+        const valorPago = inst.paidAmount ?? 0;
+        const valorPrevisto = inst.amount;
         const isPaidInPeriod =
           inst.paidDate &&
           inst.paidDate >= startDate &&
@@ -1663,18 +1671,18 @@ export class ReportService {
 
         if (status === 'received') {
           if (isPaidInPeriod) {
-            result.received += amount;
+            result.received += valorPago;
             result.receivedCount++;
           }
         } else if (isDueInPeriod) {
           if (status === 'confirmed') {
-            result.confirmed += amount;
+            result.confirmed += valorPrevisto;
             result.confirmedCount++;
           } else if (status === 'overdue') {
-            result.overdue += amount;
+            result.overdue += valorPrevisto;
             result.overdueCount++;
           } else {
-            result.toReceive += amount;
+            result.toReceive += valorPrevisto;
             result.toReceiveCount++;
           }
         }

@@ -25,6 +25,7 @@ import { FinancialHistoryService } from '../history/history.service';
 import { FinancialNotesUtil } from '../utils/financial-notes.util';
 import { BaseTransactionService } from '../utils/base-transaction.service';
 import { InstallmentStatusCheck } from '../utils/financial.types';
+import { resolveTitleStatus } from '../utils/title-status.util';
 
 @Injectable()
 export class ReceivableService {
@@ -194,24 +195,9 @@ export class ReceivableService {
           select: { status: true },
         });
 
-        const hasCancelled = allInstallments.some(
-          (inst) => inst.status === 'CANCELED',
-        );
-        const hasPending = allInstallments.some(
-          (inst) => inst.status === 'PENDING',
-        );
-        const allPaid = allInstallments.every((inst) => inst.status === 'PAID');
-
-        let newStatus: PaymentStatus;
-        if (hasCancelled) {
-          newStatus = PaymentStatus.CANCELED;
-        } else if (hasPending) {
-          newStatus = PaymentStatus.PENDING;
-        } else if (allPaid) {
-          newStatus = PaymentStatus.PAID;
-        } else {
-          newStatus = PaymentStatus.PENDING;
-        }
+        const newStatus =
+          resolveTitleStatus(allInstallments.map((inst) => inst.status)) ??
+          PaymentStatus.PENDING;
 
         await tx.receivable.update({
           where: { id: receivable.id },
@@ -776,6 +762,15 @@ export class ReceivableService {
       throw new NotFoundException('Parcela não encontrada.');
     }
 
+    // Barrado aqui, antes de qualquer escrita: a baixa grava a parcela
+    // numa transacao e so depois compensa, entao valor zerado deixaria a
+    // parcela PAGA com paidAmount zerado e a compensacao falhando fora dela.
+    if (!(amount > 0)) {
+      throw new BadRequestException(
+        'Informe o valor recebido para dar baixa na parcela.',
+      );
+    }
+
     // Validar se o título possui natureza e categoria configuradas
     if (
       !installmentData.receivable.natureId ||
@@ -1116,6 +1111,16 @@ export class ReceivableService {
 
       const amount = installment.paidAmount || 0;
       const bankAccountId = installment.bankAccountId;
+
+      // Compensar e a baixa de um pagamento que ja existe. Sem valor
+      // registrado, a parcela virava PAGA com paidAmount zerado e o caixa
+      // recebia um lancamento de R$ 0,00 — dinheiro que o relatorio
+      // financeiro exibia pelo valor de face da parcela.
+      if (amount <= 0) {
+        throw new BadRequestException(
+          'Esta parcela não tem pagamento registrado para compensar. Registre o recebimento antes de compensar.',
+        );
+      }
 
       if (!bankAccountId) {
         throw new BadRequestException(
@@ -1839,28 +1844,12 @@ export class ReceivableService {
       return;
     }
 
-    // Define as condições para os diferentes status da movimentação
-    const hasCancelled = installments.some(
-      (inst) => inst.status === PaymentStatus.CANCELED,
-    );
-    const hasPending = installments.some(
-      (inst) => inst.status === PaymentStatus.PENDING,
-    );
-    const allPaid = installments.every(
-      (inst) => inst.status === PaymentStatus.PAID,
+    // PENDING cobre o vencido: OVERDUE e calculado nas consultas.
+    const newStatus = resolveTitleStatus(
+      installments.map((inst) => inst.status),
     );
 
-    let newStatus: PaymentStatus;
-
-    if (hasCancelled) {
-      newStatus = PaymentStatus.CANCELED;
-    } else if (hasPending) {
-      // Se tem pendentes, salva como PENDING no banco
-      // O status OVERDUE será calculado dinamicamente nas queries quando necessário
-      newStatus = PaymentStatus.PENDING;
-    } else if (allPaid) {
-      newStatus = PaymentStatus.PAID;
-    } else {
+    if (!newStatus) {
       this.logger.error(
         `Não foi possível determinar o status para a movimentação ${receivableId}`,
       );

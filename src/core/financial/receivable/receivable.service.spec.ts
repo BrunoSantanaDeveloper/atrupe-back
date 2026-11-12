@@ -680,6 +680,29 @@ describe('ReceivableService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    it('recusa baixa sem valor recebido', async () => {
+      // A baixa grava a parcela numa transacao e so depois compensa. Com
+      // valor zerado, a parcela ficava PAGA com paidAmount zerado e o
+      // caixa recebia um lancamento de R$ 0,00.
+      prisma.receivableInstallment.findFirst.mockResolvedValue({
+        id: mockInstallmentId,
+        status: 'PENDING',
+        receivable: {
+          natureId: mockNatureId,
+          subCategoryId: mockSubCategoryId,
+        },
+      });
+
+      await expect(
+        service.payInstallment(mockInstallmentId, {
+          ...payDto,
+          amount: 0,
+        } as any),
+      ).rejects.toThrow('Informe o valor recebido para dar baixa na parcela.');
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
     it('should throw BadRequestException when nature/category not configured', async () => {
       prisma.receivableInstallment.findFirst.mockResolvedValue({
         id: mockInstallmentId,
@@ -848,6 +871,35 @@ describe('ReceivableService', () => {
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(2);
       expect(result.message).toBe('Parcela paga com sucesso.');
+    });
+  });
+
+  describe('compensateInstallment', () => {
+    it('recusa compensar parcela sem pagamento registrado', async () => {
+      // Compensar e a baixa de um pagamento que ja existe. Sem valor, a
+      // parcela virava PAGA com paidAmount zerado e o caixa recebia R$ 0,00.
+      prisma.$transaction.mockImplementation(async (callback) =>
+        callback({
+          receivableInstallment: {
+            findFirst: jest.fn().mockResolvedValue({
+              id: mockInstallmentId,
+              paidAmount: 0,
+              bankAccountId: mockBankAccountId,
+            }),
+            update: jest.fn(),
+          },
+          cashRegister: { findFirst: jest.fn(), update: jest.fn() },
+          transaction: { create: jest.fn() },
+        }),
+      );
+
+      await expect(
+        service.compensateInstallment(mockInstallmentId, {
+          paidDate: '2026-03-15',
+        } as any),
+      ).rejects.toThrow(
+        'Esta parcela não tem pagamento registrado para compensar.',
+      );
     });
   });
 });
