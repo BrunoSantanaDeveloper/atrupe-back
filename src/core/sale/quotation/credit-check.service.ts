@@ -62,6 +62,11 @@ export type CreditIssue =
 export type PaymentHold = {
   reason: 'PREPAYMENT' | 'CREDIT_LIMIT';
   amount: number;
+  /**
+   * Os títulos que nascem na pendência: só a entrada, ou a venda inteira
+   * (pagamento antecipado, ou a parcela à vista da condição)
+   */
+  scope: 'DOWN_PAYMENT' | 'ALL';
 } | null;
 
 /** A situação de crédito do cliente, sem venda nenhuma. */
@@ -99,6 +104,8 @@ type Parcel = {
   value: number;
   dueDate: Date | null;
   methodCode: string | null;
+  /** A entrada ou uma parcela da condição (a pendência sabe qual título nasce) */
+  kind?: 'DOWN' | 'MAIN';
 };
 
 const SAO_PAULO_DAY = new Intl.DateTimeFormat('en-CA', {
@@ -127,40 +134,46 @@ export function creditPartOf(parcels: Parcel[], reference: Date): number {
  * O pagamento que precisa entrar antes de a venda virar O.S. (PA, 12/11):
  * - "Exigir pagamento antecipado" no cliente: o total da venda, sempre,
  *   mesmo pago no Pix na hora (a aprovação com pendência gera o título);
- * - a entrada que faz a venda caber no limite: se, contada como crédito, a
- *   venda passaria do limite, a entrada é exigida antes (PA-2).
- * A parcela da condição que vence no dia segue paga no ato (14/10/2026).
+ * - o que passa do limite: o que vence no dia da aprovação (a entrada ou a
+ *   venda à vista, fora cartão) só é pago no ato se for pago de fato. Se,
+ *   contado como crédito, faz a venda passar do limite, o que passa precisa
+ *   entrar antes de liberar (Maicol, 12/11/2026: "a venda inteira no Pix à
+ *   vista deve ter pagamento adiantado do valor que excede o limite").
+ *   O que vence depois e já passa do limite é recusado (409) antes daqui.
  */
 export function holdOf(
   credit: Pick<ClientCredit, 'requirePrepayment' | 'limit' | 'used'>,
   requested: number,
   parcels: Parcel[],
-  payment: {
-    downPayment: number;
-    downPaymentAdditionalFee: number | null;
-    downPaymentDueDate: Date | null;
-    downPaymentCondition: { paymentMethod: { code: string } | null } | null;
-    finalValue?: number | null;
-  } | null,
+  payment: { finalValue?: number | null } | null,
   reference: Date,
 ): PaymentHold {
   if (!payment) return null;
   if (credit.requirePrepayment) {
     const total = parcels.reduce((sum, parcel) => sum + parcel.value, 0);
     const amount = Math.round(total || payment.finalValue || 0);
-    return amount > 0 ? { reason: 'PREPAYMENT', amount } : null;
+    return amount > 0 ? { reason: 'PREPAYMENT', amount, scope: 'ALL' } : null;
   }
-  if (credit.limit === null || !(payment.downPayment > 0)) return null;
-  const method = payment.downPaymentCondition?.paymentMethod?.code ?? '';
-  if (CARD_METHODS.includes(method) || !payment.downPaymentDueDate) return null;
+  if (credit.limit === null) return null;
   const day = SAO_PAULO_DAY.format(reference);
-  if (SAO_PAULO_DAY.format(payment.downPaymentDueDate) > day) return null;
-  const downPayment = Math.round(
-    payment.downPayment + (payment.downPaymentAdditionalFee || 0),
+  const upfront = parcels.filter(
+    (parcel) =>
+      !CARD_METHODS.includes(parcel.methodCode ?? '') &&
+      (!parcel.dueDate || SAO_PAULO_DAY.format(parcel.dueDate) <= day),
   );
-  return credit.used + requested + downPayment > credit.limit
-    ? { reason: 'CREDIT_LIMIT', amount: downPayment }
-    : null;
+  const upfrontTotal = Math.round(
+    upfront.reduce((sum, parcel) => sum + parcel.value, 0),
+  );
+  if (upfrontTotal <= 0) return null;
+  const excess = credit.used + requested + upfrontTotal - credit.limit;
+  if (excess <= 0) return null;
+  return {
+    reason: 'CREDIT_LIMIT',
+    amount: Math.min(Math.round(excess), upfrontTotal),
+    scope: upfront.some((parcel) => parcel.kind === 'MAIN')
+      ? 'ALL'
+      : 'DOWN_PAYMENT',
+  };
 }
 
 const METHOD_CODE = {
@@ -194,12 +207,14 @@ function parcelsOf(payment: PaymentParcels | null): Parcel[] {
     value: item.value + (item.additionalFee || 0),
     dueDate: item.dueDate,
     methodCode: item.paymentCondition?.paymentMethod?.code ?? null,
+    kind: 'MAIN' as const,
   }));
   if (payment.downPayment > 0) {
     parcels.push({
       value: payment.downPayment + (payment.downPaymentAdditionalFee || 0),
       dueDate: payment.downPaymentDueDate,
       methodCode: payment.downPaymentCondition?.paymentMethod?.code ?? null,
+      kind: 'DOWN',
     });
   }
   return parcels;
@@ -478,7 +493,12 @@ export class CreditCheckService {
         // é crédito comprometido. A do pagamento antecipado já tem todos
         OR: [
           { status: 'APPROVED', receivable: { none: {} } },
-          { status: 'PENDING_PAYMENT', holdReason: 'CREDIT_LIMIT' },
+          // Sem o título principal: só a entrada nasceu na pendência
+          {
+            status: 'PENDING_PAYMENT',
+            holdReason: 'CREDIT_LIMIT',
+            receivable: { none: { financialType: 'MAIN' } },
+          },
         ],
         NOT: [
           { order: { is: { status: 'CANCELED' } } },

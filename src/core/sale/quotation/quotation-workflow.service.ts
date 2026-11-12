@@ -1939,7 +1939,7 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
           quotation,
           prisma,
           {
-            only: hold.reason === 'CREDIT_LIMIT' ? 'DOWN_PAYMENT' : undefined,
+            only: hold.scope === 'DOWN_PAYMENT' ? 'DOWN_PAYMENT' : undefined,
             releasesQuotation: true,
           },
         );
@@ -2074,10 +2074,24 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
       if (manual) throw new ConflictException(HOLD_NOT_PENDING);
       return { released: false };
     }
+    // Libera quando entrou o valor exigido (o que passa do limite pode ser
+    // parte do título à vista) ou quando os títulos estão todos pagos
     if (!manual) {
       const installments = await this.heldInstallments(quotationId);
-      const open = installments.some((item) => item.status !== 'PAID');
-      if (!installments.length || open) return { released: false };
+      const allPaid =
+        installments.length > 0 &&
+        installments.every((item) => item.status === 'PAID');
+      const paid = installments
+        .filter((item) => item.status === 'PAID')
+        .reduce(
+          (sum, item) =>
+            sum + (item.paidAmount ?? item.amount + (item.additionalFee || 0)),
+          0,
+        );
+      const enough =
+        (current.holdAmount ?? 0) > 0 &&
+        Math.round(paid) >= (current.holdAmount ?? 0);
+      if (!allPaid && !enough) return { released: false };
     }
 
     const startsInProduction = await this.startsInProduction(current.companyId);

@@ -156,7 +156,11 @@ describe('CreditCheckService', () => {
       // A pendente pela entrada (PA-2) tem o resto ainda sem título
       OR: [
         { status: 'APPROVED', receivable: { none: {} } },
-        { status: 'PENDING_PAYMENT', holdReason: 'CREDIT_LIMIT' },
+        {
+          status: 'PENDING_PAYMENT',
+          holdReason: 'CREDIT_LIMIT',
+          receivable: { none: { financialType: 'MAIN' } },
+        },
       ],
     });
     expect(where.NOT).toEqual([
@@ -294,6 +298,7 @@ describe('CreditCheckService', () => {
       await expect(service.assertApproval('orc-1')).resolves.toEqual({
         reason: 'CREDIT_LIMIT',
         amount: 10000,
+        scope: 'DOWN_PAYMENT',
       });
     });
 
@@ -307,6 +312,7 @@ describe('CreditCheckService', () => {
       await expect(service.assertApproval('orc-1')).resolves.toEqual({
         reason: 'PREPAYMENT',
         amount: 30000,
+        scope: 'ALL',
       });
     });
 
@@ -337,43 +343,81 @@ describe('CreditCheckService', () => {
 
 describe('holdOf', () => {
   const base = { requirePrepayment: false, limit: 200000, used: 0 };
-  const payment = (over: Record<string, unknown> = {}) => ({
-    downPayment: 300000,
-    downPaymentAdditionalFee: 0,
-    downPaymentDueDate: APPROVAL,
-    downPaymentCondition: { paymentMethod: { code: 'PIX' } },
-    ...over,
+  const LATER = new Date('2026-11-14T15:00:00Z');
+  const down = (value: number, code = 'PIX') => ({
+    value,
+    dueDate: APPROVAL,
+    methodCode: code,
+    kind: 'DOWN' as const,
   });
+  const main = (value: number, dueDate = LATER, code = 'BOL') => ({
+    value,
+    dueDate,
+    methodCode: code,
+    kind: 'MAIN' as const,
+  });
+  const payment = {};
 
   it('o exemplo do PO: limite 2.000, venda 5.000, entrada 3.000 no ato', () => {
-    // O resto (2.000) cabe no limite; a entrada é exigida antes
-    expect(holdOf(base, 200000, [], payment(), APPROVAL)).toEqual({
+    // O resto (2.000, a prazo) cabe no limite; a entrada é exigida antes
+    expect(
+      holdOf(base, 200000, [down(300000), main(200000)], payment, APPROVAL),
+    ).toEqual({
       reason: 'CREDIT_LIMIT',
       amount: 300000,
+      scope: 'DOWN_PAYMENT',
     });
   });
 
-  it('entrada no cartão não fica pendente: a operadora garante', () => {
+  it('a venda inteira no Pix à vista exige antes só o que passa do limite (12/11)', () => {
+    expect(
+      holdOf(base, 0, [main(500000, APPROVAL, 'PIX')], payment, APPROVAL),
+    ).toEqual({ reason: 'CREDIT_LIMIT', amount: 300000, scope: 'ALL' });
+  });
+
+  it('à vista dentro do limite: sem pendência', () => {
+    expect(
+      holdOf(base, 0, [main(150000, APPROVAL, 'PIX')], payment, APPROVAL),
+    ).toBeNull();
+  });
+
+  it('cartão não fica pendente: a operadora garante', () => {
     expect(
       holdOf(
         base,
-        200000,
-        [],
-        payment({ downPaymentCondition: { paymentMethod: { code: 'CRD' } } }),
+        0,
+        [down(300000, 'CRD'), main(500000, APPROVAL, 'CRD')],
+        payment,
         APPROVAL,
       ),
     ).toBeNull();
   });
 
-  it('venda que cabe no limite com a entrada a prazo: sem pendência', () => {
+  it('a entrada maior que a diferença: exige só o que passa do limite', () => {
     expect(
-      holdOf(base, 0, [], payment({ downPayment: 100000 }), APPROVAL),
-    ).toBeNull();
+      holdOf(
+        { ...base, used: 50000 },
+        100000,
+        [down(200000), main(100000)],
+        payment,
+        APPROVAL,
+      ),
+    ).toEqual({
+      reason: 'CREDIT_LIMIT',
+      amount: 150000,
+      scope: 'DOWN_PAYMENT',
+    });
   });
 
   it('sem limite cadastrado e sem a opção: nunca fica pendente', () => {
     expect(
-      holdOf({ ...base, limit: null }, 200000, [], payment(), APPROVAL),
+      holdOf(
+        { ...base, limit: null },
+        0,
+        [main(900000, APPROVAL, 'PIX')],
+        payment,
+        APPROVAL,
+      ),
     ).toBeNull();
   });
 
@@ -382,13 +426,10 @@ describe('holdOf', () => {
       holdOf(
         { ...base, requirePrepayment: true },
         0,
-        [
-          { value: 300000, dueDate: APPROVAL, methodCode: 'PIX' },
-          { value: 200000, dueDate: APPROVAL, methodCode: 'PIX' },
-        ],
-        payment(),
+        [down(300000), main(200000)],
+        payment,
         APPROVAL,
       ),
-    ).toEqual({ reason: 'PREPAYMENT', amount: 500000 });
+    ).toEqual({ reason: 'PREPAYMENT', amount: 500000, scope: 'ALL' });
   });
 });

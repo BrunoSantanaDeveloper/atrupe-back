@@ -1062,6 +1062,7 @@ describe('QuotationWorkflowService', () => {
         mockCredit.assertApproval.mockResolvedValueOnce({
           reason: 'CREDIT_LIMIT',
           amount: 300000,
+          scope: 'DOWN_PAYMENT',
         });
         mockFinancialService.generateReceivableFromQuotation.mockImplementationOnce(
           async () => {
@@ -1098,6 +1099,7 @@ describe('QuotationWorkflowService', () => {
         mockCredit.assertApproval.mockResolvedValueOnce({
           reason: 'PREPAYMENT',
           amount: 500000,
+          scope: 'ALL',
         });
         mockFinancialService.generateReceivableFromQuotation.mockImplementationOnce(
           async () => ({ id: 'rec-hold' }),
@@ -1149,6 +1151,19 @@ describe('QuotationWorkflowService', () => {
             'order',
           ]),
         );
+      });
+
+      it('libera quando entra o valor exigido, mesmo com outra parcela em aberto', async () => {
+        prisma.quotation.findUnique.mockResolvedValue({
+          companyId: mockCompanyId,
+          status: QuotationStatus.PENDING_PAYMENT,
+          holdAmount: 300000,
+        });
+        (prisma as any).receivableInstallment.findMany.mockResolvedValue(
+          paidRows(['PAID', 'PENDING']),
+        );
+        const result = await service.releaseHold(mockQuotationId);
+        expect(result.released).toBe(true);
       });
 
       it('liberar sem o pagamento pede o motivo', async () => {
