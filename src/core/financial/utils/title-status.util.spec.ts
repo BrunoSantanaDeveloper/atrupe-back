@@ -1,5 +1,5 @@
 import { PaymentStatus } from '@prisma/client';
-import { resolveTitleStatus } from './title-status.util';
+import { resolveTitleStatus, parcelasComPagamento } from './title-status.util';
 
 describe('resolveTitleStatus', () => {
   const { PENDING, PAID, CANCELED, PROVISIONED } = PaymentStatus;
@@ -19,6 +19,36 @@ describe('resolveTitleStatus', () => {
   it('considera pago ignorando as parcelas canceladas', () => {
     expect(resolveTitleStatus([PAID, PAID])).toBe(PAID);
     expect(resolveTitleStatus([CANCELED, PAID])).toBe(PAID);
+  });
+
+  it('aponta as parcelas com pagamento registrado', () => {
+    const parcelas = [
+      { status: PENDING, paidAmount: 0 },
+      { status: PAID, paidAmount: 5000 },
+      { status: PROVISIONED, paidAmount: 0 },
+      { status: CANCELED, paidAmount: 0 },
+      { status: PENDING, paidAmount: 250 },
+    ];
+
+    // PAID e PROVISIONED entram pelo status; a pendente com valor baixado
+    // entra pelo paidAmount - sao os casos em que cancelar sumiria com
+    // dinheiro que ja esta no caixa.
+    expect(parcelasComPagamento(parcelas)).toEqual([
+      { status: PAID, paidAmount: 5000 },
+      { status: PROVISIONED, paidAmount: 0 },
+      { status: PENDING, paidAmount: 250 },
+    ]);
+  });
+
+  it('nao aponta nada quando nenhuma parcela tem pagamento', () => {
+    expect(
+      parcelasComPagamento([
+        { status: PENDING, paidAmount: 0 },
+        { status: CANCELED, paidAmount: null },
+      ]),
+    ).toEqual([]);
+    expect(parcelasComPagamento([])).toEqual([]);
+    expect(parcelasComPagamento(undefined as any)).toEqual([]);
   });
 
   it('nao decide quando as parcelas nao determinam o status', () => {

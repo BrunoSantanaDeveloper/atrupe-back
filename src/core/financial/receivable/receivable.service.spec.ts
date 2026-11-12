@@ -496,7 +496,7 @@ describe('ReceivableService', () => {
         financialType: null,
         installments: [
           { id: 'inst-1', status: 'PENDING', dueDate: new Date('2030-01-01') },
-          { id: 'inst-2', status: 'PAID', dueDate: new Date('2025-01-01') },
+          { id: 'inst-2', status: 'CANCELED', dueDate: new Date('2025-01-01') },
         ],
         client: {},
         nature: {},
@@ -517,6 +517,30 @@ describe('ReceivableService', () => {
       const txArgs = prisma.$transaction.mock.calls[0][0];
       // First item is the installment update, last is the receivable update
       expect(txArgs.length).toBe(2); // 1 PENDING installment + 1 receivable update
+    });
+
+    it('recusa cancelar titulo com parcela ja recebida', async () => {
+      // Receita recebida nao se cancela: o dinheiro entrou e esta no caixa.
+      // Para cancelar, o usuario precisa desfazer o pagamento antes.
+      prisma.receivable.findUnique.mockResolvedValue({
+        id: mockReceivableId,
+        status: 'PENDING',
+        quotationId: null,
+        financialType: null,
+        installments: [
+          { id: 'inst-1', status: 'PENDING', paidAmount: 0 },
+          { id: 'inst-2', status: 'PAID', paidAmount: 5600 },
+        ],
+        client: {},
+        nature: {},
+        subCategory: null,
+      });
+
+      await expect(
+        service.cancel(mockReceivableId, cancelDto as any, mockUserId),
+      ).rejects.toThrow('Desfaça o pagamento antes de cancelar.');
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('should record history when userId provided', async () => {

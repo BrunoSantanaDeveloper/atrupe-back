@@ -338,6 +338,29 @@ describe('OrderService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    it('recusa cancelar O.S. com parcela ja recebida', async () => {
+      // A O.S. cancela os titulos em cascata, entao e por aqui que o
+      // cancelamento sumia com dinheiro ja recebido - 8 dos 11 casos
+      // achados em producao tinham a O.S. cancelada.
+      prisma.receivableInstallment.count.mockResolvedValue(1);
+      prisma.payableInstallment.count.mockResolvedValue(0);
+      prisma.receivable.findMany.mockResolvedValue([
+        {
+          id: 'recv-1',
+          installments: [{ status: 'PAID', paidAmount: 5600 }],
+        },
+      ]);
+      prisma.payable.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.cancelOrder(mockOrderId, {}, mockSellerId),
+      ).rejects.toThrow(
+        'Desfaça o pagamento no Fluxo financeiro antes de cancelar.',
+      );
+
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
     it('should cancel pending receivable and payable installments', async () => {
       prisma.receivableInstallment.count.mockResolvedValue(3);
       prisma.payableInstallment.count.mockResolvedValue(2);
@@ -347,7 +370,7 @@ describe('OrderService', () => {
           id: 'recv-1',
           installments: [
             { status: 'PENDING' },
-            { status: 'PAID' },
+            { status: 'CANCELED' },
             { status: 'OVERDUE' },
           ],
         },
@@ -356,7 +379,7 @@ describe('OrderService', () => {
       prisma.payable.findMany.mockResolvedValue([
         {
           id: 'pay-1',
-          installments: [{ status: 'PENDING' }, { status: 'PAID' }],
+          installments: [{ status: 'PENDING' }, { status: 'CANCELED' }],
         },
       ]);
 

@@ -396,7 +396,7 @@ describe('PayableService', () => {
         financialType: null,
         installments: [
           { id: 'inst-1', status: 'PENDING', dueDate: new Date('2030-01-01') },
-          { id: 'inst-2', status: 'PAID', dueDate: new Date('2025-01-01') },
+          { id: 'inst-2', status: 'CANCELED', dueDate: new Date('2025-01-01') },
         ],
         supplier: {},
         nature: {},
@@ -413,6 +413,29 @@ describe('PayableService', () => {
 
       expect(result.message).toBe('Conta a pagar cancelada com sucesso.');
       expect(prisma.$transaction).toHaveBeenCalled();
+    });
+
+    it('recusa cancelar titulo com parcela ja paga', async () => {
+      // Despesa paga nao se cancela: o dinheiro saiu e esta no caixa.
+      prisma.payable.findUnique.mockResolvedValue({
+        id: mockPayableId,
+        status: 'PENDING',
+        quotationId: null,
+        financialType: null,
+        installments: [
+          { id: 'inst-1', status: 'PENDING', paidAmount: 0 },
+          { id: 'inst-2', status: 'PAID', paidAmount: 8000 },
+        ],
+        supplier: {},
+        nature: {},
+        subCategory: null,
+      });
+
+      await expect(
+        service.cancel(mockPayableId, cancelDto as any, mockUserId),
+      ).rejects.toThrow('Desfaça o pagamento antes de cancelar.');
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('should cancel related financials when MAIN type with quotationId', async () => {

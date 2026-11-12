@@ -23,7 +23,10 @@ import { FinancialHistoryService } from '../history/history.service';
 import { FinancialNotesUtil } from '../utils/financial-notes.util';
 import { BaseTransactionService } from '../utils/base-transaction.service';
 import { InstallmentStatusCheck } from '../utils/financial.types';
-import { resolveTitleStatus } from '../utils/title-status.util';
+import {
+  resolveTitleStatus,
+  parcelasComPagamento,
+} from '../utils/title-status.util';
 
 @Injectable()
 export class PayableService {
@@ -610,6 +613,18 @@ export class PayableService {
     // Verifica se o título já está cancelado
     if (payable.status === 'CANCELED') {
       throw new Error('A conta a pagar já foi cancelada.');
+    }
+
+    // Despesa paga nao se cancela: o dinheiro saiu e esta no caixa.
+    const pagas = parcelasComPagamento(payable.installments);
+    if (pagas.length > 0) {
+      const total = pagas.reduce(
+        (soma, parcela) => soma + (parcela.paidAmount ?? 0),
+        0,
+      );
+      throw new BadRequestException(
+        `Não é possível cancelar: esta conta tem ${pagas.length} parcela(s) com pagamento registrado (R$ ${(total / 100).toFixed(2)}). Desfaça o pagamento antes de cancelar.`,
+      );
     }
 
     // Atualiza o status de todas as parcelas com status "PENDING" para "CANCELED"

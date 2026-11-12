@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { CancelOrderDto, CreateOrderDto } from './dto/create-order.dto';
 import { PrismaService } from 'nestjs-prisma';
+import { parcelasComPagamento } from '../../financial/utils/title-status.util';
 import { FilterOrderDto } from './dto/filter.dto';
 import {
   NfceStatus,
@@ -737,6 +738,24 @@ export class OrderService {
           }),
         ]);
 
+        // A O.S. cancela os titulos dela em cascata, entao vale a mesma
+        // regra: receita recebida (ou despesa paga) nao se cancela sem
+        // antes desfazer o pagamento. Sem isso o cancelamento da O.S.
+        // virava a porta dos fundos para sumir com dinheiro do caixa.
+        const comPagamento = [
+          ...receivables.flatMap((r) => parcelasComPagamento(r.installments)),
+          ...payables.flatMap((p) => parcelasComPagamento(p.installments)),
+        ];
+        if (comPagamento.length > 0) {
+          const total = comPagamento.reduce(
+            (soma, parcela) => soma + (parcela.paidAmount ?? 0),
+            0,
+          );
+          throw new BadRequestException(
+            `Não é possível cancelar a O.S.: há ${comPagamento.length} parcela(s) com pagamento registrado (R$ ${(total / 100).toFixed(2)}). Desfaça o pagamento no Fluxo financeiro antes de cancelar.`,
+          );
+        }
+
         // Cancel pending receivable installments and mark receivables as canceled
         let canceledReceivableInstallmentsCount = 0;
         for (const receivable of receivables) {
@@ -879,6 +898,9 @@ export class OrderService {
         };
       });
     } catch (error) {
+      // Regra de negocio precisa chegar na tela com a orientacao do que
+      // fazer. Sem isso virava "Erro interno ao cancelar a ordem".
+      if (error instanceof HttpException) throw error;
       if (error instanceof PrismaClientKnownRequestError) {
         throw new BadRequestException(
           'Erro na base de dados ao cancelar a ordem.',

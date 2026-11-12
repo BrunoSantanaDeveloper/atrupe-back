@@ -1,5 +1,27 @@
 import { PaymentStatus } from '@prisma/client';
 
+type ParcelaComPagamento = {
+  status: PaymentStatus | string;
+  paidAmount?: number | null;
+};
+
+/**
+ * Parcelas com pagamento registrado: recebidas, provisionadas ou com valor
+ * baixado. Cancelar um titulo que tem uma dessas apagaria do financeiro
+ * dinheiro que ja entrou (ou saiu) e continua no caixa — o certo e desfazer
+ * o pagamento primeiro.
+ */
+export function parcelasComPagamento<T extends ParcelaComPagamento>(
+  installments: T[],
+): T[] {
+  return (installments ?? []).filter(
+    (parcela) =>
+      (parcela.paidAmount ?? 0) > 0 ||
+      parcela.status === PaymentStatus.PAID ||
+      parcela.status === PaymentStatus.PROVISIONED,
+  );
+}
+
 /**
  * Status do título a partir do status das suas parcelas.
  *

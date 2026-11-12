@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -25,7 +26,10 @@ import { FinancialHistoryService } from '../history/history.service';
 import { FinancialNotesUtil } from '../utils/financial-notes.util';
 import { BaseTransactionService } from '../utils/base-transaction.service';
 import { InstallmentStatusCheck } from '../utils/financial.types';
-import { resolveTitleStatus } from '../utils/title-status.util';
+import {
+  resolveTitleStatus,
+  parcelasComPagamento,
+} from '../utils/title-status.util';
 
 @Injectable()
 export class ReceivableService {
@@ -582,6 +586,19 @@ export class ReceivableService {
         throw new Error('A conta a receber já foi cancelada.');
       }
 
+      // Receita recebida nao se cancela: o dinheiro entrou e esta no caixa.
+      // Cancelar sumia com ele do relatorio financeiro sem estornar nada.
+      const recebidas = parcelasComPagamento(receivable.installments);
+      if (recebidas.length > 0) {
+        const total = recebidas.reduce(
+          (soma, parcela) => soma + (parcela.paidAmount ?? 0),
+          0,
+        );
+        throw new BadRequestException(
+          `Não é possível cancelar: esta conta tem ${recebidas.length} parcela(s) com pagamento registrado (R$ ${(total / 100).toFixed(2)}). Desfaça o pagamento antes de cancelar.`,
+        );
+      }
+
       // Atualiza o status de todas as parcelas com status "PENDING" para "CANCELED"
       const updates = receivable.installments
         .filter((installment) => installment.status === 'PENDING')
@@ -628,6 +645,10 @@ export class ReceivableService {
 
       return { message: 'Conta a receber cancelada com sucesso.' };
     } catch (error) {
+      // Erro de regra de negocio precisa chegar na tela: sem isso a guarda
+      // virava falha silenciosa e a tela achava que tinha cancelado. O resto
+      // segue engolido como antes (divida tecnica ja registrada nos testes).
+      if (error instanceof HttpException) throw error;
       this.logger.error('Erro ao cancelar conta a receber', error.stack);
     }
   }
