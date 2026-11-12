@@ -453,6 +453,30 @@ export class ReceivableController {
     );
   }
 
+  /**
+   * Liberar a venda sem o pagamento antecipado (PA-7, 12/11/2026): no título
+   * "⚠️ Pendência", com motivo. Por enquanto, só o administrador.
+   */
+  @Patch(':id/release-sale')
+  @TenantResource('receivable')
+  @HasAnyPermission(
+    { action: 'edit', resource: 'financial:receivable' },
+    { action: 'edit', resource: 'financial:flow' },
+  )
+  @ApiOperation({ summary: 'Libera a venda pendente sem o pagamento' })
+  async releaseSale(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.receivableService.releaseSale(id, {
+      userId: req.user.userId,
+      userName: req.user.name,
+      isAdmin: !!req.user.isAdmin,
+      reason: body?.reason,
+    });
+  }
+
   @Patch('compensate/:installmentId')
   @TenantResource('receivableInstallment', 'installmentId', 'receivable')
   @HasAnyPermission(

@@ -176,6 +176,11 @@ class CreditLimitDto {
 
   @IsBoolean()
   blockClient: boolean;
+
+  /** "Exigir pagamento antecipado" (PA-1): vem desligada */
+  @IsOptional()
+  @IsBoolean()
+  requirePrepayment?: boolean;
 }
 
 export class CreateClientDto {

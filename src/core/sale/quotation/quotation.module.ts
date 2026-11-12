@@ -28,6 +28,7 @@ import { QuickSaleService } from '../quick-sale/quick-sale.service';
 import { QuickSaleController } from '../quick-sale/quick-sale.controller';
 import { FollowUpService } from './follow-up/follow-up.service';
 import { FollowUpController } from './follow-up/follow-up.controller';
+import { PAYMENT_HOLD_RELEASER } from './payment-hold';
 
 @Module({
   imports: [
@@ -65,6 +66,8 @@ import { FollowUpController } from './follow-up/follow-up.controller';
     QuickSaleService,
     // Acompanhamento comercial (CRM fase 2)
     FollowUpService,
+    // O financeiro libera a venda pendente pela baixa (PA-6)
+    { provide: PAYMENT_HOLD_RELEASER, useExisting: QuotationWorkflowService },
   ],
   exports: [
     QuotationService,

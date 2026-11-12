@@ -8,10 +8,32 @@ const CARD_METHODS = ['CRD', 'DEB'];
 
 export const CLIENT_BLOCKED_MESSAGE =
   'Este cliente está bloqueado no cadastro.';
-export const CREDIT_LIMIT_EXCEEDED_MESSAGE =
-  'Esta venda passa do limite de crédito do cliente.';
 export const CREDIT_APPROVAL_HINT =
   'Quem pode alterar o limite ou desbloquear o cliente faz isso no cadastro do cliente.';
+
+const BRL = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+});
+export const brl = (cents: number) => BRL.format(cents / 100);
+
+/**
+ * O limite estourado diz o caminho (PA-2, 12/11/2026): quanto passa, a
+ * entrada sugerida e com quem falar para mudar o limite.
+ */
+export const creditExceededMessage = (values: {
+  limit: number;
+  used: number;
+  excess: number;
+  suggestedDownPayment: number;
+}) =>
+  [
+    `Esta venda passa ${brl(values.excess)} do limite de crédito do cliente (limite de ${brl(values.limit)}${
+      values.used > 0 ? `, com ${brl(values.used)} já em aberto` : ''
+    }).`,
+    `Sugestão: uma entrada de ${brl(values.suggestedDownPayment)}, que precisa ser paga para liberar a venda.`,
+    'Para mudar o limite, fale com o financeiro.',
+  ].join(' ');
 export const conditionNotAllowedMessage = (names: string[]) =>
   names.length === 1
     ? `A condição ${names[0]} não está entre as permitidas para este cliente.`
@@ -24,7 +46,23 @@ export type CreditIssue =
       message: string;
       conditions: { id: string; name: string }[];
     }
-  | { code: 'CREDIT_LIMIT_EXCEEDED'; message: string };
+  | {
+      code: 'CREDIT_LIMIT_EXCEEDED';
+      message: string;
+      /** Quanto a venda passa do limite (centavos) */
+      excess: number;
+      /** A entrada que resolve: a diferença, até o que a venda tem a prazo */
+      suggestedDownPayment: number;
+    };
+
+/**
+ * O que a aprovação faz quando o pagamento precisa entrar antes (PA, 12/11):
+ * a venda fica pendente até o valor exigido (centavos) ser pago.
+ */
+export type PaymentHold = {
+  reason: 'PREPAYMENT' | 'CREDIT_LIMIT';
+  amount: number;
+} | null;
 
 /** A situação de crédito do cliente, sem venda nenhuma. */
 export type ClientCredit = {
@@ -33,6 +71,8 @@ export type ClientCredit = {
   /** A aprovação é recusada (sempre, desde 11/11/2026; a tela ainda lê). */
   enforcing: boolean;
   blockClient: boolean;
+  /** "Exigir pagamento antecipado" no cadastro (PA-1) */
+  requirePrepayment: boolean;
   /** Centavos; null sem limite cadastrado (não confere). */
   limit: number | null;
   /** Parcelas em aberto no financeiro (fora as de cartão). */
@@ -51,6 +91,8 @@ export type QuotationCredit = ClientCredit & {
   /** O que desta venda é crédito. */
   requested: number;
   issues: CreditIssue[];
+  /** A aprovação, se feita agora, deixa a venda pendente deste valor (PA) */
+  hold: PaymentHold;
 };
 
 type Parcel = {
@@ -79,6 +121,46 @@ export function creditPartOf(parcels: Parcel[], reference: Date): number {
     )
     .reduce((sum, parcel) => sum + (parcel.value || 0), 0);
   return Math.round(total);
+}
+
+/**
+ * O pagamento que precisa entrar antes de a venda virar O.S. (PA, 12/11):
+ * - "Exigir pagamento antecipado" no cliente: o total da venda, sempre,
+ *   mesmo pago no Pix na hora (a aprovação com pendência gera o título);
+ * - a entrada que faz a venda caber no limite: se, contada como crédito, a
+ *   venda passaria do limite, a entrada é exigida antes (PA-2).
+ * A parcela da condição que vence no dia segue paga no ato (14/10/2026).
+ */
+export function holdOf(
+  credit: Pick<ClientCredit, 'requirePrepayment' | 'limit' | 'used'>,
+  requested: number,
+  parcels: Parcel[],
+  payment: {
+    downPayment: number;
+    downPaymentAdditionalFee: number | null;
+    downPaymentDueDate: Date | null;
+    downPaymentCondition: { paymentMethod: { code: string } | null } | null;
+    finalValue?: number | null;
+  } | null,
+  reference: Date,
+): PaymentHold {
+  if (!payment) return null;
+  if (credit.requirePrepayment) {
+    const total = parcels.reduce((sum, parcel) => sum + parcel.value, 0);
+    const amount = Math.round(total || payment.finalValue || 0);
+    return amount > 0 ? { reason: 'PREPAYMENT', amount } : null;
+  }
+  if (credit.limit === null || !(payment.downPayment > 0)) return null;
+  const method = payment.downPaymentCondition?.paymentMethod?.code ?? '';
+  if (CARD_METHODS.includes(method) || !payment.downPaymentDueDate) return null;
+  const day = SAO_PAULO_DAY.format(reference);
+  if (SAO_PAULO_DAY.format(payment.downPaymentDueDate) > day) return null;
+  const downPayment = Math.round(
+    payment.downPayment + (payment.downPaymentAdditionalFee || 0),
+  );
+  return credit.used + requested + downPayment > credit.limit
+    ? { reason: 'CREDIT_LIMIT', amount: downPayment }
+    : null;
 }
 
 const METHOD_CODE = {
@@ -154,6 +236,7 @@ export class CreditCheckService {
         id: true,
         type: true,
         blockClient: true,
+        requirePrepayment: true,
         maxValue: true,
         paymentConditions: {
           where: { isActive: true },
@@ -173,9 +256,11 @@ export class CreditCheckService {
         companyId: true,
         clientId: true,
         approvedAt: true,
+        holdAt: true,
         quotationPayment: {
           select: {
             ...PARCELS_SELECT,
+            finalValue: true,
             paymentCondition: { select: { id: true, name: true } },
             downPaymentConditionId: true,
           },
@@ -186,6 +271,7 @@ export class CreditCheckService {
             id: true,
             type: true,
             blockClient: true,
+            requirePrepayment: true,
             maxValue: true,
             paymentConditions: {
               where: { isActive: true },
@@ -203,11 +289,12 @@ export class CreditCheckService {
       quotationId,
     );
     const payment = quotation.quotationPayment;
+    const reference = quotation.approvedAt ?? quotation.holdAt ?? new Date();
     // Com título gerado, a venda já está no saldo em aberto
     const requested =
       quotation._count.receivable > 0
         ? 0
-        : creditPartOf(parcelsOf(payment), quotation.approvedAt ?? new Date());
+        : creditPartOf(parcelsOf(payment), reference);
 
     const issues: CreditIssue[] = [];
     if (credit.blockClient) {
@@ -227,27 +314,49 @@ export class CreditCheckService {
       }
     }
     if (credit.limit !== null && requested > 0) {
-      if (credit.used + requested > credit.limit) {
+      const excess = credit.used + requested - credit.limit;
+      if (excess > 0) {
+        // A entrada da diferença (PA-2): com ela paga no ato, o que fica a
+        // prazo cabe no limite. Se o cliente já passou do limite sem esta
+        // venda, a sugestão é a parte a prazo inteira
+        const suggestedDownPayment = Math.min(excess, requested);
         issues.push({
           code: 'CREDIT_LIMIT_EXCEEDED',
-          message: CREDIT_LIMIT_EXCEEDED_MESSAGE,
+          message: creditExceededMessage({
+            limit: credit.limit,
+            used: credit.used,
+            excess,
+            suggestedDownPayment,
+          }),
+          excess,
+          suggestedDownPayment,
         });
       }
     }
-    return { ...credit, requested, issues };
+    const hold =
+      credit.applies && !issues.length && quotation._count.receivable === 0
+        ? holdOf(credit, requested, parcelsOf(payment), payment, reference)
+        : null;
+    return { ...credit, requested, issues, hold };
   }
 
   /**
    * Na aprovação: recusa (409) quando o plano confere e há motivo. A
    * mensagem não leva valores: quem aprova pode não ver os do financeiro.
    */
-  async assertApproval(quotationId: string): Promise<void> {
+  async assertApproval(quotationId: string): Promise<PaymentHold> {
     const credit = await this.quotationCredit(quotationId);
-    if (!credit?.applies || !credit.issues.length) return;
+    if (!credit?.applies) return null;
+    if (!credit.issues.length) return credit.hold;
 
+    // O limite estourado já diz o caminho (PA-2); o aviso do cadastro fica
+    // para o bloqueio e a condição
+    const onlyLimit = credit.issues.every(
+      (issue) => issue.code === 'CREDIT_LIMIT_EXCEEDED',
+    );
     const message = [
       ...credit.issues.map((issue) => issue.message),
-      CREDIT_APPROVAL_HINT,
+      ...(onlyLimit ? [] : [CREDIT_APPROVAL_HINT]),
     ].join(' ');
     throw new ConflictException({
       statusCode: 409,
@@ -256,7 +365,16 @@ export class CreditCheckService {
       issues: credit.issues.map((issue) =>
         issue.code === 'CONDITION_NOT_ALLOWED'
           ? { code: issue.code, conditions: issue.conditions }
-          : { code: issue.code },
+          : issue.code === 'CREDIT_LIMIT_EXCEEDED'
+            ? {
+                code: issue.code,
+                limit: credit.limit,
+                used: credit.used,
+                requested: credit.requested,
+                excess: issue.excess,
+                suggestedDownPayment: issue.suggestedDownPayment,
+              }
+            : { code: issue.code },
       ),
     });
   }
@@ -267,6 +385,7 @@ export class CreditCheckService {
       id: string;
       type: ClientKind;
       blockClient: boolean;
+      requirePrepayment: boolean;
       maxValue: number | null;
       paymentConditions: { paymentConditionId: string }[];
     },
@@ -308,6 +427,7 @@ export class CreditCheckService {
       applies,
       enforcing: true,
       blockClient: client.blockClient,
+      requirePrepayment: client.requirePrepayment,
       limit,
       openBalance,
       pendingApproved,
@@ -354,8 +474,12 @@ export class CreditCheckService {
         clientId,
         isActive: true,
         isImported: false,
-        status: 'APPROVED',
-        receivable: { none: {} },
+        // A pendente pela entrada (PA-2) só tem o título da entrada: o resto
+        // é crédito comprometido. A do pagamento antecipado já tem todos
+        OR: [
+          { status: 'APPROVED', receivable: { none: {} } },
+          { status: 'PENDING_PAYMENT', holdReason: 'CREDIT_LIMIT' },
+        ],
         NOT: [
           { order: { is: { status: 'CANCELED' } } },
           ...(excludeQuotationId ? [{ id: excludeQuotationId }] : []),
@@ -363,6 +487,7 @@ export class CreditCheckService {
       },
       select: {
         approvedAt: true,
+        holdAt: true,
         quotationPayment: { select: PARCELS_SELECT },
       },
     });
@@ -371,7 +496,7 @@ export class CreditCheckService {
         sum +
         creditPartOf(
           parcelsOf(row.quotationPayment),
-          row.approvedAt ?? new Date(),
+          row.approvedAt ?? row.holdAt ?? new Date(),
         ),
       0,
     );

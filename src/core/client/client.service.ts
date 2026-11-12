@@ -199,6 +199,8 @@ export class ClientService {
               minValue: createClientDto.creditLimit?.minValue || 0,
               maxValue: createClientDto.creditLimit?.maxValue || 0,
               blockClient: createClientDto.creditLimit?.blockClient || false,
+              requirePrepayment:
+                createClientDto.creditLimit?.requirePrepayment || false,
               status: autoStatus,
               isBranch: createClientDto.general.isBranch || false,
               stateRegistration:
@@ -595,6 +597,7 @@ export class ClientService {
         maxValue: client.maxValue || 0,
         paymentMethods: Array.from(paymentMethodsMap.values()),
         blockClient: client.blockClient,
+        requirePrepayment: client.requirePrepayment,
       },
     };
   }
@@ -759,6 +762,8 @@ export class ClientService {
                 minValue: updateClientDto.creditLimit?.minValue,
                 maxValue: updateClientDto.creditLimit?.maxValue,
                 blockClient: updateClientDto.creditLimit?.blockClient,
+                requirePrepayment:
+                  updateClientDto.creditLimit?.requirePrepayment,
                 status: finalStatus,
                 isBranch: updateClientDto.general?.isBranch,
                 stateRegistration:

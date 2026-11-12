@@ -20,12 +20,23 @@ export class QuotationFinancialService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * Gera contas a receber a partir do orçamento
+   * Gera contas a receber a partir do orçamento.
+   *
+   * Pagamento antecipado (PA, 12/11/2026): na venda pendente pela entrada
+   * nasce só o título da entrada (`only: 'DOWN_PAYMENT'`); na liberação, o
+   * resto, sem a entrada (`skipDownPayment`). O título que libera a venda
+   * leva `releasesQuotation` ("⚠️ Pendência" no financeiro).
    */
   async generateReceivableFromQuotation(
     quotation: QuotationForFinancial,
     prisma: Prisma.TransactionClient,
+    options: {
+      only?: 'DOWN_PAYMENT';
+      skipDownPayment?: boolean;
+      releasesQuotation?: boolean;
+    } = {},
   ) {
+    const releasesQuotation = !!options.releasesQuotation;
     const quotationInstallments =
       quotation.quotationPayment.quotationInstallment;
     const downPayment = quotation.quotationPayment.downPayment;
@@ -34,7 +45,10 @@ export class QuotationFinancialService {
       quotation.quotationPayment.downPaymentAdditionalFee;
     const paymentCondition =
       quotation?.quotationPayment?.downPaymentConditionId ?? null;
-    if (!quotationInstallments || quotationInstallments.length === 0) {
+    if (
+      options.only !== 'DOWN_PAYMENT' &&
+      (!quotationInstallments || quotationInstallments.length === 0)
+    ) {
       throw new BadRequestException(
         'Não há parcelas para gerar contas a receber.',
       );
@@ -67,19 +81,20 @@ export class QuotationFinancialService {
       discountTotal +
       commissionTotal -
       (quotation.quotationPayment.downPayment || 0);
-    const installmentsBaseSum = quotationInstallments.reduce(
+    const installmentsBaseSum = (quotationInstallments ?? []).reduce(
       (sum: number, inst: QuotationInstallment) => sum + inst.value,
       0,
     );
-    const installmentsFeeSum = quotationInstallments.reduce(
+    const installmentsFeeSum = (quotationInstallments ?? []).reduce(
       (sum: number, inst: QuotationInstallment) =>
         sum + (inst.additionalFee || 0),
       0,
     );
 
-    let effectiveInstallments = quotationInstallments;
+    let effectiveInstallments = quotationInstallments ?? [];
     if (
       expectedTotal > 0 &&
+      installmentsBaseSum > 0 &&
       installmentsFeeSum === 0 &&
       Math.abs(installmentsBaseSum - expectedTotal) > 1
     ) {
@@ -134,8 +149,9 @@ export class QuotationFinancialService {
       const defaultBankAccountId = defaultBankAccount?.id || null;
 
       // Criar entrada se houver
-      if (downPayment && downPayment > 0) {
-        const receivableDownPayment = await prisma.receivable.create({
+      let receivableDownPayment = null;
+      if (downPayment && downPayment > 0 && !options.skipDownPayment) {
+        receivableDownPayment = await prisma.receivable.create({
           data: {
             referenceDate: new Date(),
             description: `Entrada da venda ${quotation.quotationNumber}-${quotation.series.code} - ${quotation.description || ''}`,
@@ -151,6 +167,7 @@ export class QuotationFinancialService {
             subCategoryId: subCategoryId,
             quotationId: quotation.id,
             financialType: 'DOWN_PAYMENT',
+            releasesQuotation,
           },
         });
         await prisma.receivableInstallment.create({
@@ -166,6 +183,15 @@ export class QuotationFinancialService {
             paidDate: null,
           },
         });
+      }
+
+      if (options.only === 'DOWN_PAYMENT') {
+        if (!receivableDownPayment) {
+          throw new BadRequestException(
+            'Esta venda não tem entrada para gerar o título do pagamento antecipado.',
+          );
+        }
+        return receivableDownPayment;
       }
 
       // Criar o Receivable principal
@@ -185,6 +211,7 @@ export class QuotationFinancialService {
           subCategoryId: subCategoryId,
           quotationId: quotation.id,
           financialType: 'MAIN',
+          releasesQuotation,
         },
       });
 
@@ -210,6 +237,7 @@ export class QuotationFinancialService {
 
       return receivable;
     } catch (error) {
+      if (error instanceof BadRequestException) throw error;
       this.logger.error('Erro ao gerar contas a receber:', error.stack);
       throw new Error(
         'Erro ao gerar contas a receber. Detalhes: ' + error.message,

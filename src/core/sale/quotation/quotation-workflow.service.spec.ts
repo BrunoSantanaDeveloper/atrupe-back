@@ -4,6 +4,7 @@ import {
   DOWN_PAYMENT_DUE_DATE_REQUIRED,
   INACTIVE_PRODUCT_ITEMS,
   PAYMENT_CONDITION_REQUIRED,
+  ApprovedOrder,
   QuotationWorkflowService,
 } from './quotation-workflow.service';
 import { ProductSaleService } from '../../assembly/product-sale.service';
@@ -547,7 +548,7 @@ describe('QuotationWorkflowService', () => {
     it('aprova numa transação só: status, O.S., agenda e financeiro', async () => {
       const result = await service.approve(mockQuotationId, mockUserId);
 
-      expect(result.id).toBe(mockOrderId);
+      expect((result as ApprovedOrder).id).toBe(mockOrderId);
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(committed).toEqual([
         'quotation:APPROVED',
@@ -595,7 +596,7 @@ describe('QuotationWorkflowService', () => {
       expect(calls.indexOf('productionProject')).toBeGreaterThan(
         calls.indexOf('snapshots'),
       );
-      expect(result.productionProject).toEqual({
+      expect((result as ApprovedOrder).productionProject).toEqual({
         id: 'pj-1',
         tasks: 3,
         status: 'STANDBY',
@@ -609,8 +610,8 @@ describe('QuotationWorkflowService', () => {
 
       const result = await service.approve(mockQuotationId, mockUserId);
 
-      expect(result.id).toBe(mockOrderId);
-      expect(result.productionProject).toBeNull();
+      expect((result as ApprovedOrder).id).toBe(mockOrderId);
+      expect((result as ApprovedOrder).productionProject).toBeNull();
     });
 
     it('falha no financeiro desfaz a aprovação inteira: nada fica APPROVED', async () => {
@@ -763,7 +764,7 @@ describe('QuotationWorkflowService', () => {
 
       const result = await service.approve(mockQuotationId, mockUserId);
 
-      expect(result.id).toBe(mockOrderId);
+      expect((result as ApprovedOrder).id).toBe(mockOrderId);
       expect(committed).toContain('quotation:APPROVED');
       expect(logError).toHaveBeenCalled();
     });
@@ -1029,12 +1030,135 @@ describe('QuotationWorkflowService', () => {
 
       const result = await service.approve(mockQuotationId, mockUserId);
 
-      expect(result.id).toBe(mockOrderId);
+      expect((result as ApprovedOrder).id).toBe(mockOrderId);
       expect(committed).toContain('quotation:APPROVED');
       expect(prisma.quotationItemLine.findMany).toHaveBeenCalled();
       expect(logError).toHaveBeenCalledWith(
         expect.stringContaining('snapshots não criado'),
       );
+    });
+
+    // Pagamento antecipado (PA, 12/11/2026)
+    describe('com pendência de pagamento', () => {
+      const paidRows = (statuses: string[]) =>
+        statuses.map((status, index) => ({
+          id: `inst-${index}`,
+          status,
+          amount: 300000,
+          additionalFee: 0,
+          paidAmount: status === 'PAID' ? 300000 : null,
+          dueDate: new Date(),
+          installmentNumber: 1,
+          receivableId: 'rec-hold',
+        }));
+
+      beforeEach(() => {
+        (prisma as any).receivableInstallment = {
+          findMany: jest.fn().mockResolvedValue(paidRows(['PENDING'])),
+        };
+      });
+
+      it('a entrada exigida: fica pendente, sem O.S., só com o título da entrada', async () => {
+        mockCredit.assertApproval.mockResolvedValueOnce({
+          reason: 'CREDIT_LIMIT',
+          amount: 300000,
+        });
+        mockFinancialService.generateReceivableFromQuotation.mockImplementationOnce(
+          async () => {
+            pending.push('receivable');
+            return { id: 'rec-hold' };
+          },
+        );
+
+        const result = await service.approve(mockQuotationId, mockUserId);
+
+        expect(result).toEqual({
+          pendingPayment: true,
+          quotationId: mockQuotationId,
+          holdReason: 'CREDIT_LIMIT',
+          holdAmount: 300000,
+          receivableId: 'rec-hold',
+        });
+        expect(committed).toEqual([
+          `quotation:${QuotationStatus.PENDING_PAYMENT}`,
+          'receivable',
+        ]);
+        expect(
+          mockFinancialService.generateReceivableFromQuotation,
+        ).toHaveBeenCalledWith(txQuotation, expect.anything(), {
+          only: 'DOWN_PAYMENT',
+          releasesQuotation: true,
+        });
+        expect(prisma.quotationHistory.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ action: 'PENDING_PAYMENT' }),
+        });
+      });
+
+      it('o cliente com pagamento antecipado: o título da venda inteira', async () => {
+        mockCredit.assertApproval.mockResolvedValueOnce({
+          reason: 'PREPAYMENT',
+          amount: 500000,
+        });
+        mockFinancialService.generateReceivableFromQuotation.mockImplementationOnce(
+          async () => ({ id: 'rec-hold' }),
+        );
+        await service.approve(mockQuotationId, mockUserId);
+        expect(
+          mockFinancialService.generateReceivableFromQuotation,
+        ).toHaveBeenCalledWith(txQuotation, expect.anything(), {
+          only: undefined,
+          releasesQuotation: true,
+        });
+      });
+
+      it('a venda já pendente não se aprova de novo', async () => {
+        prisma.quotation.findUnique.mockImplementation(async () =>
+          currentQuotation({ status: QuotationStatus.PENDING_PAYMENT }),
+        );
+        await expect(
+          service.approve(mockQuotationId, mockUserId),
+        ).rejects.toThrow(ConflictException);
+      });
+
+      it('a liberação espera o título pago', async () => {
+        prisma.quotation.findUnique.mockResolvedValue({
+          companyId: mockCompanyId,
+          status: QuotationStatus.PENDING_PAYMENT,
+          holdAmount: 300000,
+        });
+        await expect(service.releaseHold(mockQuotationId)).resolves.toEqual({
+          released: false,
+        });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('título pago: a venda é aprovada de fato e vira O.S.', async () => {
+        prisma.quotation.findUnique.mockResolvedValue({
+          companyId: mockCompanyId,
+          status: QuotationStatus.PENDING_PAYMENT,
+          holdAmount: 300000,
+        });
+        (prisma as any).receivableInstallment.findMany.mockResolvedValue(
+          paidRows(['PAID']),
+        );
+        const result = await service.releaseHold(mockQuotationId);
+        expect(result).toEqual({ released: true, orderId: mockOrderId });
+        expect(committed).toEqual(
+          expect.arrayContaining([
+            `quotation:${QuotationStatus.APPROVED}`,
+            'order',
+          ]),
+        );
+      });
+
+      it('liberar sem o pagamento pede o motivo', async () => {
+        await expect(
+          service.releaseHold(mockQuotationId, {
+            userId: mockUserId,
+            manualReason: '  ',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
     });
   });
 
@@ -1311,6 +1435,65 @@ describe('QuotationWorkflowService', () => {
       await expect(
         service.reject('invalid-id', {}, mockUserId),
       ).rejects.toThrow(NotFoundException);
+    });
+    it('venda pendente com algo recebido: recusa e diz para estornar (PA-8)', async () => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        ...mockQuotation,
+        status: QuotationStatus.PENDING_PAYMENT,
+      });
+      (prisma as any).receivableInstallment = {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'inst-1',
+            status: 'PAID',
+            amount: 300000,
+            additionalFee: 0,
+            paidAmount: 300000,
+            receivableId: 'rec-hold',
+          },
+        ]),
+      };
+      const error = await service
+        .reject(mockQuotationId, {}, mockUserId)
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.message).toContain('estorne o recebimento');
+      expect(prisma.quotation.update).not.toHaveBeenCalled();
+    });
+
+    it('venda pendente sem nada recebido: cancela o título "⚠️ Pendência"', async () => {
+      prisma.quotation.findUnique.mockResolvedValue({
+        ...mockQuotation,
+        status: QuotationStatus.PENDING_PAYMENT,
+      });
+      prisma.quotation.update.mockResolvedValue({
+        ...mockQuotation,
+        status: QuotationStatus.REJECTED,
+      });
+      const updateMany = jest.fn().mockReturnValue('op');
+      (prisma as any).receivableInstallment = {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'inst-1',
+            status: 'PENDING',
+            amount: 300000,
+            additionalFee: 0,
+            paidAmount: null,
+            receivableId: 'rec-hold',
+          },
+        ]),
+        updateMany,
+      };
+      (prisma as any).receivable.updateMany = jest.fn().mockReturnValue('op');
+      (prisma as any).receivableHistory = { create: jest.fn() };
+      prisma.$transaction.mockResolvedValue([]);
+
+      await service.reject(mockQuotationId, {}, mockUserId);
+
+      expect((prisma as any).receivable.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['rec-hold'] } },
+        data: { status: 'CANCELED', cancelReason: 'Venda pendente rejeitada' },
+      });
     });
   });
 

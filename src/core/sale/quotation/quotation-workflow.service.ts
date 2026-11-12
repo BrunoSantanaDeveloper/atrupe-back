@@ -38,7 +38,15 @@ import {
   CLIENT_BLOCKED_MESSAGE,
   CREDIT_APPROVAL_HINT,
   CreditCheckService,
+  PaymentHold,
+  brl,
 } from './credit-check.service';
+import {
+  HOLD_NOT_PENDING,
+  HOLD_RELEASE_REASON_REQUIRED,
+  PaymentHoldReleaser,
+  ReleaseOptions,
+} from './payment-hold';
 import { ProductionProjectService } from '../../production/production-project.service';
 import { snapshotStages } from './item-origin';
 import {
@@ -48,6 +56,12 @@ import {
 } from '../quick-sale/quick-sale.rules';
 
 export const ALREADY_APPROVED_MESSAGE = 'Este orçamento já está aprovado.';
+export const ALREADY_PENDING_PAYMENT =
+  'Esta venda já está pendente de pagamento: ela é aprovada quando o título "⚠️ Pendência" for pago no financeiro.';
+export const PENDING_PAYMENT_LOCKED =
+  'Esta venda está pendente de pagamento. Para mudar algo, volte a venda para digitação: o título "⚠️ Pendência" é cancelado.';
+export const holdPaidMessage = (paid: number) =>
+  `Esta venda já tem ${brl(paid)} recebido do pagamento antecipado. Para desistir, estorne o recebimento no financeiro (título "⚠️ Pendência") e tente de novo.`;
 export const ONLY_SEND_TO_CASH =
   'Seu perfil só envia a venda ao caixa: a forma de pagamento e o faturamento ficam com o caixa';
 export const PAYMENT_CONDITION_REQUIRED =
@@ -132,6 +146,18 @@ export type ApprovedOrder = Order & {
   productionProject: { id: string; tasks: number; status: string } | null;
 };
 
+/**
+ * A aprovação com pendência (PA-4): a venda espera o pagamento, sem O.S.
+ * A tela reconhece pelo `pendingPayment`.
+ */
+export type HeldSale = {
+  pendingPayment: true;
+  quotationId: string;
+  holdReason: 'PREPAYMENT' | 'CREDIT_LIMIT';
+  holdAmount: number;
+  receivableId: string;
+};
+
 /** Quanto existe de cada passo da aprovação; o reprocesso compara antes e depois. */
 type ApprovalState = {
   order: number;
@@ -157,7 +183,7 @@ export type ApprovalReprocessResult = {
  * Responsável por mudanças de status e workflow do orçamento.
  */
 @Injectable()
-export class QuotationWorkflowService {
+export class QuotationWorkflowService implements PaymentHoldReleaser {
   private readonly logger = new Logger(QuotationWorkflowService.name);
 
   constructor(
@@ -503,15 +529,16 @@ export class QuotationWorkflowService {
     quotation: QuotationForFinancial,
     prisma: Prisma.TransactionClient,
   ): Promise<void> {
-    const [existingReceivables, existingPayables] = await Promise.all([
+    const [existingReceivables, existingPayables, held] = await Promise.all([
       prisma.receivable.findMany({
-        where: { quotationId },
+        where: { quotationId, releasesQuotation: false },
         select: { id: true },
       }),
       prisma.payable.findMany({
         where: { quotationId, financialType: NOT_OUTSOURCED },
         select: { id: true },
       }),
+      this.heldReceivableTypes(quotationId, prisma),
     ]);
 
     if (
@@ -519,15 +546,45 @@ export class QuotationWorkflowService {
       existingPayables.length === 0 &&
       quotation.quotationPayment?.billing === 'ON_ORDER'
     ) {
-      await this.financialService.generateReceivableFromQuotation(
-        quotation,
-        prisma,
-      );
+      await this.generateRestOfReceivables(quotation, held, prisma);
       await this.financialService.generatePayableFromQuotation(
         quotation,
         prisma,
       );
     }
+  }
+
+  /**
+   * Os tipos de título "⚠️ Pendência" que a venda já tem (PA-5): a
+   * liberação gera só o resto.
+   */
+  private async heldReceivableTypes(
+    quotationId: string,
+    prisma: Prisma.TransactionClient,
+  ): Promise<string[]> {
+    const rows = await prisma.receivable.findMany({
+      where: {
+        quotationId,
+        releasesQuotation: true,
+        status: { not: 'CANCELED' },
+      },
+      select: { financialType: true },
+    });
+    return rows.map((row) => row.financialType);
+  }
+
+  /** O título da venda sem o que já nasceu com a pendência. */
+  private async generateRestOfReceivables(
+    quotation: QuotationForFinancial,
+    held: string[],
+    prisma: Prisma.TransactionClient,
+  ) {
+    if (held.includes('MAIN')) return null;
+    return this.financialService.generateReceivableFromQuotation(
+      quotation,
+      prisma,
+      { skipDownPayment: held.includes('DOWN_PAYMENT') },
+    );
   }
 
   // =====================================================
@@ -556,7 +613,7 @@ export class QuotationWorkflowService {
     userId?: string,
     approvedAt?: Date,
     options: { creditCheck?: boolean; charge?: QuickSaleCharge } = {},
-  ): Promise<ApprovedOrder> {
+  ): Promise<ApprovedOrder | HeldSale> {
     const current = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       select: {
@@ -613,6 +670,9 @@ export class QuotationWorkflowService {
     }
     if (current.status === QuotationStatus.APPROVED) {
       throw new ConflictException(ALREADY_APPROVED_MESSAGE);
+    }
+    if (current.status === QuotationStatus.PENDING_PAYMENT) {
+      throw new ConflictException(ALREADY_PENDING_PAYMENT);
     }
     // Enviar ao caixa só com a frente de caixa no plano: senão a venda
     // ficaria numa fila que ninguém atende. Sem ela, resta o "Cobrar"
@@ -708,9 +768,13 @@ export class QuotationWorkflowService {
     ) {
       await this.validateClientForApproval(current.client, userId, this.prisma);
     }
+    // O crédito recusa, ou pede o pagamento antes (PA, 12/11/2026). A
+    // frente de caixa já recebe antes de liberar (PA-9)
+    let hold: PaymentHold = null;
     if (options.creditCheck !== false && !atCheckout) {
-      await this.credit.assertApproval(quotationId);
+      hold = await this.credit.assertApproval(quotationId);
     }
+    if (hold) return this.holdForPayment(quotationId, hold, userId);
 
     const startsInProduction = await this.startsInProduction(current.companyId);
 
@@ -721,7 +785,12 @@ export class QuotationWorkflowService {
         const claimed = await prisma.quotation.updateMany({
           where: {
             id: quotationId,
-            status: { not: QuotationStatus.APPROVED },
+            status: {
+              notIn: [
+                QuotationStatus.APPROVED,
+                QuotationStatus.PENDING_PAYMENT,
+              ],
+            },
           },
           data: {
             status: QuotationStatus.APPROVED,
@@ -1224,7 +1293,7 @@ export class QuotationWorkflowService {
       async (prisma) => {
         const [existingReceivables, existingPayables] = await Promise.all([
           prisma.receivable.findMany({
-            where: { quotationId },
+            where: { quotationId, releasesQuotation: false },
             select: { id: true },
           }),
           prisma.payable.findMany({
@@ -1309,11 +1378,11 @@ export class QuotationWorkflowService {
 
         let receivable = null;
         if (quotation.quotationPayment.billing !== 'NO_INVOICE') {
-          receivable =
-            await this.financialService.generateReceivableFromQuotation(
-              quotation,
-              prisma,
-            );
+          receivable = await this.generateRestOfReceivables(
+            quotation,
+            await this.heldReceivableTypes(quotationId, prisma),
+            prisma,
+          );
         }
 
         const payable =
@@ -1547,6 +1616,10 @@ export class QuotationWorkflowService {
         'Não é possível rejeitar um orçamento com status aprovado.',
       );
     }
+    // Desistir da venda pendente cancela o título "⚠️ Pendência" (PA-8)
+    if (quotation.status === QuotationStatus.PENDING_PAYMENT) {
+      await this.cancelHold(quotationId, 'Venda pendente rejeitada', userId);
+    }
 
     if (!dto.reasonId) {
       const updatedQuotation = await this.prisma.quotation.update({
@@ -1677,6 +1750,9 @@ export class QuotationWorkflowService {
         'Não é possível concluir um orçamento com status aprovado.',
       );
     }
+    if (quotation.status === QuotationStatus.PENDING_PAYMENT) {
+      throw new BadRequestException(PENDING_PAYMENT_LOCKED);
+    }
     await this.assertComposedReady(quotationId, 'concluir');
 
     // Concluir sem condição de pagamento (sem as parcelas) pode, decisão de
@@ -1767,6 +1843,14 @@ export class QuotationWorkflowService {
         'Não é possível abrir um orçamento com status aprovado.',
       );
     }
+    // Voltar a venda pendente para digitação cancela o título (PA-8)
+    if (quotation.status === QuotationStatus.PENDING_PAYMENT) {
+      await this.cancelHold(
+        quotationId,
+        'Venda pendente voltou para digitação',
+        userId,
+      );
+    }
 
     try {
       const updatedQuotation = await this.prisma.quotation.update({
@@ -1775,6 +1859,9 @@ export class QuotationWorkflowService {
           status: QuotationStatus.OPEN,
           finishedAt: null,
           dueDate: null,
+          holdReason: null,
+          holdAmount: null,
+          holdAt: null,
           reasons: {
             disconnect: true,
           },
@@ -1801,5 +1888,304 @@ export class QuotationWorkflowService {
       );
       throw new BadRequestException('Erro ao reabrir o orçamento.');
     }
+  }
+
+  // =====================================================
+  // PAGAMENTO ANTECIPADO (PA, 12/11/2026)
+  // =====================================================
+
+  /**
+   * A aprovação com pendência (PA-4): a venda fica PENDING_PAYMENT, sem O.S.,
+   * agenda nem produção, e nasce só o título do valor exigido, marcado
+   * "⚠️ Pendência" (PA-5): a entrada (limite) ou a venda inteira (cliente
+   * com "Exigir pagamento antecipado"). Sempre passa por aqui, mesmo pago
+   * no Pix na hora: a baixa do título é que libera (decisão de 12/11).
+   */
+  private async holdForPayment(
+    quotationId: string,
+    hold: NonNullable<PaymentHold>,
+    userId?: string,
+  ): Promise<HeldSale> {
+    const receivable = await this.prisma.$transaction(
+      async (prisma) => {
+        const claimed = await prisma.quotation.updateMany({
+          where: {
+            id: quotationId,
+            status: {
+              notIn: [
+                QuotationStatus.APPROVED,
+                QuotationStatus.PENDING_PAYMENT,
+              ],
+            },
+          },
+          data: {
+            status: QuotationStatus.PENDING_PAYMENT,
+            holdReason: hold.reason,
+            holdAmount: hold.amount,
+            holdAt: new Date(),
+            holdReleasedAt: null,
+            holdReleaseNote: null,
+            holdReleasedBy: null,
+          },
+        });
+        if (claimed.count === 0) {
+          throw new ConflictException(ALREADY_PENDING_PAYMENT);
+        }
+        const quotation = await prisma.quotation.findUniqueOrThrow({
+          where: { id: quotationId },
+          include: APPROVAL_INCLUDE,
+        });
+        return this.financialService.generateReceivableFromQuotation(
+          quotation,
+          prisma,
+          {
+            only: hold.reason === 'CREDIT_LIMIT' ? 'DOWN_PAYMENT' : undefined,
+            releasesQuotation: true,
+          },
+        );
+      },
+      { timeout: 20000 },
+    );
+
+    if (userId) {
+      const userName = await this.resolveUserName(userId);
+      await this.createQuotationHistoryEntry({
+        quotationId,
+        action: 'PENDING_PAYMENT',
+        description: `${
+          hold.reason === 'PREPAYMENT'
+            ? 'Venda aprovada com pagamento antecipado'
+            : 'Venda aprovada com entrada'
+        } por ${userName || 'Usuário'}: aguarda ${brl(hold.amount)} no financeiro para virar ordem de serviço`,
+        metadata: { holdReason: hold.reason, holdAmount: hold.amount },
+        createdBy: userId,
+        createdByName: userName,
+      });
+    }
+
+    return {
+      pendingPayment: true,
+      quotationId,
+      holdReason: hold.reason,
+      holdAmount: hold.amount,
+      receivableId: receivable.id,
+    };
+  }
+
+  /** As parcelas dos títulos "⚠️ Pendência" ativos da venda. */
+  private async heldInstallments(quotationId: string) {
+    return this.prisma.receivableInstallment.findMany({
+      where: {
+        status: { not: 'CANCELED' },
+        receivable: {
+          quotationId,
+          releasesQuotation: true,
+          status: { not: 'CANCELED' },
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+        amount: true,
+        additionalFee: true,
+        paidAmount: true,
+        dueDate: true,
+        installmentNumber: true,
+        receivableId: true,
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+  }
+
+  /**
+   * A situação da pendência, para a faixa do orçamento e a aba Pendente. Se
+   * o título já foi pago e a liberação não rodou (falha depois da baixa),
+   * libera aqui.
+   */
+  async paymentHold(quotationId: string, userId?: string) {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: {
+        status: true,
+        holdReason: true,
+        holdAmount: true,
+        holdAt: true,
+        holdReleasedAt: true,
+        holdReleaseNote: true,
+        holdReleasedBy: true,
+      },
+    });
+    if (!quotation) {
+      throw new NotFoundException(
+        `Orçamento com ID '${quotationId}' não encontrado.`,
+      );
+    }
+    if (quotation.status === QuotationStatus.PENDING_PAYMENT) {
+      const { released } = await this.releaseHold(quotationId, { userId });
+      if (released) return this.paymentHold(quotationId);
+    }
+    const installments = quotation.holdReason
+      ? await this.heldInstallments(quotationId)
+      : [];
+    const paid = installments
+      .filter((item) => item.status === 'PAID')
+      .reduce(
+        (sum, item) =>
+          sum + (item.paidAmount ?? item.amount + (item.additionalFee || 0)),
+        0,
+      );
+    return {
+      pending: quotation.status === QuotationStatus.PENDING_PAYMENT,
+      reason: quotation.holdReason,
+      amount: quotation.holdAmount,
+      paid: Math.round(paid),
+      since: quotation.holdAt,
+      releasedAt: quotation.holdReleasedAt,
+      releaseNote: quotation.holdReleaseNote,
+      releasedBy: quotation.holdReleasedBy,
+      receivableIds: [...new Set(installments.map((i) => i.receivableId))],
+      installments,
+    };
+  }
+
+  /**
+   * Libera a venda pendente (PA-6 e PA-7): com os títulos "⚠️ Pendência"
+   * pagos, ou sem o pagamento, com o motivo (no financeiro). A venda é
+   * aprovada de fato: O.S., agenda, o resto do financeiro e a produção.
+   */
+  async releaseHold(
+    quotationId: string,
+    options: ReleaseOptions = {},
+  ): Promise<{ released: boolean; orderId?: string }> {
+    const manual = options.manualReason !== undefined;
+    if (manual && !options.manualReason?.trim()) {
+      throw new BadRequestException(HOLD_RELEASE_REASON_REQUIRED);
+    }
+    const current = await this.prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: { companyId: true, status: true, holdAmount: true },
+    });
+    if (!current) {
+      throw new NotFoundException(
+        `Orçamento com ID '${quotationId}' não encontrado.`,
+      );
+    }
+    if (current.status !== QuotationStatus.PENDING_PAYMENT) {
+      if (manual) throw new ConflictException(HOLD_NOT_PENDING);
+      return { released: false };
+    }
+    if (!manual) {
+      const installments = await this.heldInstallments(quotationId);
+      const open = installments.some((item) => item.status !== 'PAID');
+      if (!installments.length || open) return { released: false };
+    }
+
+    const startsInProduction = await this.startsInProduction(current.companyId);
+    const userName = options.userId
+      ? await this.resolveUserName(options.userId)
+      : null;
+    const order = await this.prisma.$transaction(
+      async (prisma) => {
+        const claimed = await prisma.quotation.updateMany({
+          where: { id: quotationId, status: QuotationStatus.PENDING_PAYMENT },
+          data: {
+            status: QuotationStatus.APPROVED,
+            approvedAt: new Date(),
+            holdReleasedAt: new Date(),
+            ...(manual
+              ? {
+                  holdReleaseNote: options.manualReason.trim(),
+                  holdReleasedBy: userName || options.userId || null,
+                }
+              : {}),
+          },
+        });
+        // Duas baixas ao mesmo tempo: a segunda encontra a venda liberada
+        if (claimed.count === 0) return null;
+        const quotation = await prisma.quotation.findUniqueOrThrow({
+          where: { id: quotationId },
+          include: APPROVAL_INCLUDE,
+        });
+        return this.completeApproval(quotation, startsInProduction, prisma);
+      },
+      { timeout: 20000 },
+    );
+    if (!order) return { released: false };
+
+    for (const failure of await this.afterApproval(quotationId)) {
+      this.logger.error(
+        `${failure.step} não criado na liberação da venda ${quotationId} (o reprocesso refaz): ${failure.message}`,
+      );
+    }
+
+    const description = manual
+      ? `Venda liberada sem o pagamento antecipado por ${userName || 'Usuário'}: ${options.manualReason.trim()}`
+      : `Pagamento antecipado de ${brl(current.holdAmount ?? 0)} recebido; venda aprovada`;
+    await this.createQuotationHistoryEntry({
+      quotationId,
+      action: manual ? 'HOLD_RELEASED_MANUALLY' : 'HOLD_PAID',
+      description,
+      metadata: manual ? { reason: options.manualReason.trim() } : undefined,
+      createdBy: options.userId,
+      createdByName: userName,
+    });
+    await this.createOrderHistoryEntry({
+      orderId: order.id,
+      action: 'CREATED',
+      description: manual
+        ? 'Ordem de serviço criada na liberação sem o pagamento antecipado'
+        : 'Ordem de serviço criada com o pagamento antecipado recebido',
+      metadata: { quotationId },
+      createdBy: options.userId,
+      createdByName: userName,
+    });
+    return { released: true, orderId: order.id };
+  }
+
+  /**
+   * Cancela os títulos "⚠️ Pendência" da venda que desiste ou volta para
+   * digitação (PA-8). Com algo já recebido, recusa e diz o caminho.
+   */
+  private async cancelHold(
+    quotationId: string,
+    reason: string,
+    userId?: string,
+  ): Promise<void> {
+    const installments = await this.heldInstallments(quotationId);
+    const paid = installments
+      .filter((item) => item.status === 'PAID')
+      .reduce(
+        (sum, item) =>
+          sum + (item.paidAmount ?? item.amount + (item.additionalFee || 0)),
+        0,
+      );
+    if (paid > 0)
+      throw new ConflictException(holdPaidMessage(Math.round(paid)));
+    const receivableIds = [...new Set(installments.map((i) => i.receivableId))];
+    if (!receivableIds.length) return;
+    const userName = userId ? await this.resolveUserName(userId) : null;
+    await this.prisma.$transaction([
+      this.prisma.receivableInstallment.updateMany({
+        where: { receivableId: { in: receivableIds }, status: { not: 'PAID' } },
+        data: { status: 'CANCELED' },
+      }),
+      this.prisma.receivable.updateMany({
+        where: { id: { in: receivableIds } },
+        data: { status: 'CANCELED', cancelReason: reason },
+      }),
+      ...(userId
+        ? receivableIds.map((receivableId) =>
+            this.prisma.receivableHistory.create({
+              data: {
+                receivableId,
+                action: 'CANCEL',
+                description: reason,
+                createdBy: userId,
+                createdByName: userName,
+              },
+            }),
+          )
+        : []),
+    ]);
   }
 }

@@ -391,6 +391,8 @@ model Client {
   type              ClientKind               @default(PERSON)
   categoryId        String?
   blockClient       Boolean                  @default(false)
+  /// "Exigir pagamento antecipado" (PA-1, 12/11/2026): a venda só vira O.S. depois de paga
+  requirePrepayment Boolean                  @default(false)
   maxValue          Float?
   minValue          Float?
   supplierId        String?
@@ -860,6 +862,8 @@ model Receivable {
   mainAdditionalFee Float?
   financialType     FinancialType           @default(MAIN)
   isImported        Boolean                 @default(false)
+  /// O título que libera a venda pendente (PA-5, "⚠️ Pendência")
+  releasesQuotation Boolean                 @default(false)
   history           ReceivableHistory[]
   installments      ReceivableInstallment[]
   client            Client?                 @relation(fields: [clientId], references: [id])
@@ -1399,17 +1403,17 @@ model QuotationTag {
 }
 
 model Quotation {
-  id                String             @id @default(uuid())
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime?          @updatedAt
+  id                String               @id @default(uuid())
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime?            @updatedAt
   description       String?
-  isActive          Boolean            @default(true)
+  isActive          Boolean              @default(true)
   sellerId          String
   seriesId          String?
   clientId          String?
   companyId         String
-  status            QuotationStatus    @default(OPEN)
-  totalValue        Float              @default(0)
+  status            QuotationStatus      @default(OPEN)
+  totalValue        Float                @default(0)
   dueDate           DateTime?
   approvedAt        DateTime?
   contactSourceId   String?
@@ -1418,10 +1422,10 @@ model Quotation {
   // ficou combinado
   nextContactAt     DateTime?
   nextContactNote   String?
-  quickSale         Boolean            @default(false)
+  quickSale         Boolean              @default(false)
   /// Contatos registrados na negociação (CRM fase 2, 27/10/2026)
   contacts          QuotationContact[]
-  isImported        Boolean            @default(false)
+  isImported        Boolean              @default(false)
   quotationNumber   Int?
   legacyId          String?
   finishedAt        DateTime?
@@ -1434,17 +1438,17 @@ model Quotation {
   payable           Payable[]
   quotationPayment  QuotationPayment?
   quotationProduct  QuotationProduct[]
-  client            Client?            @relation(fields: [clientId], references: [id])
-  company           Company            @relation("MainCompany", fields: [companyId], references: [id])
-  contact           Contact?           @relation(fields: [contactId], references: [id])
-  contactSource     ContactSource?     @relation(fields: [contactSourceId], references: [id])
-  reasons           Reasons?           @relation(fields: [reasonId], references: [id])
-  seller            Employee           @relation(fields: [sellerId], references: [id])
-  series            SaleSeries?        @relation(fields: [seriesId], references: [id])
-  subCompany        Company?           @relation("FiscalSubCompany", fields: [subCompanyId], references: [id])
-  tag               QuotationTag?      @relation(fields: [tagId], references: [id])
+  client            Client?              @relation(fields: [clientId], references: [id])
+  company           Company              @relation("MainCompany", fields: [companyId], references: [id])
+  contact           Contact?             @relation(fields: [contactId], references: [id])
+  contactSource     ContactSource?       @relation(fields: [contactSourceId], references: [id])
+  reasons           Reasons?             @relation(fields: [reasonId], references: [id])
+  seller            Employee             @relation(fields: [sellerId], references: [id])
+  series            SaleSeries?          @relation(fields: [seriesId], references: [id])
+  subCompany        Company?             @relation("FiscalSubCompany", fields: [subCompanyId], references: [id])
+  tag               QuotationTag?        @relation(fields: [tagId], references: [id])
   receivable        Receivable[]
-  products          Product[]          @relation("QuotationToProduct")
+  products          Product[]            @relation("QuotationToProduct")
   history           QuotationHistory[]
   nfes              Nfe[]
   nfses             Nfse[]
@@ -1455,6 +1459,14 @@ model Quotation {
   productionProject ProductionProject?
   /// A situação no caixa da venda rápida (FC-11)
   pendingSale       PendingSale?
+  /// Pendente de pagamento (PA-4, 12/11/2026): o motivo, o valor exigido
+  /// (centavos), desde quando, e a liberação sem pagamento (PA-7)
+  holdReason        QuotationHoldReason?
+  holdAmount        Int?
+  holdAt            DateTime?
+  holdReleasedAt    DateTime?
+  holdReleaseNote   String?
+  holdReleasedBy    String?
 
   @@unique([companyId, legacyId])
   @@index([id, companyId])
@@ -3211,8 +3223,17 @@ enum ProductionStatusKind {
   PRODUCTION_COMPLETED
 }
 
+enum QuotationHoldReason {
+  /// O cliente tem "Exigir pagamento antecipado": o total entra antes
+  PREPAYMENT
+  /// A venda passava do limite: a entrada (a diferença) entra antes
+  CREDIT_LIMIT
+}
+
 enum QuotationStatus {
   APPROVED
+  /// Aprovada à espera do pagamento antecipado (PA-4): não é O.S. ainda
+  PENDING_PAYMENT
   OPEN
   CLOSED
   CANCELED
@@ -4665,9 +4686,9 @@ model ProductionTimeCorrection {
 }
 
 model ProductionTaskHistory {
-  id       String         @id @default(uuid())
+  id       String                @id @default(uuid())
   taskId   String
-  at       DateTime       @default(now())
+  at       DateTime              @default(now())
   byUserId String?
   byName   String
   text     String
@@ -4676,7 +4697,7 @@ model ProductionTaskHistory {
   /// O comentário da equipe vive no histórico (VS-5, GP-47 item 3): texto
   /// livre de quem tem acesso ao gerenciador, sem notificação
   kind     ProductionHistoryKind @default(EVENT)
-  task     ProductionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task     ProductionTask        @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId])
   @@map("production_task_history")

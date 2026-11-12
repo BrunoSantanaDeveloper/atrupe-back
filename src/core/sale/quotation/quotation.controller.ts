@@ -1278,6 +1278,21 @@ export class QuotationController {
     return this.quotationService.open(id, req.user?.userId);
   }
 
+  // O pagamento antecipado da venda pendente (PA, 12/11/2026): quanto é
+  // exigido, quanto já entrou e os títulos "⚠️ Pendência". Com o título já
+  // pago, libera a venda aqui (a liberação da baixa pode ter falhado)
+  @Get(':id/payment-hold')
+  @MoneyFields('amount', 'paid', 'additionalFee', 'paidAmount')
+  @HasPermission('view', 'sale:quotation')
+  @ApiOperation({ summary: 'Pagamento antecipado da venda pendente' })
+  async paymentHold(@Param('id') id: string, @Req() req) {
+    if (!isUUID(id, '4')) {
+      throw new BadRequestException('Invalid id');
+    }
+    await this.validateOwnership(id, req.user, 'view');
+    return this.quotationService.paymentHold(id, req.user?.userId);
+  }
+
   // O aviso de crédito no orçamento (cliente bloqueado, condição fora das
   // permitidas, limite): concluir só avisa, a aprovação recusa (PO, 14/10)
   @Get(':id/credit')

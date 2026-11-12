@@ -8,6 +8,7 @@ import {
 import { PrismaService } from 'nestjs-prisma';
 import { FinancialFlowFilterDTO } from './dto/filter.dto';
 import { InstallmentStatusCheck } from '../utils/financial.types';
+import { pendencyOf } from '../receivable/receivable.service';
 
 const EXPORT_LIMIT = '10000';
 
@@ -64,10 +65,20 @@ export class FlowService {
       dateType = 'dueDate',
       clientId,
       supplierId,
+      pendency,
     } = filter;
 
     const filtersReceivables: any = {
-      receivable: { companyId: filter.companyId },
+      receivable: {
+        companyId: filter.companyId,
+        // O filtro "Pendências" (PA-5): só os títulos que liberam venda
+        ...(pendency === 'true'
+          ? {
+              releasesQuotation: true,
+              quotation: { status: 'PENDING_PAYMENT' },
+            }
+          : {}),
+      },
     };
     const filtersPayables: any = {
       payable: { companyId: filter.companyId },
@@ -214,7 +225,9 @@ export class FlowService {
     if (andPayables.length) filtersPayables.AND = andPayables;
 
     // Só um lado: o outro não traz nenhuma parcela
-    if (filter.type === 'receivable') filtersPayables.id = { in: [] };
+    if (filter.type === 'receivable' || pendency === 'true') {
+      filtersPayables.id = { in: [] };
+    }
     if (filter.type === 'payable') filtersReceivables.id = { in: [] };
 
     return { filtersReceivables, filtersPayables };
@@ -327,7 +340,14 @@ export class FlowService {
                   orderBy: { [dateType]: 'desc' },
                 },
                 quotation: {
-                  select: { quotationPayment: { select: { type: true } } },
+                  select: {
+                    quotationPayment: { select: { type: true } },
+                    // A venda que o título "⚠️ Pendência" libera (PA-5)
+                    id: true,
+                    status: true,
+                    quotationNumber: true,
+                    series: { select: { code: true } },
+                  },
                 },
               },
             },
@@ -490,6 +510,8 @@ export class FlowService {
       ),
       description: inst.receivable.description || '',
       invoiceType: inst.receivable.quotation?.quotationPayment?.type ?? null,
+      // "⚠️ Pendência" (PA-5): ao receber, libera esta venda
+      pendency: pendencyOf(inst.receivable),
       client: inst.receivable.client
         ? {
             id: inst.receivable.client.id,
@@ -657,7 +679,14 @@ export class FlowService {
           orderBy: { dueDate: 'asc' },
         },
         quotation: {
-          select: { quotationPayment: { select: { type: true } } },
+          select: {
+            quotationPayment: { select: { type: true } },
+            // A venda que o título "⚠️ Pendência" libera (PA-5)
+            id: true,
+            status: true,
+            quotationNumber: true,
+            series: { select: { code: true } },
+          },
         },
       },
     });
@@ -669,6 +698,7 @@ export class FlowService {
     return {
       ...receivable,
       invoiceType: receivable.quotation?.quotationPayment?.type ?? null,
+      pendency: pendencyOf(receivable),
     };
   }
 

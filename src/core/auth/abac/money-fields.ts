@@ -20,7 +20,8 @@ export const MONEY_COLUMNS = {
     'saleValue',
     'saleResult',
   ],
-  Quotation: ['totalValue'],
+  // holdAmount: o valor exigido da venda pendente (PA, 12/11/2026)
+  Quotation: ['totalValue', 'holdAmount'],
   QuotationProduct: [
     'totalValue',
     'discount',

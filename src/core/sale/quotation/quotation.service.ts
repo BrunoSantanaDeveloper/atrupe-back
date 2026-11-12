@@ -12,6 +12,7 @@ import { QuotationItemsService } from './quotation-items.service';
 import {
   ApprovalReprocessResult,
   ApprovedOrder,
+  HeldSale,
   QuotationWorkflowService,
 } from './quotation-workflow.service';
 import { QuotationFinancialService } from './quotation-financial.service';
@@ -151,8 +152,13 @@ export class QuotationService {
     quotationId: string,
     userId?: string,
     approvedAt?: Date,
-  ): Promise<ApprovedOrder> {
+  ): Promise<ApprovedOrder | HeldSale> {
     return this.workflowService.approve(quotationId, userId, approvedAt);
+  }
+
+  /** A situação do pagamento antecipado da venda (PA, 12/11/2026). */
+  paymentHold(quotationId: string, userId?: string) {
+    return this.workflowService.paymentHold(quotationId, userId);
   }
 
   /** O terceirizado abaixo do custo só o administrador aprova (T-5). */

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjsx/crud/lib/crud';
-import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString } from 'class-validator';
 import { InstallmentListFilterDto } from '../../utils/installment-list-filter';
 
 export class ReceivableFilterDto extends InstallmentListFilterDto {
@@ -23,4 +23,9 @@ export class ReceivableFilterDto extends InstallmentListFilterDto {
   @IsOptional()
   @IsString()
   paymentConditionId?: string;
+
+  /** Só os títulos "⚠️ Pendência" das vendas pendentes (PA-5) */
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  pendency?: 'true' | 'false';
 }

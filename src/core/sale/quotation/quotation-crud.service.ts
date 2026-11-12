@@ -346,6 +346,8 @@ export class QuotationCrudService {
       'REJECTED',
       'DONE',
       'OVERDUE' as any,
+      // A aba "⚠️ Pendente" só aparece com alguma (PA-4)
+      'PENDING_PAYMENT',
     ];
 
     const where: any = {

@@ -139,4 +139,9 @@ export class FinancialFlowFilterDTO extends BaseFilterDTO {
     required: false,
   })
   type?: 'receivable' | 'payable';
+
+  // Só os títulos "⚠️ Pendência" (PA-5): com ele, as despesas não entram
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  pendency?: 'true' | 'false';
 }

@@ -35,6 +35,48 @@ import {
 } from '../utils/financial-refs';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 import { baixaTarget, reverseTransaction } from '../cash-control/cash-ledger';
+import { ModuleRef } from '@nestjs/core';
+import {
+  PAYMENT_HOLD_RELEASER,
+  PaymentHoldReleaser,
+  releaseHeldSales,
+} from 'src/core/sale/quotation/payment-hold';
+
+/**
+ * A marcação "⚠️ Pendência" do título (PA-5): a venda que ele libera,
+ * enquanto ela está pendente. Depois de liberada, o título é como os outros.
+ */
+export function pendencyOf(
+  receivable?: {
+    releasesQuotation?: boolean;
+    quotation?: {
+      id: string;
+      status: string;
+      quotationNumber: number | null;
+      series: { code: string | null } | null;
+    } | null;
+  } | null,
+) {
+  const quotation = receivable?.quotation;
+  if (
+    !receivable?.releasesQuotation ||
+    quotation?.status !== 'PENDING_PAYMENT'
+  ) {
+    return null;
+  }
+  return {
+    quotationId: quotation.id,
+    reference: `${quotation.quotationNumber ?? ''}-${quotation.series?.code ?? ''}`,
+  };
+}
+
+/** O título "⚠️ Pendência" da venda pendente não se cancela no financeiro (PA-8). */
+export const HOLD_RECEIVABLE_CANCEL =
+  'Este título libera uma venda pendente de pagamento. Para desistir da venda, rejeite-a em Orçamentos, na aba ⚠️ Pendente: o título é cancelado junto.';
+export const HOLD_RELEASE_ADMIN_ONLY =
+  'Só o administrador libera a venda sem o pagamento antecipado. Peça a ele, ou faça a baixa do título quando o cliente pagar.';
+export const HOLD_RECEIVABLE_ONLY =
+  'Este título não libera nenhuma venda pendente: a liberação sem pagamento é só nos títulos marcados ⚠️ Pendência.';
 
 @Injectable()
 export class ReceivableService {
@@ -43,7 +85,54 @@ export class ReceivableService {
     private readonly prisma: PrismaService,
     private readonly historyService: FinancialHistoryService,
     private readonly baseService: BaseTransactionService,
+    private readonly moduleRef: ModuleRef,
   ) {}
+
+  /**
+   * Liberar a venda pendente sem o pagamento (PA-7, 12/11/2026): no título
+   * "⚠️ Pendência", com motivo; por enquanto, só o administrador. O título
+   * continua a receber.
+   */
+  async releaseSale(
+    id: string,
+    options: {
+      userId: string;
+      userName?: string;
+      isAdmin: boolean;
+      reason?: string;
+    },
+  ) {
+    if (!options.isAdmin) {
+      throw new BadRequestException(HOLD_RELEASE_ADMIN_ONLY);
+    }
+    const receivable = await this.prisma.receivable.findUnique({
+      where: { id },
+      select: { releasesQuotation: true, quotationId: true },
+    });
+    if (!receivable) {
+      throw new NotFoundException('Conta a receber não encontrada.');
+    }
+    if (!receivable.releasesQuotation || !receivable.quotationId) {
+      throw new BadRequestException(HOLD_RECEIVABLE_ONLY);
+    }
+    const releaser = this.moduleRef.get<PaymentHoldReleaser>(
+      PAYMENT_HOLD_RELEASER,
+      { strict: false },
+    );
+    const result = await releaser.releaseHold(receivable.quotationId, {
+      userId: options.userId,
+      manualReason: options.reason ?? '',
+    });
+    await this.historyService.createReceivableHistory({
+      receivableId: id,
+      action: 'RELEASE_SALE',
+      description: `Venda liberada sem o pagamento: ${(options.reason ?? '').trim()}`,
+      metadata: { quotationId: receivable.quotationId },
+      createdBy: options.userId,
+      createdByName: options.userName,
+    });
+    return result;
+  }
 
   private getActualStatus(installment: InstallmentStatusCheck): string {
     return this.baseService.getActualStatus(installment);
@@ -265,6 +354,7 @@ export class ReceivableService {
       dueDate,
       status,
       paymentConditionId,
+      pendency,
     } = paginationDto;
 
     // Período, conta e ordem, como no Fluxo financeiro (28/10/2026)
@@ -288,6 +378,14 @@ export class ReceivableService {
 
     if (paymentConditionId) {
       filters.paymentConditionId = paymentConditionId;
+    }
+
+    // O filtro "Pendências" (PA-5): os títulos que liberam venda pendente
+    if (pendency === 'true') {
+      Object.assign(filters.receivable as Prisma.ReceivableWhereInput, {
+        releasesQuotation: true,
+        quotation: { status: 'PENDING_PAYMENT' },
+      });
     }
 
     if (status) {
@@ -368,6 +466,15 @@ export class ReceivableService {
             notes: true,
             status: true,
             referenceDate: true,
+            releasesQuotation: true,
+            quotation: {
+              select: {
+                id: true,
+                status: true,
+                quotationNumber: true,
+                series: { select: { code: true } },
+              },
+            },
             client: { select: { id: true, name: true, cnpj: true, cpf: true } },
             // supplier: { select: { id: true, name: true } },
             nature: { select: { id: true, description: true } },
@@ -441,6 +548,8 @@ export class ReceivableService {
           period: inst.receivable?.referenceDate || null,
           notes: inst.receivable?.notes || '',
           status: inst.receivable?.status || 'UNKNOWN',
+          // "⚠️ Pendência" (PA-5): ao receber, libera esta venda
+          pendency: pendencyOf(inst.receivable),
           // Na listagem, retornamos apenas a parcela atual (correspondente à data da linha)
           currentInstallment: (() => {
             const currentInst = inst.receivable?.installments?.find(
@@ -492,6 +601,11 @@ export class ReceivableService {
         quotation: {
           select: {
             quotationPayment: { select: { type: true } },
+            // A venda que o título "⚠️ Pendência" libera (PA-5)
+            id: true,
+            status: true,
+            quotationNumber: true,
+            series: { select: { code: true } },
           },
         },
       },
@@ -505,6 +619,7 @@ export class ReceivableService {
     return {
       ...receivable,
       invoiceType,
+      pendency: pendencyOf(receivable),
       installments: receivable.installments.map((installment) =>
         this.applyDynamicStatus(installment),
       ),
@@ -638,6 +753,12 @@ export class ReceivableService {
       // Verifica se o título já está cancelado
       if (receivable.status === 'CANCELED') {
         throw new Error('A conta a receber já foi cancelada.');
+      }
+      if ((receivable as { releasesQuotation?: boolean }).releasesQuotation) {
+        const held = await this.prisma.quotation.count({
+          where: { id: receivable.quotationId, status: 'PENDING_PAYMENT' },
+        });
+        if (held) throw new Error(HOLD_RECEIVABLE_CANCEL);
       }
 
       // Atualiza o status de todas as parcelas com status "PENDING" para "CANCELED"
@@ -1151,6 +1272,9 @@ export class ReceivableService {
         });
       }
 
+      // A baixa do título "⚠️ Pendência" libera a venda (PA-6)
+      await releaseHeldSales(this.moduleRef, this.prisma, [installmentId]);
+
       return {
         message: 'Parcela paga com sucesso.',
         installment: {
@@ -1234,6 +1358,8 @@ export class ReceivableService {
         },
       });
     });
+    // A compensação do título "⚠️ Pendência" libera a venda (PA-6)
+    await releaseHeldSales(this.moduleRef, this.prisma, [installmentId]);
   }
 
   async undoPaymentInstallment(

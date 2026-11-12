@@ -3,7 +3,10 @@ import { QuotationService } from './quotation.service';
 
 import { QuotationCrudService } from './quotation-crud.service';
 import { QuotationItemsService } from './quotation-items.service';
-import { QuotationWorkflowService } from './quotation-workflow.service';
+import {
+  ApprovedOrder,
+  QuotationWorkflowService,
+} from './quotation-workflow.service';
 import { QuotationFinancialService } from './quotation-financial.service';
 import { QuotationPdfService } from './quotation-pdf.service';
 import { QuotationImportService } from './quotation-import.service';
@@ -727,7 +730,7 @@ describe('QuotationService', () => {
       workflowService.approve.mockResolvedValue(mockOrder);
       const order = await service.approve(mockQuotationId, mockUserId);
       expect(order).toBeDefined();
-      expect(order.status).toBe(OrderStatus.IN_PRODUCTION);
+      expect((order as ApprovedOrder).status).toBe(OrderStatus.IN_PRODUCTION);
       expect(workflowService.approve).toHaveBeenCalledWith(
         mockQuotationId,
         mockUserId,

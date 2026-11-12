@@ -14,6 +14,8 @@ import {
   toReais,
 } from '../cash-control/cash-ledger';
 import { CashDayService } from '../cash-control/cash-day.service';
+import { ModuleRef } from '@nestjs/core';
+import { releaseHeldSales } from 'src/core/sale/quotation/payment-hold';
 import { OfxError, businessDaysBetween, parseOfx } from './ofx';
 import {
   ConciliationCreateDto,
@@ -68,6 +70,7 @@ export class ConciliationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cashDay: CashDayService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   private async account(companyId: string, id: string) {
@@ -407,6 +410,10 @@ export class ConciliationService {
       });
       if (automatic) matched++;
       else suggested++;
+      // O título "⚠️ Pendência" realizado pelo extrato libera a venda (PA-6)
+      if (automatic && best.kind === 'receivable') {
+        await releaseHeldSales(this.moduleRef, this.prisma, [best.id]);
+      }
     }
     return {
       matched,
@@ -513,6 +520,11 @@ export class ConciliationService {
         },
       });
     });
+    if (line.receivableInstallmentId) {
+      await releaseHeldSales(this.moduleRef, this.prisma, [
+        line.receivableInstallmentId,
+      ]);
+    }
     return this.lineView(id);
   }
 
@@ -562,6 +574,9 @@ export class ConciliationService {
         },
       });
     });
+    if (target.kind === 'receivable') {
+      await releaseHeldSales(this.moduleRef, this.prisma, [target.id]);
+    }
     return this.lineView(id);
   }
 
