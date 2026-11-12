@@ -583,11 +583,18 @@ export class AddItemDto {
   @ApiProperty({ required: false, type: SaleChoicesDto })
   composition?: SaleChoicesDto;
 
-  // Sangria, bloco e apostila deste item (gráfica rápida, 12/11/2026); nulo
+  // A sangria deste item (gráfica rápida, 12/11/2026); nulo
   // volta ao que o produto define
   @IsOptional()
   @ValidateNested()
   @Type(() => PrintSpecDto)
   @ApiProperty({ required: false, type: PrintSpecDto, nullable: true })
   printSpec?: PrintSpecDto | null;
+
+  // O fornecedor do produto terceirizado nesta venda (12/11/2026): um dos
+  // do cadastro do produto; nulo volta ao primeiro
+  @IsOptional()
+  @IsUUID('all', { message: 'Fornecedor não encontrado' })
+  @ApiProperty({ required: false, nullable: true })
+  supplierId?: string | null;
 }

@@ -1209,6 +1209,8 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
           description: true,
           quantity: true,
           finalValue: true,
+          // O fornecedor escolhido no item (12/11/2026)
+          supplier: { select: { id: true, name: true } },
           product: {
             select: {
               name: true,
@@ -1252,7 +1254,8 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
         const measure = item.items?.length
           ? soldMeasureOf(item)
           : item.quantity || 1;
-        const supplier = (item.product?.suppliers ?? [])[0];
+        // O escolhido no item; sem escolha, o primeiro do produto
+        const supplier = item.supplier ?? (item.product?.suppliers ?? [])[0];
         return {
           name: item.description || item.product?.name || 'Terceirizado',
           cost: Math.round(unitCost * measure),

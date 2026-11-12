@@ -474,6 +474,8 @@ model Supplier {
   quotationLines     QuotationItemLine[]
   company            Company                    @relation(fields: [companyId], references: [id])
   category           Category?                  @relation("SupplierToCategory", fields: [categoryId], references: [id])
+  /// Os itens de orçamento que compram dele (terceirizado, 12/11/2026)
+  quotationProducts  QuotationProduct[]         @relation("QuotationProductSupplier")
 
   @@unique([companyId, legacyId])
   @@map("suppliers")
@@ -1520,6 +1522,10 @@ model QuotationProduct {
   /// Gráfica rápida no item (12/11/2026): a sangria só deste item (nulo =
   /// a do produto)
   printSpec            Json?
+  /// O fornecedor do produto terceirizado nesta venda (12/11/2026): um dos
+  /// do produto; nulo = o primeiro. A conta a pagar sai com ele
+  supplierId           String?
+  supplier             Supplier?              @relation("QuotationProductSupplier", fields: [supplierId], references: [id], onDelete: SetNull)
   lines                QuotationItemLine[]
   items                QuotationProductItem[]
   product              Product?               @relation(fields: [productId], references: [id], onDelete: Restrict)

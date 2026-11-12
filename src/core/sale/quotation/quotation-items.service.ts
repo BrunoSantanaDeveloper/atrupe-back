@@ -34,6 +34,8 @@ import { transformQuotationItem } from './quotation.transformers';
 export const itemFinalValue = itemValue;
 
 // As escolhas vêm de classes de DTO: no banco vão como JSON simples
+export const SUPPLIER_NOT_OF_PRODUCT =
+  'Este fornecedor não está no cadastro do produto terceirizado. Escolha um dos fornecedores do produto, ou acrescente este no cadastro do produto.';
 const asJson = (value: unknown) =>
   JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 
@@ -308,6 +310,29 @@ export class QuotationItemsService {
   /**
    * Adiciona um produto ao orçamento
    */
+  /**
+   * O fornecedor escolhido no item do produto terceirizado (12/11/2026):
+   * precisa ser um dos do cadastro do produto. Indefinido não mexe; nulo
+   * volta ao primeiro.
+   */
+  private async supplierFor(
+    productId: string | null,
+    supplierId: string | null | undefined,
+  ): Promise<string | null | undefined> {
+    if (supplierId === undefined || supplierId === null) return supplierId;
+    const found = productId
+      ? await this.prisma.product.count({
+          where: {
+            id: productId,
+            isOutsourced: true,
+            suppliers: { some: { id: supplierId } },
+          },
+        })
+      : 0;
+    if (!found) throw new BadRequestException(SUPPLIER_NOT_OF_PRODUCT);
+    return supplierId;
+  }
+
   async addProductToQuotation(quotationId: string, data: AddItemDto) {
     try {
       // Busca o orçamento e verifica se existe
@@ -382,8 +407,11 @@ export class QuotationItemsService {
           allowEditDescription: product.allowEditDescription,
           allowEditValues: product.allowEditValues,
           variationId,
-          // Sangria, bloco e apostila do item (gráfica rápida, 12/11/2026)
+          // A sangria do item (gráfica rápida, 12/11/2026)
           ...(data.printSpec ? { printSpec: asJson(data.printSpec) } : {}),
+          // O fornecedor do terceirizado nesta venda (12/11/2026)
+          supplierId:
+            (await this.supplierFor(product.id, data.supplierId)) ?? null,
           ...(composed
             ? {
                 composition: asJson(composed.composition),
@@ -584,6 +612,15 @@ export class QuotationItemsService {
             }),
             ...(data.addition !== undefined && { addition: data.addition }),
             ...(data.variationId !== undefined && !frozen && { variationId }),
+            // O fornecedor muda até a aprovação: depois a conta a pagar já
+            // nasceu com ele
+            ...(data.supplierId !== undefined &&
+              product.quotation.status !== 'APPROVED' && {
+                supplierId: await this.supplierFor(
+                  product.productId,
+                  data.supplierId,
+                ),
+              }),
             ...(data.printSpec !== undefined &&
               !frozen && {
                 printSpec:

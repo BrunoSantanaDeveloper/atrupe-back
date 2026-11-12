@@ -274,6 +274,8 @@ export function transformQuotationItem(qp: any, base?: BasePriceContext) {
     sheetCount: itemPrintCounts(qp)[0] ?? null,
     sheetCounts: itemPrintCounts(qp),
     printSpec: qp.printSpec ?? null,
+    // O fornecedor do terceirizado escolhido no item; nulo = o primeiro
+    supplier: qp.supplier ?? null,
     composition: qp.composition ?? null,
     image: getImage(),
     // O item montado na hora (ORC-11): o rascunho em que foi montado, a

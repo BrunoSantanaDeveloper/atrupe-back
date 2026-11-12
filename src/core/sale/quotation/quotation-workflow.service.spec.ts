@@ -280,6 +280,26 @@ describe('QuotationWorkflowService', () => {
       // (1 + 3) peças por kit × 2 kits × R$ 10,00
       expect(entry.cost).toBe(8000);
     });
+    it('o fornecedor escolhido no item vale para a conta a pagar (12/11/2026)', async () => {
+      prisma.quotationProduct.findMany.mockResolvedValue([
+        outsourcedItem({
+          supplier: { id: 'sup-2', name: 'Acrílicos Sul' },
+          product: {
+            name: 'Fachada',
+            outsourcedCost: 0.02,
+            suppliers: [
+              { id: 'sup-1', name: 'Letras & Cia' },
+              { id: 'sup-2', name: 'Acrílicos Sul' },
+            ],
+          },
+        }),
+      ]);
+      const [entry] = await service.outsourcedCosts(mockQuotationId);
+      expect(entry).toMatchObject({
+        supplierId: 'sup-2',
+        supplierName: 'Acrílicos Sul',
+      });
+    });
   });
 
   describe('approve', () => {

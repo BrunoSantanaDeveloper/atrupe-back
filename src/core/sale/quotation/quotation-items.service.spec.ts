@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   QuotationItemsService,
+  SUPPLIER_NOT_OF_PRODUCT,
   compositionMeasure,
 } from './quotation-items.service';
 import { PrismaService } from 'nestjs-prisma';
@@ -447,6 +448,60 @@ describe('QuotationItemsService', () => {
         },
         include: { items: true },
       });
+      expect(prisma.quotationProduct.create).not.toHaveBeenCalled();
+    });
+
+    const outsourcedSetup = (allowed: number) => {
+      prisma.quotation.findUnique.mockResolvedValue(mockQuotation);
+      prisma.product.findFirst.mockResolvedValue({
+        ...mockProduct,
+        items: mockProduct.productItem,
+      });
+      (prisma.product as any).count = jest.fn().mockResolvedValue(allowed);
+      prisma.quotationProduct.create.mockResolvedValue(mockQuotationProduct);
+      prisma.quotationProductItem.createMany.mockResolvedValue({ count: 2 });
+      prisma.quotation.update.mockResolvedValue(mockQuotation);
+      prisma.quotationProduct.findMany.mockResolvedValue([
+        mockQuotationProduct,
+      ]);
+      prisma.quotationPayment.update.mockResolvedValue({});
+    };
+    const withSupplier = (supplierId: string) => ({
+      productId: mockProductId,
+      quantity: 1,
+      items: [
+        {
+          id: 'item-1',
+          quantity: 1,
+          originalQuantity: 1,
+          salePrice: 5000,
+          totalValue: 5000,
+        },
+      ] as any,
+      supplierId,
+    });
+
+    it('o fornecedor do terceirizado escolhido no item (12/11/2026)', async () => {
+      outsourcedSetup(1);
+      await service.addProductToQuotation(
+        mockQuotationId,
+        withSupplier('sup-2'),
+      );
+      expect(
+        prisma.quotationProduct.create.mock.calls[0][0].data.supplierId,
+      ).toBe('sup-2');
+      expect((prisma.product as any).count.mock.calls[0][0].where).toEqual({
+        id: mockProductId,
+        isOutsourced: true,
+        suppliers: { some: { id: 'sup-2' } },
+      });
+    });
+
+    it('fornecedor que não é do produto: recusa e diz o caminho', async () => {
+      outsourcedSetup(0);
+      await expect(
+        service.addProductToQuotation(mockQuotationId, withSupplier('sup-x')),
+      ).rejects.toThrow(SUPPLIER_NOT_OF_PRODUCT);
       expect(prisma.quotationProduct.create).not.toHaveBeenCalled();
     });
 

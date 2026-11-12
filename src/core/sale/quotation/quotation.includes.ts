@@ -262,8 +262,10 @@ export const QUOTATION_PRODUCT_SELECT = {
   addition: true,
   // As escolhas da composição; o retrato (snapshot) tem custo e fica fora
   composition: true,
-  // Sangria, bloco e apostila do item (gráfica rápida, 12/11/2026)
+  // A sangria do item (gráfica rápida, 12/11/2026)
   printSpec: true,
+  // O fornecedor do terceirizado nesta venda (12/11/2026)
+  supplier: { select: { id: true, name: true } },
   // As linhas acrescentadas (ORC-5), sem custo nem retrato (ORC-7)
   linesTotal: true,
   lines: {
