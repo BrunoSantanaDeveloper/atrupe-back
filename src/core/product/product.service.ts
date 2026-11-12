@@ -422,7 +422,12 @@ export class ProductService {
             name: 'asc',
           },
         },
-        suppliers: { select: { id: true, name: true } },
+        // Em ordem de nome: o primeiro é o fornecedor que recebe a despesa do
+        // terceirizado quando o item não escolhe outro (T-3, patch 39)
+        suppliers: {
+          select: { id: true, name: true },
+          orderBy: { name: 'asc' },
+        },
       },
     });
 

@@ -73,6 +73,7 @@ export class AiOperationalQueryService {
           REJECTED: 'Rejeitados',
           DONE: 'Concluidos',
           OVERDUE: 'Vencidos',
+          PENDING_PAYMENT: 'Pendentes de pagamento',
         },
       },
       receivables: {
