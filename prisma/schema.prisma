@@ -1273,6 +1273,11 @@ model BankAccount {
   /// O nome da operadora de cartão (Rede, Cielo, Stone…): a conta CARD não
   /// escolhe banco e fica no banco genérico "Operadora de cartão"
   operator               String?
+  /// A conta onde a operadora deposita (só na CARD, 12/11/2026): a
+  /// conciliação do extrato dela já sugere a operadora
+  settlementAccountId    String?
+  settlementAccount      BankAccount?             @relation("CardSettlement", fields: [settlementAccountId], references: [id], onDelete: SetNull)
+  settledCards           BankAccount[]            @relation("CardSettlement")
   bankAccountCashControl BankAccountCashControl[]
   bank                   Bank                     @relation(fields: [bankId], references: [id])
   company                Company                  @relation(fields: [companyId], references: [id])

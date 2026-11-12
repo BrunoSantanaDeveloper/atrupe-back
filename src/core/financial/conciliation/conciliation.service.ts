@@ -458,10 +458,23 @@ export class ConciliationService {
     const pool = (await this.candidates(account.id, from, to)).filter(
       (row) => row.day >= from && row.day <= to,
     );
+    // As operadoras que depositam nesta conta (12/11/2026): a liquidação do
+    // cartão já as sugere
+    const settlingCards = await this.prisma.bankAccount.findMany({
+      where: {
+        companyId,
+        kind: 'CARD',
+        isActive: true,
+        settlementAccountId: account.id,
+      },
+      select: { id: true, name: true, operator: true },
+      orderBy: { name: 'asc' },
+    });
     return {
       account,
       from,
       to,
+      settlingCards,
       lines: lines.map((line) => ({
         id: line.id,
         date: lineDay(line.date),

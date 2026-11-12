@@ -155,12 +155,18 @@ export class AccountService {
         ? await this.cardOperatorBankId()
         : bad('Escolha o banco da conta'));
 
+    const settlementAccountId =
+      rules.kind === 'CARD'
+        ? await this.settlementOf(dto.companyId, dto.settlementAccountId)
+        : null;
+
     return this.prisma.$transaction(async (tx) => {
       const bankAccount = await tx.bankAccount.create({
         data: {
           name: dto.name.trim(),
           bankId,
           operator: rules.kind === 'CARD' ? dto.operator?.trim() || null : null,
+          settlementAccountId,
           companyId: dto.companyId,
           description: dto.description,
           ...rules,
@@ -302,6 +308,8 @@ export class AccountService {
                 },
               },
             },
+            // A conta onde a operadora deposita (12/11/2026)
+            settlementAccount: { select: { id: true, name: true } },
             cashRegister: {
               where: {
                 status: 'OPEN',
@@ -552,6 +560,20 @@ export class AccountService {
                         : null,
                   }
                 : {}),
+              // A conta onde cai só vale na CARD
+              ...(updateBankAccountDto.settlementAccountId !== undefined ||
+              (updateBankAccountDto.kind !== undefined && rules.kind !== 'CARD')
+                ? {
+                    settlementAccountId:
+                      rules.kind === 'CARD'
+                        ? await this.settlementOf(
+                            owner.companyId,
+                            updateBankAccountDto.settlementAccountId,
+                            accountId,
+                          )
+                        : null,
+                  }
+                : {}),
               ...(updateBankAccountDto.description !== undefined
                 ? { description: updateBankAccountDto.description }
                 : {}),
@@ -617,6 +639,41 @@ export class AccountService {
         'Feche o caixa desta conta antes de inativar',
       );
     }
+    // A operadora que deposita aqui ficaria sem conta onde cai
+    const cards = await this.prisma.bankAccount.findMany({
+      where: { settlementAccountId: accountId, isActive: true },
+      select: { name: true },
+    });
+    if (cards.length) {
+      throw new ConflictException(
+        `${cards.map((card) => card.name).join(', ')} ${cards.length === 1 ? 'deposita' : 'depositam'} nesta conta. Troque a conta onde cai ${cards.length === 1 ? 'da operadora' : 'das operadoras'} antes de inativar.`,
+      );
+    }
+  }
+
+  /**
+   * A conta onde a operadora deposita (12/11/2026): da empresa, ativa, que
+   * não é outra operadora nem a própria. Nula tira a ligação.
+   */
+  private async settlementOf(
+    companyId: string,
+    settlementAccountId: string | null | undefined,
+    selfId?: string,
+  ): Promise<string | null> {
+    if (!settlementAccountId) return null;
+    if (settlementAccountId === selfId) {
+      bad('A operadora não deposita nela mesma: escolha a conta do banco');
+    }
+    const target = await this.prisma.bankAccount.findFirst({
+      where: { id: settlementAccountId, companyId },
+      select: { id: true, kind: true, isActive: true },
+    });
+    if (!target) throw new NotFoundException('Conta onde cai não encontrada');
+    if (!target.isActive) bad('A conta onde cai está inativa: escolha outra');
+    if (target.kind === 'CARD') {
+      bad('A conta onde cai é a do banco, não outra operadora de cartão');
+    }
+    return target.id;
   }
 
   /** Um botão só: sem histórico exclui, com histórico inativa (CX-2). */

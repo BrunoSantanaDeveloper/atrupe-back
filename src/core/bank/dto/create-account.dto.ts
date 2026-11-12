@@ -115,6 +115,17 @@ export class CreateBankAccountDto {
   })
   operator?: string;
 
+  // A conta onde a operadora deposita (só na CARD, 12/11/2026); nulo tira
+  @IsOptional()
+  @IsUUID('all', { message: 'Conta onde cai não encontrada' })
+  @ApiProperty({
+    description:
+      'Conta bancária da empresa em que a operadora de cartão deposita (só na conta CARD)',
+    required: false,
+    nullable: true,
+  })
+  settlementAccountId?: string | null;
+
   companyId: string;
 
   @IsOptional()

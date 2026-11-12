@@ -195,3 +195,102 @@ describe('CreateBankAccountDto — banco', () => {
     ]);
   });
 });
+
+/**
+ * A conta onde a operadora de cartão deposita (12/11/2026): da empresa,
+ * ativa, que não é outra operadora nem a própria; a conta onde alguma
+ * operadora deposita não se inativa sem trocar a ligação.
+ */
+describe('AccountService — conta onde cai', () => {
+  function build(target: Record<string, unknown> | null) {
+    const create = jest.fn().mockResolvedValue({ id: 'card-1' });
+    const prisma = {
+      paymentCondition: { count: jest.fn().mockResolvedValue(0) },
+      bank: { findFirst: jest.fn().mockResolvedValue({ id: 'bank-card' }) },
+      bankAccount: {
+        updateMany: jest.fn(),
+        findFirst: jest.fn().mockResolvedValue(target),
+      },
+      bankAccountCashControl: { updateMany: jest.fn() },
+      $transaction: jest.fn((fn) =>
+        fn({
+          bankAccount: { create },
+          bankAccountCashControl: { updateMany: jest.fn() },
+        }),
+      ),
+    };
+    const service = new AccountService(prisma as any, {} as any);
+    return { service, create, prisma };
+  }
+  const card = (settlementAccountId: string) =>
+    ({
+      companyId: 'company-1',
+      name: 'Stone',
+      kind: 'CARD',
+      settlementAccountId,
+    }) as any;
+
+  it('liga a operadora à conta do banco da empresa', async () => {
+    const { service, create, prisma } = build({
+      id: 'bank-itau',
+      kind: 'BANK',
+      isActive: true,
+    });
+    await service.create(card('bank-itau'));
+    expect(create.mock.calls[0][0].data.settlementAccountId).toBe('bank-itau');
+    expect(prisma.bankAccount.findFirst.mock.calls[0][0].where).toEqual({
+      id: 'bank-itau',
+      companyId: 'company-1',
+    });
+  });
+
+  it('outra operadora não é conta onde cai', async () => {
+    const { service } = build({ id: 'card-2', kind: 'CARD', isActive: true });
+    await expect(service.create(card('card-2'))).rejects.toThrow(
+      'A conta onde cai é a do banco, não outra operadora de cartão',
+    );
+  });
+
+  it('conta de outra empresa ou inexistente: 404', async () => {
+    const { service } = build(null);
+    await expect(service.create(card('bank-x'))).rejects.toThrow(
+      'Conta onde cai não encontrada',
+    );
+  });
+
+  it('conta que não é de cartão não guarda a ligação', async () => {
+    const { service, create, prisma } = build(null);
+    await service.create({
+      companyId: 'company-1',
+      name: 'Itaú',
+      kind: 'BANK',
+      bankId: 'bank-itau',
+      settlementAccountId: 'bank-x',
+    } as any);
+    expect(create.mock.calls[0][0].data.settlementAccountId).toBeNull();
+    expect(prisma.bankAccount.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('a conta onde uma operadora deposita não se inativa e diz o caminho', async () => {
+    const prisma = {
+      bankAccount: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'bank-itau',
+          cashControl: false,
+          kind: 'BANK',
+          openingBalance: 0,
+          openingDate: null,
+        }),
+        findMany: jest.fn().mockResolvedValue([{ name: 'Stone' }]),
+      },
+      cashRegister: { count: jest.fn().mockResolvedValue(0) },
+    };
+    const cashDay = { accountBalance: jest.fn().mockResolvedValue(0) };
+    const service = new AccountService(prisma as any, cashDay as any);
+    await expect(
+      (service as any).assertCanInactivate('bank-itau'),
+    ).rejects.toThrow(
+      'Stone deposita nesta conta. Troque a conta onde cai da operadora antes de inativar.',
+    );
+  });
+});
