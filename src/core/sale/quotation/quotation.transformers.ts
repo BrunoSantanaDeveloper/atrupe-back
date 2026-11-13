@@ -313,6 +313,9 @@ export function transformQuotationItem(qp: any, base?: BasePriceContext) {
       // o item vende pelo preço do cadastro e a tela avisa "custo não
       // conferido"; só a aprovada tem custo
       compositionStatus: qp.product?.assemblies?.[0]?.status ?? null,
+      // O produto terceirizado (T-3, T-5): a tela mostra a marca no item.
+      // O include seleciona; faltava repassar
+      isOutsourced: !!qp.product?.isOutsourced,
       quantity: qp.quantity,
       unitValue,
       finalValue: totalValue,

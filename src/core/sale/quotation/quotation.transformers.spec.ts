@@ -298,6 +298,20 @@ describe('Quotation Transformers', () => {
   });
 
   describe('transformQuotationItem', () => {
+    it('o produto terceirizado sai marcado no item (T-3, T-5)', () => {
+      const item = (isOutsourced?: boolean) =>
+        transformQuotationItem({
+          id: 'qp-t',
+          description: 'Placa',
+          productId: 'prod-t',
+          quantity: 1,
+          product: { name: 'Placa', isOutsourced },
+          items: [],
+        } as any);
+      expect(item(true).product.isOutsourced).toBe(true);
+      expect(item(undefined).product.isOutsourced).toBe(false);
+    });
+
     it('should transform quotation item correctly', () => {
       const qp = {
         id: 'qp-1',
