@@ -517,11 +517,9 @@ export class PdvService {
   ) {
     const session = await this.ownSession(user, id);
     this.assertCurrent(session);
-    if (!dto.reason?.trim()) {
-      bad(
-        'Informe o motivo: sangria e suprimento registram motivo e responsável',
-      );
-    }
+    // Transferência (PAD-1, decidida em 02/10/2026; 14/11): a antiga
+    // sangria e o suprimento são dinheiro mudando de lugar entre a gaveta e
+    // uma conta. O motivo é opcional; o responsável fica sempre
     if (!dto.amount || dto.amount <= 0) bad('Informe o valor');
     const account = dto.bankAccountId
       ? await this.prisma.bankAccount.findFirst({
@@ -542,16 +540,16 @@ export class PdvService {
     }
     const withdrawal = dto.kind === 'WITHDRAWAL';
     if (withdrawal && dto.amount > cashOnHand(session)) {
-      bad('A sangria não pode passar do dinheiro em gaveta');
+      bad('A transferência não pode passar do dinheiro em gaveta');
     }
-    const reason = dto.reason.trim();
+    const reason = dto.reason?.trim() || null;
     try {
       await this.prisma.$transaction(async (tx) => {
         await postMovement(tx, {
           bankAccountId: account.id,
           type: withdrawal ? 'TRANSFER_INCOME' : 'TRANSFER_OUTCOME',
           amount: toReais(dto.amount),
-          description: `${withdrawal ? 'Sangria' : 'Suprimento'} do caixa FC nº ${session.number}`,
+          description: `Transferência ${withdrawal ? 'do' : 'para o'} caixa FC nº ${session.number}`,
           date: new Date(),
           reason,
           awaitingApproval: withdrawal && account.kind === 'CASH',
@@ -562,8 +560,8 @@ export class PdvService {
             sessionId: session.id,
             kind: dto.kind,
             description: withdrawal
-              ? `Sangria → ${account.name}`
-              : `Suprimento ← ${account.name}`,
+              ? `Transferência → ${account.name}`
+              : `Transferência ← ${account.name}`,
             parts: [{ method: 'CASH', amount: dto.amount }],
             reason,
             responsibleId: actor.id,
@@ -573,7 +571,7 @@ export class PdvService {
         });
       });
     } catch (error) {
-      this.missingDay(error, 'a sangria e o suprimento lançam nele');
+      this.missingDay(error, 'a transferência lança nele');
     }
     return this.sessionView(
       await this.ownSession(user, id),
@@ -1284,7 +1282,7 @@ export class PdvService {
     }
     if (session && sumParts(parts, 'CASH') > cashOnHand(session)) {
       bad(
-        'A gaveta não tem o dinheiro para devolver: faça um suprimento antes',
+        'A gaveta não tem o dinheiro para devolver: transfira dinheiro de uma conta para a gaveta antes',
       );
     }
     // As partes juntas por forma e conta: um estorno por onde entrou

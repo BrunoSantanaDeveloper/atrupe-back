@@ -42,10 +42,13 @@ export class CashSessionMovementDto {
   @IsInt()
   amount: number;
 
-  @ApiProperty()
+  // Opcional (PAD-1, 14/11/2026): a transferência pede origem, destino e
+  // valor; o motivo ajuda, mas não trava
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   @MaxLength(500)
-  reason: string;
+  reason?: string;
 
   @ApiPropertyOptional({
     description: 'A conta de origem ou destino; sem ela, a conta da gaveta',
