@@ -134,7 +134,10 @@ export class SaleSeriesService {
     const billingMap = {
       ON_ORDER: 'Faturar no pedido',
       ON_DELIVERY: 'Faturar na entrega',
-      ON_CASHIER: 'Faturar na frente de caixa',
+      // O valor do enum é ON_CHECKOUT: com a chave ON_CASHIER a lista de
+      // séries mostrava o código cru. "Cobrar na venda" é de 14/11/2026 (VR-10)
+      ON_CHECKOUT: 'Faturar na frente de caixa',
+      ON_SALE: 'Cobrar na venda',
       NO_INVOICE: 'Sem lançamento',
     };
 

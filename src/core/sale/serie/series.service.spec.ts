@@ -391,6 +391,20 @@ describe('SaleSeriesService', () => {
       });
     });
 
+    it.each([
+      ['ON_CHECKOUT', 'Faturar na frente de caixa'],
+      ['ON_SALE', 'Cobrar na venda'],
+    ])('a série %s tem nome na lista', async (billing, label) => {
+      prisma.saleSeries.findFirst.mockResolvedValue({
+        ...mockSeries,
+        billing,
+      });
+
+      const result = await service.findOne(mockSeriesId, mockCompanyId);
+
+      expect(result.billing).toEqual({ value: billing, label });
+    });
+
     it('should pass through unknown enum values as labels', async () => {
       prisma.saleSeries.findFirst.mockResolvedValue({
         ...mockSeries,
