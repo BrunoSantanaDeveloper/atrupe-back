@@ -9,11 +9,18 @@ export const QUICK_SALE_LOCKED =
 export const CASH_FRONT_NOT_IN_PLAN =
   'A frente de caixa não está no seu plano: cobre a venda na hora';
 export const NOT_AT_CHECKOUT =
-  'Só a venda cuja série fatura na frente de caixa é cobrada na hora';
+  'Só a venda cuja série cobra na venda é cobrada na hora. Esta série envia a venda ao caixa, ou fatura no pedido';
+export const CHARGES_AT_SALE =
+  'Esta série cobra na venda: use o "Cobrar". Para enviar ao caixa, use uma série que fatura na frente de caixa';
 
-// O recebimento é da série (VR-5, revista em 26/10/2026): a venda rápida é
-// só a abertura do orçamento. O que manda a venda ao caixa, ou ao "Cobrar"
-// do vendedor, é a série com "Faturar na frente de caixa" (ON_CHECKOUT).
+// O recebimento é da série (VR-5, revista em 26/10/2026; VR-10, 14/11): a
+// venda rápida é só a abertura do orçamento. "Faturar na frente de caixa"
+// (ON_CHECKOUT) só envia ao caixa; "Cobrar na venda" (ON_SALE) só cobra na
+// hora, pelo vendedor. Uma série é um ou outro, nunca os dois.
+
+/** A série cujo recebimento sai das condições de pagamento: caixa ou "Cobrar" */
+export const receivesOutsideOrder = (billing?: string | null) =>
+  billing === 'ON_CHECKOUT' || billing === 'ON_SALE';
 
 /**
  * O valor da venda, em centavos: os itens, a entrega e a comissão somada,

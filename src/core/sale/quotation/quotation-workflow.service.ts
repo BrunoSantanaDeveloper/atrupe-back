@@ -52,6 +52,9 @@ import { snapshotStages } from './item-origin';
 import {
   QUICK_SALE_ALREADY_SENT,
   CASH_FRONT_NOT_IN_PLAN,
+  CHARGES_AT_SALE,
+  NOT_AT_CHECKOUT,
+  receivesOutsideOrder,
   ensurePendingSale,
 } from '../quick-sale/quick-sale.rules';
 
@@ -666,7 +669,10 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
         `Quotation with ID '${quotationId}' not found.`,
       );
     }
-    const atCheckout = current.quotationPayment?.billing === 'ON_CHECKOUT';
+    // Frente de caixa ou "Cobrar na venda": aprova sem condição de pagamento
+    // e sem título (VR-10, 14/11/2026)
+    const billing = current.quotationPayment?.billing;
+    const atCheckout = receivesOutsideOrder(billing);
     if (atCheckout && current.pendingSale) {
       throw new ConflictException(QUICK_SALE_ALREADY_SENT);
     }
@@ -676,8 +682,16 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
     if (current.status === QuotationStatus.PENDING_PAYMENT) {
       throw new ConflictException(ALREADY_PENDING_PAYMENT);
     }
+    // Uma série é um ou outro (VR-10): a que cobra na venda não envia ao
+    // caixa, e a da frente de caixa não é cobrada pelo vendedor
+    if (billing === 'ON_SALE' && !options.charge) {
+      throw new BadRequestException(CHARGES_AT_SALE);
+    }
+    if (billing === 'ON_CHECKOUT' && options.charge) {
+      throw new BadRequestException(NOT_AT_CHECKOUT);
+    }
     // Enviar ao caixa só com a frente de caixa no plano: senão a venda
-    // ficaria numa fila que ninguém atende. Sem ela, resta o "Cobrar"
+    // ficaria numa fila que ninguém atende
     if (
       atCheckout &&
       !options.charge &&
@@ -953,7 +967,7 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
     }
 
     const startsInProduction = await this.startsInProduction(current.companyId);
-    const atCheckout = current.quotationPayment?.billing === 'ON_CHECKOUT';
+    const atCheckout = receivesOutsideOrder(current.quotationPayment?.billing);
     const before = await this.approvalState(quotationId);
 
     const order = await this.prisma.$transaction(

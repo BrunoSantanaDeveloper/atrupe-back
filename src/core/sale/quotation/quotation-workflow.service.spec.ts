@@ -14,7 +14,11 @@ import { DeliveryScheduleService } from '../delivery-schedule/delivery-schedule.
 import { PlanControlService } from '../../plan/plan-control.service';
 import { CreditCheckService } from './credit-check.service';
 import { ProductionProjectService } from '../../production/production-project.service';
-import { CASH_FRONT_NOT_IN_PLAN } from '../quick-sale/quick-sale.rules';
+import {
+  CASH_FRONT_NOT_IN_PLAN,
+  CHARGES_AT_SALE,
+  NOT_AT_CHECKOUT,
+} from '../quick-sale/quick-sale.rules';
 import {
   NotFoundException,
   BadRequestException,
@@ -696,12 +700,12 @@ describe('QuotationWorkflowService', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('série da frente de caixa: o pré-cadastro também pede a permissão, salvo o cliente de balcão', async () => {
+    it('série que cobra na venda: o pré-cadastro também pede a permissão, salvo o cliente de balcão', async () => {
       const atCheckout = (clientId: string) =>
         currentQuotation({
           client: { id: clientId, status: 'PROSPECT' },
           quotationPayment: {
-            billing: 'ON_CHECKOUT',
+            billing: 'ON_SALE',
             _count: { quotationInstallment: 0 },
           },
         });
@@ -894,7 +898,7 @@ describe('QuotationWorkflowService', () => {
       }
     });
 
-    it('série da frente de caixa sem o PDV no plano: só o "Cobrar" aprova', async () => {
+    it('série da frente de caixa sem o PDV no plano: não envia ao caixa', async () => {
       prisma.quotation.findUnique.mockImplementation(async (args) =>
         args.select
           ? currentQuotation({
@@ -913,8 +917,51 @@ describe('QuotationWorkflowService', () => {
         service.approve(mockQuotationId, mockUserId),
       ).rejects.toThrow(new BadRequestException(CASH_FRONT_NOT_IN_PLAN));
       expect(prisma.$transaction).not.toHaveBeenCalled();
+      mockPlanControl.hasFeature.mockResolvedValue(true);
+    });
 
-      // Com o charge, aprova e não entra na fila (o charge cria o registro)
+    // Uma série é um ou outro (VR-10, 14/11/2026)
+    it('a série da frente de caixa não é cobrada pelo vendedor', async () => {
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? currentQuotation({
+              quickSale: true,
+              quotationPayment: {
+                billing: 'ON_CHECKOUT',
+                _count: { quotationInstallment: 0 },
+              },
+            })
+          : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+      );
+      const charge = jest.fn();
+      await expect(
+        service.approve(mockQuotationId, mockUserId, undefined, { charge }),
+      ).rejects.toThrow(new BadRequestException(NOT_AT_CHECKOUT));
+      expect(charge).not.toHaveBeenCalled();
+    });
+
+    it('a série que cobra na venda não envia ao caixa, só o "Cobrar" aprova', async () => {
+      prisma.quotation.findUnique.mockImplementation(async (args) =>
+        args.select
+          ? currentQuotation({
+              quickSale: true,
+              quotationPayment: {
+                billing: 'ON_SALE',
+                _count: { quotationInstallment: 0 },
+              },
+            })
+          : { ...mockQuotation, quotationProduct: [], deliveryInfo: null },
+      );
+      await expect(
+        service.approve(mockQuotationId, mockUserId),
+      ).rejects.toThrow(new BadRequestException(CHARGES_AT_SALE));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+
+      // Com o charge, aprova sem condição e não entra na fila (o charge
+      // cria o registro), também sem a frente de caixa no plano
+      mockPlanControl.hasFeature.mockImplementation(
+        async (_company: string, feature: string) => feature !== 'pdv_screen',
+      );
       const charge = jest.fn();
       await service.approve(mockQuotationId, mockUserId, undefined, { charge });
       expect(charge).toHaveBeenCalled();

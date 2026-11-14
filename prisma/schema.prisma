@@ -3233,6 +3233,7 @@ enum BiilingKind {
   ON_DELIVERY
   ON_CHECKOUT
   NO_INVOICE
+  ON_SALE
 }
 
 enum SendToProductionKind {

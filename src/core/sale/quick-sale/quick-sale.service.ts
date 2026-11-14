@@ -363,9 +363,9 @@ export class QuickSaleService {
     dto: ReceiptDto,
     actor: CashActor,
   ) {
-    // O recebimento é da série (VR-5, 26/10/2026): qualquer orçamento cuja
-    // série fatura na frente de caixa pode ser cobrado à vista pelo vendedor,
-    // em dinheiro, PIX ou cartão
+    // O recebimento é da série (VR-10, 14/11/2026): só o orçamento cuja
+    // série cobra na venda é cobrado à vista pelo vendedor, em dinheiro, PIX
+    // ou cartão. A série da frente de caixa só envia ao caixa
     const quotation = await this.prisma.quotation.findFirst({
       where: { id: quotationId, companyId: user.companyId },
       select: {
@@ -377,7 +377,7 @@ export class QuickSaleService {
       },
     });
     if (!quotation) throw new NotFoundException('Orçamento não encontrado');
-    if (quotation.quotationPayment?.billing !== 'ON_CHECKOUT') {
+    if (quotation.quotationPayment?.billing !== 'ON_SALE') {
       bad(NOT_AT_CHECKOUT);
     }
     if (quotation.pendingSale)
