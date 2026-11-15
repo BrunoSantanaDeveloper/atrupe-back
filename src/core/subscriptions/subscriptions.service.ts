@@ -1023,12 +1023,11 @@ export class SubscriptionsService {
       });
 
       if (company && company.blockLevel !== 'NONE') {
-        const hasOverdue = await this.prisma.payment.findFirst({
-          where: {
-            subscriptionId: subscription.id,
-            status: 'OVERDUE',
-          },
-        });
+        // A cobrança reemitida pela regularização e não paga segue em dívida:
+        // gerar a fatura nova não desbloqueia.
+        const hasOverdue = await this.subscriptionBlockService.hasOpenDebt(
+          subscription.id,
+        );
 
         if (!hasOverdue) {
           await this.subscriptionBlockService.unblockCompany(companyId);

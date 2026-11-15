@@ -1668,6 +1668,164 @@ export class InvoicyHttpService {
   }
 
   /**
+   * Garante o módulo NFC-e no licenciamento da empresa no Invoicy.
+   *
+   * O cadastro feito pelo Atrupe (registerCompany) não manda `Licenciamento`,
+   * e a empresa nasce no Invoicy de produção só com NF-e e NFS-e. A ativação
+   * da NFC-e passava assim mesmo, porque só conferia cadastro e autenticação,
+   * e o módulo tinha de ser ligado à mão no painel. Em 06/11/2026 a Terabyte
+   * falhou três vezes ao gravar o CSC até o módulo ser ligado; a Clapp ficou
+   * "ativa" no Atrupe sem o módulo no provedor.
+   *
+   * O endpoint de licenciamento só aceita o token da EMPRESA (o de parceiro
+   * volta 173, "Chave de comunicação inválida") e escreve o módulo "NFCe",
+   * enquanto a consulta devolve "NFC-e". No homolog (15/11/2026) o pedido
+   * ativou na hora, inclusive módulo bloqueado ou cancelado, e módulo
+   * bloqueado some da lista da consulta. Quem confirma é a consulta seguinte.
+   */
+  async ensureNfceModuleLicensed(data: {
+    companyId: string;
+    cnpj: string;
+    environment: InvoicyEnvironment;
+    signal?: AbortSignal;
+  }): Promise<{ solicitado: boolean }> {
+    const { environment, signal } = data;
+    const cnpj = data.cnpj.replace(/\D/g, '');
+
+    const antes = this.findCompanyRecord(
+      await this.consultCompany(cnpj, environment, signal),
+      cnpj,
+    );
+    if (!antes) {
+      throw new Error(
+        `Empresa ${this.maskCnpj(cnpj)} não encontrada no cadastro do Invoicy (${environment})`,
+      );
+    }
+    if (!Array.isArray(antes.Licenciamento)) {
+      // Sem a lista não há o que conferir. Barrar a ativação por um formato
+      // de resposta diferente seria pior que seguir sem a conferência.
+      this.logger.warn(
+        `Consulta do Invoicy sem Licenciamento (${this.maskCnpj(cnpj)}, ${environment}): módulo NFC-e não conferido`,
+      );
+      return { solicitado: false };
+    }
+    if (this.temModuloNfce(antes)) {
+      return { solicitado: false };
+    }
+
+    this.logger.warn(
+      `Módulo NFC-e ausente no licenciamento do Invoicy (${this.maskCnpj(cnpj)}, ${environment}): pedindo a ativação`,
+    );
+
+    const token = await this.authenticateForEnvironment(
+      data.companyId,
+      cnpj,
+      environment,
+      signal,
+    );
+    const baseUrl = this.getBaseUrl(environment);
+    const payload = [
+      {
+        CnpjEmpresa: cnpj,
+        tpAmb: environment === 'PRODUCAO' ? 1 : 2,
+        Acao: 1, // Solicitar
+        Modulo: 'NFCe',
+        // Bilhetagem: o mesmo modelo dos módulos que o Invoicy já dá à empresa.
+        Modelo: 1,
+        Autor: 'Atrupe',
+      },
+    ];
+
+    let resposta: any;
+    try {
+      const response = await this.httpClient.post(
+        `${baseUrl}/companies?type=licenciamento`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          ...(signal ? { signal } : {}),
+        },
+      );
+      resposta = response.data;
+    } catch (error) {
+      const status = error.response?.status;
+      const errorCode =
+        error.response?.data?.Codigo ||
+        error.response?.data?.codigo ||
+        error.response?.data?.code;
+      this.logger.error(
+        `Falha ao pedir o módulo NFC-e ao Invoicy (status ${status ?? 'n/a'})` +
+          (errorCode ? `: ${errorCode}` : ''),
+      );
+      throw new Error(
+        `Erro ao pedir o módulo NFC-e ao Invoicy (${errorCode ?? status ?? 'PROVIDER_ERROR'})`,
+      );
+    }
+
+    const recusa = this.recusaDoLicenciamento(resposta);
+
+    const depois = this.findCompanyRecord(
+      await this.consultCompany(cnpj, environment, signal),
+      cnpj,
+    );
+    if (!this.temModuloNfce(depois)) {
+      throw new Error(
+        recusa
+          ? `o Invoicy recusou o pedido do módulo NFC-e (${recusa})`
+          : 'o Invoicy aceitou o pedido do módulo NFC-e, mas ele não aparece no cadastro consultado em seguida',
+      );
+    }
+
+    if (recusa) {
+      this.logger.warn(
+        `Módulo NFC-e presente no Invoicy apesar da resposta ao pedido (${this.maskCnpj(cnpj)}, ${environment}): ${recusa}`,
+      );
+    }
+    this.logger.log(
+      `Módulo NFC-e ativado no Invoicy (${this.maskCnpj(cnpj)}, ${environment})`,
+    );
+    return { solicitado: true };
+  }
+
+  /** "NFC-e" na consulta, "NFCe" no pedido: compara sem hífen e sem caixa. */
+  private temModuloNfce(registro: any): boolean {
+    const licencas = registro?.Licenciamento;
+    return (
+      Array.isArray(licencas) &&
+      licencas.some(
+        (licenca) =>
+          String(licenca?.Modulo ?? '')
+            .replace(/[^a-z0-9]/gi, '')
+            .toUpperCase() === 'NFCE',
+      )
+    );
+  }
+
+  /**
+   * A resposta vem como [{ Codigo: 100, "Licenciamento processado", Detalhes:
+   * [{ Acao, Modulo, Codigo, Descricao }] }], e o código de topo é 100 mesmo
+   * quando o item é recusado (101: módulo inválido). Devolve o motivo do
+   * primeiro código ≠ 100, ou null.
+   */
+  private recusaDoLicenciamento(resposta: any): string | null {
+    const topo = Array.isArray(resposta) ? resposta[0] : resposta;
+    if (!topo || typeof topo !== 'object') return 'resposta vazia';
+
+    const detalhes: any[] = Array.isArray(topo.Detalhes) ? topo.Detalhes : [];
+    const item =
+      detalhes.find((d) => Number(d?.Codigo) !== 100) ??
+      (topo.Codigo !== undefined && Number(topo.Codigo) !== 100 ? topo : null);
+    if (!item) return null;
+
+    return (
+      `Código ${item.Codigo}` + (item.Descricao ? `: ${item.Descricao}` : '')
+    );
+  }
+
+  /**
    * Mesma comparação dos dois lados: o identificador sem zeros à esquerda
    * ("1" e "000001" são o mesmo CSC) e o código sem diferença de caixa.
    */

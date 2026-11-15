@@ -81,3 +81,83 @@ describe('InvoicyCompanyRegistrationService.syncNfceCsc', () => {
     expect(http.updateCompanyNfceCsc).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A empresa que o Atrupe cadastra nasce no Invoicy sem o módulo NFC-e. Quando a
+ * ativação precisa pedi-lo, o pedido fica no histórico do emissor.
+ */
+describe('InvoicyCompanyRegistrationService.ensureNfceModule', () => {
+  const montar = (solicitado: boolean) => {
+    const prisma = {
+      company: {
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValue({ cnpj: '01.327.126/0001-38' }),
+      },
+      invoicyConfig: {
+        findUnique: jest.fn().mockResolvedValue({ name: 'Emissor Clapp' }),
+      },
+    };
+    const audit = {
+      commitWithOutcome: jest.fn(async (_dados: any, fn: any) => fn()),
+    };
+    const http = {
+      ensureNfceModuleLicensed: jest.fn().mockResolvedValue({ solicitado }),
+    };
+    const service = new InvoicyCompanyRegistrationService(
+      prisma as any,
+      {} as any,
+      audit as any,
+      http as any,
+      {} as any,
+    );
+    return { service, audit, http };
+  };
+
+  it('pede ao provedor com o CNPJ sem máscara e registra o pedido no histórico', async () => {
+    const { service, audit, http } = montar(true);
+
+    await expect(
+      service.ensureNfceModule('company-1', 'e1', FiscalEnvironment.PRODUCAO),
+    ).resolves.toEqual({ solicitado: true });
+
+    expect(http.ensureNfceModuleLicensed).toHaveBeenCalledWith({
+      companyId: 'company-1',
+      cnpj: '01327126000138',
+      environment: 'PRODUCAO',
+      signal: undefined,
+    });
+    expect(audit.commitWithOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId: 'company-1',
+        invoicyConfigId: 'e1',
+        emissorName: 'Emissor Clapp',
+        environment: FiscalEnvironment.PRODUCAO,
+        description: expect.stringContaining('Módulo NFC-e ativado'),
+        result: 'SUCCESS',
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it('não registra nada quando o módulo já estava ligado', async () => {
+    const { service, audit } = montar(false);
+
+    await expect(
+      service.ensureNfceModule('company-1', 'e1', FiscalEnvironment.PRODUCAO),
+    ).resolves.toEqual({ solicitado: false });
+    expect(audit.commitWithOutcome).not.toHaveBeenCalled();
+  });
+
+  it('falha no histórico não derruba a ativação: o módulo já está ligado', async () => {
+    const { service, audit } = montar(true);
+    audit.commitWithOutcome.mockRejectedValue(new Error('banco fora'));
+    jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(
+      service.ensureNfceModule('company-1', 'e1', FiscalEnvironment.PRODUCAO),
+    ).resolves.toEqual({ solicitado: true });
+  });
+});

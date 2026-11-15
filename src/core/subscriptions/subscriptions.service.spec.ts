@@ -69,6 +69,7 @@ describe('SubscriptionsService', () => {
     previewCompanyCharges: jest.fn(),
     syncCompanyCharges: jest.fn(),
     activateIfContractPaid: jest.fn(),
+    hasOpenDebt: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -794,15 +795,40 @@ describe('SubscriptionsService', () => {
         blockLevel: 'PARTIAL',
       });
       // Depois de alinhada, a vencida já não está em aberto aqui.
-      mockPrismaService.payment.findFirst.mockResolvedValue(null);
+      mockSubscriptionBlockService.hasOpenDebt.mockResolvedValueOnce(false);
 
       const result: any =
         await service.checkAndSyncSubscriptionStatus('company-1');
 
+      expect(mockSubscriptionBlockService.hasOpenDebt).toHaveBeenCalledWith(
+        'sub-1',
+      );
       expect(mockSubscriptionBlockService.unblockCompany).toHaveBeenCalledWith(
         'company-1',
       );
       expect(result.status).toBe('unblocked');
+    });
+
+    it('quem só reemitiu a vencida pela regularização, sem pagar, segue bloqueado', async () => {
+      mockSubscriptionBlockService.syncCompanyCharges.mockResolvedValue({
+        created: 0,
+        updated: 1,
+        canceled: 0,
+      });
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        blockLevel: 'PARTIAL',
+      });
+      // A reemitida está PENDING com vencimento hoje no Asaas, mas segue
+      // devendo.
+      mockSubscriptionBlockService.hasOpenDebt.mockResolvedValueOnce(true);
+
+      const result: any =
+        await service.checkAndSyncSubscriptionStatus('company-1');
+
+      expect(
+        mockSubscriptionBlockService.unblockCompany,
+      ).not.toHaveBeenCalled();
+      expect(result.status).toBe('already_active');
     });
 
     it('Asaas fora do ar: reavalia com o banco, sem erro', async () => {

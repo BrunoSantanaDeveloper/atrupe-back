@@ -313,6 +313,107 @@ export class SubscriptionBlockService {
   }
 
   /**
+   * O vencimento que conta para o atraso das cobranças que a regularização
+   * reemitiu ("AAAA-MM-DD", pelo id do Asaas).
+   *
+   * Reemitir não é pagar: a regularização passa a cobrança vencida para hoje
+   * no Asaas, e pelo vencimento novo a conta parecia em dia — era desbloqueada
+   * sem pagar, voltava para Ativas no superadmin e o atraso recomeçava do
+   * zero. A reemitida segue com o vencimento de antes, que fica no banco e no
+   * registro da regularização. Um adiamento feito à mão no Asaas não passa
+   * por aqui e vale como está.
+   */
+  async reissuedDueDates(subscriptionId: string): Promise<Map<string, string>> {
+    const regularizations = await this.prisma.subscriptionHistory.findMany({
+      where: { subscriptionId, action: 'REGULARIZATION_STARTED' },
+      select: { metadata: true },
+    });
+    // As regularizações de antes desta regra não gravaram o vencimento
+    // original; para elas, vale o que ficou no banco.
+    const recorded = new Map<string, string | null>();
+    for (const { metadata } of regularizations) {
+      const data = (metadata ?? {}) as Record<string, unknown>;
+      if (typeof data.paymentId !== 'string') continue;
+      const original =
+        typeof data.originalDueDate === 'string'
+          ? data.originalDueDate.slice(0, 10)
+          : null;
+      recorded.set(
+        data.paymentId,
+        this.earliest(recorded.get(data.paymentId), original),
+      );
+    }
+    if (recorded.size === 0) return new Map();
+
+    const charges = await this.prisma.payment.findMany({
+      where: { asaasPaymentId: { in: [...recorded.keys()] } },
+      select: { asaasPaymentId: true, dueDate: true },
+    });
+    return new Map(
+      charges.map((charge) => [
+        charge.asaasPaymentId,
+        this.earliest(
+          charge.dueDate.toISOString().slice(0, 10),
+          recorded.get(charge.asaasPaymentId),
+        ),
+      ]),
+    );
+  }
+
+  private earliest(...days: (string | null | undefined)[]): string | null {
+    return days.filter((day): day is string => !!day).sort()[0] ?? null;
+  }
+
+  /**
+   * A cobrança do Asaas ainda em aberto e vencida, contando do vencimento de
+   * antes da regularização quando ela foi reemitida.
+   */
+  private isOverdueCharge(
+    charge: { id: string; status: string; dueDate: string },
+    todayStr: string,
+    reissued: Map<string, string>,
+  ): boolean {
+    if (charge.status === 'OVERDUE') return true;
+    return (
+      charge.status === 'PENDING' &&
+      this.debtDueDate(charge, reissued) < todayStr
+    );
+  }
+
+  private debtDueDate(
+    charge: { id: string; dueDate: string },
+    reissued: Map<string, string>,
+  ): string {
+    const current = String(charge.dueDate).slice(0, 10);
+    const original = reissued.get(charge.id);
+    return original && original < current ? original : current;
+  }
+
+  /**
+   * A assinatura deve alguma cobrança vencida, pelo banco. É o que impede o
+   * desbloqueio: uma cobrança reemitida pela regularização segue em dívida até
+   * ser paga, mesmo com o vencimento de hoje no Asaas.
+   */
+  async hasOpenDebt(
+    subscriptionId: string,
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    const todayStr = now.toISOString().slice(0, 10);
+    const [open, reissued] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: { subscriptionId, status: { in: ['PENDING', 'OVERDUE'] } },
+        select: { asaasPaymentId: true, status: true, dueDate: true },
+      }),
+      this.reissuedDueDates(subscriptionId),
+    ]);
+    return open.some((charge) => {
+      if (charge.status === 'OVERDUE') return true;
+      const original = reissued.get(charge.asaasPaymentId);
+      return !!original && original < todayStr;
+    });
+  }
+
+  /**
    * Libera o plano de uma contratação assim que uma cobrança dela aparece
    * paga.
    *
@@ -982,16 +1083,16 @@ export class SubscriptionBlockService {
 
         // Encontrar pagamento OVERDUE ou PENDING vencido no Asaas
         const todayStr = today.toISOString().split('T')[0];
+        // A reemitida pela regularização conta do vencimento de antes: senão
+        // o atraso recomeçava do zero a cada reemissão.
+        const reissued = await this.reissuedDueDates(subscription.id);
         // A MAIS ANTIGA entre as vencidas, não a primeira que a listagem
         // devolver: pegando qualquer uma, o atraso saía subestimado e o
         // bloqueio demorava mais do que devia. Datas vêm como "AAAA-MM-DD",
         // então a ordenação de texto já é cronológica.
         const overduePayment = asaasPayments
-          .filter(
-            (p) =>
-              p.status === 'OVERDUE' ||
-              (p.status === 'PENDING' && p.dueDate < todayStr),
-          )
+          .filter((p) => this.isOverdueCharge(p, todayStr, reissued))
+          .map((p) => ({ ...p, dueDate: this.debtDueDate(p, reissued) }))
           .sort((a, b) =>
             String(a.dueDate).localeCompare(String(b.dueDate)),
           )[0];
@@ -1186,12 +1287,13 @@ export class SubscriptionBlockService {
           continue;
         }
 
-        // Verificar se ainda há inadimplência
+        // Verificar se ainda há inadimplência. Cobrança reemitida pela
+        // regularização e não paga continua devendo: sem pagamento, nada de
+        // desbloqueio.
         const todayStr = new Date().toISOString().split('T')[0];
-        const hasOverdue = asaasPayments.some(
-          (p) =>
-            p.status === 'OVERDUE' ||
-            (p.status === 'PENDING' && p.dueDate < todayStr),
+        const reissued = await this.reissuedDueDates(subscription.id);
+        const hasOverdue = asaasPayments.some((p) =>
+          this.isOverdueCharge(p, todayStr, reissued),
         );
 
         if (hasOverdue) {

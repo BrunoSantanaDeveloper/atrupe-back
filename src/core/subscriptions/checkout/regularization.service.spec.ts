@@ -193,6 +193,20 @@ describe('RegularizationService', () => {
         }),
       }),
     );
+    // Reemitir não é pagar: no banco a cobrança segue com o vencimento de
+    // antes, e é dele que o atraso conta até o pagamento.
+    const [{ data }] = prisma.payment.updateMany.mock.calls[0];
+    expect(data).not.toHaveProperty('dueDate');
+    expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'REGULARIZATION_STARTED',
+        metadata: expect.objectContaining({
+          paymentId: 'pay_1',
+          dueDate: today,
+          originalDueDate: '2026-01-10',
+        }),
+      }),
+    });
     const [, input] = acceptance.record.mock.calls[0];
     expect(input).toMatchObject({
       context: 'REGULARIZATION',
@@ -205,6 +219,31 @@ describe('RegularizationService', () => {
       },
     });
     expect(result.paymentUrl).toBe('https://asaas/i/1-novo');
+  });
+
+  it('contratação que espera o pagamento: a reemitida vale com o vencimento novo, como antes', async () => {
+    withOpenCharge('2026-01-10', 'BOLETO');
+    const ctx = await quoteService.getBillingContext();
+    quoteService.getBillingContext.mockResolvedValue({
+      ...ctx,
+      awaitingActivation: true,
+    });
+    const today = new Date().toISOString().split('T')[0];
+
+    await service.pay(
+      ADMIN,
+      { billingType: 'PIX', termsAcceptance: ACCEPT },
+      META,
+    );
+
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          dueDate: new Date(today),
+          status: 'PENDING',
+        }),
+      }),
+    );
   });
 
   it('só administrador regulariza', async () => {

@@ -1885,4 +1885,201 @@ describe('SubscriptionBlockService', () => {
       });
     });
   });
+
+  describe('regularização não é pagamento', () => {
+    const day = (daysFromToday: number) => {
+      const date = new Date();
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() + daysFromToday);
+      return date.toISOString().slice(0, 10);
+    };
+    const TODAY = day(0);
+
+    /**
+     * O banco depois de uma regularização: a cobrança `pay_1`, vencida em
+     * `original`, foi reemitida no Asaas para hoje; aqui ela segue com o
+     * vencimento de antes. `recorded` diz se o registro da regularização
+     * guarda o vencimento original (as de antes desta regra não guardam).
+     */
+    const reissued = (original: string, recorded = true) => {
+      mockPrismaService.subscriptionHistory.findMany.mockImplementation(
+        async ({ where }: any) =>
+          where?.action === 'REGULARIZATION_STARTED'
+            ? [
+                {
+                  metadata: {
+                    paymentId: 'pay_1',
+                    dueDate: TODAY,
+                    ...(recorded ? { originalDueDate: original } : {}),
+                  },
+                },
+              ]
+            : [],
+      );
+      mockPrismaService.payment.findMany.mockImplementation(
+        async ({ where }: any) =>
+          where?.asaasPaymentId?.in
+            ? [
+                {
+                  asaasPaymentId: 'pay_1',
+                  dueDate: new Date(`${original}T00:00:00.000Z`),
+                },
+              ]
+            : [],
+      );
+    };
+
+    const blockedCompany = (blockLevel: BlockLevel) => [
+      {
+        id: 'company-1',
+        name: 'Empresa',
+        blockLevel,
+        blockReason: 'Assinatura com 4 dias de atraso (verificado no Asaas)',
+        Subscription: [
+          {
+            id: 'sub-1',
+            asaasSubscriptionId: 'sub_asaas',
+            asaasInstallmentId: null,
+            billingMode: null,
+            nextDueDate: new Date(),
+            status: 'ACTIVE',
+          },
+        ],
+      },
+    ];
+
+    afterEach(() => {
+      mockPrismaService.subscriptionHistory.findMany.mockReset();
+      mockPrismaService.payment.findMany.mockReset();
+    });
+
+    it('a rotina das 03:00 não desbloqueia quem só reemitiu a vencida, sem pagar', async () => {
+      reissued(day(-4));
+      mockPrismaService.company.findMany.mockResolvedValue(
+        blockedCompany('PARTIAL'),
+      );
+      // No Asaas a reemitida está em dia: pendente, com vencimento hoje.
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { id: 'pay_1', status: 'PENDING', dueDate: TODAY },
+      ]);
+
+      const [result] = await service.checkAndUnblockCompanies();
+
+      expect(result.action).toBe('unchanged');
+      expect(mockPrismaService.company.update).not.toHaveBeenCalled();
+      expect(mockPrismaService.subscription.update).not.toHaveBeenCalled();
+    });
+
+    it('paga a reemitida, a rotina desbloqueia', async () => {
+      reissued(day(-4));
+      mockPrismaService.company.findMany.mockResolvedValue(
+        blockedCompany('PARTIAL'),
+      );
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { id: 'pay_1', status: 'RECEIVED', dueDate: TODAY },
+      ]);
+
+      const [result] = await service.checkAndUnblockCompanies();
+
+      expect(result.action).toBe('unblocked');
+      expect(mockPrismaService.company.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'company-1' },
+          data: expect.objectContaining({ blockLevel: 'NONE' }),
+        }),
+      );
+    });
+
+    it('o atraso da reemitida conta do vencimento original, não recomeça do zero', async () => {
+      reissued(day(-8));
+      mockPrismaService.company.findMany.mockResolvedValue(
+        blockedCompany('NONE'),
+      );
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { id: 'pay_1', status: 'PENDING', dueDate: TODAY },
+      ]);
+      mockPrismaService.company.update.mockResolvedValue({});
+
+      const [result] = await service.checkAndApplyBlocks();
+
+      expect(result.daysOverdue).toBe(8);
+      expect(result.newBlockLevel).toBe('FULL');
+    });
+
+    it('adiamento feito no Asaas, sem regularização, vale como está', async () => {
+      mockPrismaService.company.findMany.mockResolvedValue(
+        blockedCompany('NONE'),
+      );
+      mockAsaasGatewayService.getAsaasSubscriptionPayments.mockResolvedValue([
+        { id: 'pay_2', status: 'PENDING', dueDate: day(5) },
+      ]);
+
+      const [result] = await service.checkAndApplyBlocks();
+
+      expect(result.action).toBe('unchanged');
+      expect(mockPrismaService.company.update).not.toHaveBeenCalled();
+    });
+
+    describe('hasOpenDebt (a volta da fatura e o login)', () => {
+      it('a reemitida e não paga segue em dívida', async () => {
+        reissued(day(-4));
+        const open = [
+          {
+            asaasPaymentId: 'pay_1',
+            status: 'PENDING',
+            dueDate: new Date(`${day(-4)}T00:00:00.000Z`),
+          },
+        ];
+        mockPrismaService.payment.findMany.mockImplementation(
+          async ({ where }: any) =>
+            where?.asaasPaymentId?.in
+              ? [{ asaasPaymentId: 'pay_1', dueDate: open[0].dueDate }]
+              : open,
+        );
+
+        expect(await service.hasOpenDebt('sub-1')).toBe(true);
+      });
+
+      it('regularização de antes desta regra conta da data que ficou no banco', async () => {
+        // Sem o vencimento original no registro, o banco ficou com a data da
+        // reemissão: dívida a partir do dia seguinte.
+        reissued(TODAY, false);
+        const open = [
+          {
+            asaasPaymentId: 'pay_1',
+            status: 'PENDING',
+            dueDate: new Date(`${TODAY}T00:00:00.000Z`),
+          },
+        ];
+        mockPrismaService.payment.findMany.mockImplementation(
+          async ({ where }: any) =>
+            where?.asaasPaymentId?.in
+              ? [{ asaasPaymentId: 'pay_1', dueDate: open[0].dueDate }]
+              : open,
+        );
+
+        expect(await service.hasOpenDebt('sub-1')).toBe(false);
+      });
+
+      it('vencida conta; pendente sem regularização, não', async () => {
+        mockPrismaService.payment.findMany.mockResolvedValueOnce([
+          {
+            asaasPaymentId: 'pay_3',
+            status: 'PENDING',
+            dueDate: new Date(`${day(-2)}T00:00:00.000Z`),
+          },
+        ]);
+        expect(await service.hasOpenDebt('sub-1')).toBe(false);
+
+        mockPrismaService.payment.findMany.mockResolvedValueOnce([
+          {
+            asaasPaymentId: 'pay_3',
+            status: 'OVERDUE',
+            dueDate: new Date(`${day(-2)}T00:00:00.000Z`),
+          },
+        ]);
+        expect(await service.hasOpenDebt('sub-1')).toBe(true);
+      });
+    });
+  });
 });

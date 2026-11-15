@@ -176,12 +176,24 @@ export class RegularizationService {
           ? await this.asaasGateway.getPixQrCode(focus.asaasPaymentId)
           : null;
 
+      // Reemitir não é pagar. Para quem já tem o plano liberado, a cobrança
+      // fica no banco com o vencimento de antes: é dele que o atraso conta, e
+      // a empresa só é desbloqueada com o pagamento. Com o vencimento de hoje,
+      // a conta parecia em dia, era desbloqueada sem pagar e voltava para
+      // Ativas no superadmin. Na contratação que espera o pagamento, que não
+      // libera nada, o vencimento novo vale aqui também, como antes.
+      const keepsDebtDate =
+        view.reason === 'OVERDUE' || view.reason === 'FIRST_CHARGE_PENDING';
+
       await this.prisma.payment.updateMany({
         where: { asaasPaymentId: focus.asaasPaymentId },
         data: {
           billingType: dto.billingType,
           ...(update.dueDate
-            ? { dueDate: new Date(update.dueDate), status: 'PENDING' }
+            ? {
+                ...(keepsDebtDate ? {} : { dueDate: new Date(update.dueDate) }),
+                status: 'PENDING',
+              }
             : {}),
           invoiceUrl,
           ...(pix
@@ -233,6 +245,7 @@ export class RegularizationService {
             paymentId: focus.asaasPaymentId,
             billingType: dto.billingType,
             dueDate: update.dueDate ?? dueDay,
+            originalDueDate: dueDay,
           },
           createdBy: user.userId,
           createdByName: sessionUser.name,

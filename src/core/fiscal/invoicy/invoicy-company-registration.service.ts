@@ -2,6 +2,7 @@ import {
   Injectable,
   ForbiddenException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../../config/prisma/prisma.service';
 import { EncryptionService } from '../../../shared/services/encryption.service';
@@ -18,6 +19,8 @@ import { InvoicyEnvironment } from './invoicy.types';
 
 @Injectable()
 export class InvoicyCompanyRegistrationService {
+  private readonly logger = new Logger(InvoicyCompanyRegistrationService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly encryptionService: EncryptionService,
@@ -271,6 +274,71 @@ export class InvoicyCompanyRegistrationService {
     }
 
     return updated;
+  }
+
+  /**
+   * Garante o módulo NFC-e no licenciamento da empresa no Invoicy, pedindo a
+   * ativação quando falta (ver InvoicyHttpService.ensureNfceModuleLicensed).
+   *
+   * Chamado na ativação da NFC-e, depois do ensureRegistered e antes do CSC:
+   * a empresa que o Atrupe cadastra nasce sem o módulo. Quando o pedido é
+   * feito, fica no histórico do emissor (o módulo é cobrado por documento).
+   */
+  async ensureNfceModule(
+    companyId: string,
+    invoicyConfigId: string,
+    environment: FiscalEnvironment,
+    signal?: AbortSignal,
+  ): Promise<{ solicitado: boolean }> {
+    const company = await this.prisma.company.findUniqueOrThrow({
+      where: { id: companyId },
+      select: { cnpj: true },
+    });
+    const cnpj = (company.cnpj ?? '').replace(/\D/g, '');
+    if (!cnpj) {
+      throw new BadRequestException(
+        'Empresa sem CNPJ: complete o cadastro antes de ativar a NFC-e.',
+      );
+    }
+
+    const resultado = await this.invoicyHttpService.ensureNfceModuleLicensed({
+      companyId,
+      cnpj,
+      environment: environment as InvoicyEnvironment,
+      signal,
+    });
+
+    if (resultado.solicitado) {
+      try {
+        const emissor = await this.prisma.invoicyConfig.findUnique({
+          where: { id: invoicyConfigId },
+          select: { name: true },
+        });
+        await this.fiscalAuditService.commitWithOutcome(
+          {
+            companyId,
+            invoicyConfigId,
+            emissorName: emissor?.name ?? '',
+            action: FiscalConfigAction.ENVIRONMENT_CONFIG_CREATE,
+            actorType: ActorType.SYSTEM,
+            createdByName: 'FiscalActivation',
+            environment,
+            description: `Módulo NFC-e ativado no Invoicy (${environment}) durante a ativação`,
+            result: 'SUCCESS',
+            metadata: { provedor: 'INVOICY', modulo: 'NFCe' },
+          },
+          async () => undefined,
+        );
+      } catch (error) {
+        // O módulo já está ligado no provedor; perder o registro não deve
+        // derrubar a ativação.
+        this.logger.error(
+          `Módulo NFC-e ativado, mas o registro no histórico falhou: ${error?.message}`,
+        );
+      }
+    }
+
+    return resultado;
   }
 
   /**

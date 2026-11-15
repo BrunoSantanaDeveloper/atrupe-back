@@ -317,6 +317,7 @@ describe('FiscalIssuerActivationService — CSC da NFC-e no provedor', () => {
   };
   const registrationService = {
     ensureRegistered: jest.fn(),
+    ensureNfceModule: jest.fn(),
     syncNfceCsc: jest.fn(),
   };
 
@@ -351,6 +352,9 @@ describe('FiscalIssuerActivationService — CSC da NFC-e no provedor', () => {
       checks: [],
     });
     registrationService.ensureRegistered.mockResolvedValue(undefined);
+    registrationService.ensureNfceModule.mockResolvedValue({
+      solicitado: false,
+    });
     registrationService.syncNfceCsc.mockResolvedValue({ alterado: true });
 
     // Lease e commits têm testes próprios acima; aqui só o fluxo importa.
@@ -392,6 +396,66 @@ describe('FiscalIssuerActivationService — CSC da NFC-e no provedor', () => {
     });
 
     expect(registrationService.syncNfceCsc).not.toHaveBeenCalled();
+    expect(registrationService.ensureNfceModule).not.toHaveBeenCalled();
+  });
+
+  // Terabyte, 06/11/2026: a empresa nasceu no Invoicy sem o módulo NFC-e, e a
+  // ativação só passou depois de o módulo ser ligado à mão no painel.
+  it('NFC-e: garante o módulo no provedor depois do cadastro e antes do CSC', async () => {
+    rolloutPolicy.isProductionActivationEnabled.mockReturnValue(true);
+
+    await expect(
+      service.activate('company-1', 'e1', FiscalEnvironment.PRODUCAO, {
+        docType: 'NFCE',
+        confirmFiscalValidity: true,
+      }),
+    ).resolves.toEqual({ success: true });
+
+    expect(registrationService.ensureNfceModule).toHaveBeenCalledWith(
+      'company-1',
+      'e1',
+      FiscalEnvironment.PRODUCAO,
+      expect.anything(),
+    );
+    const [registro] =
+      registrationService.ensureRegistered.mock.invocationCallOrder;
+    const [modulo] =
+      registrationService.ensureNfceModule.mock.invocationCallOrder;
+    const [csc] = registrationService.syncNfceCsc.mock.invocationCallOrder;
+    expect(registro).toBeLessThan(modulo);
+    expect(modulo).toBeLessThan(csc);
+  });
+
+  it('módulo NFC-e que não liga barra a ativação com motivo próprio, sem enviar o CSC', async () => {
+    registrationService.ensureNfceModule.mockRejectedValue(
+      new Error(
+        'o Invoicy recusou o pedido do módulo NFC-e (Código 101: Módulo inválido)',
+      ),
+    );
+
+    const erro = await service
+      .activate('company-1', 'e1', FiscalEnvironment.HOMOLOGACAO, {
+        docType: 'NFCE',
+      })
+      .catch((e) => e);
+
+    expect(erro).toBeInstanceOf(UnprocessableEntityException);
+    expect(erro.getResponse()).toEqual({
+      errorCode: 'PROVIDER_NFCE_MODULE_INACTIVE',
+      message: expect.stringContaining('Código 101: Módulo inválido'),
+    });
+    expect(erro.getResponse().message).toContain('suporte da Atrupe');
+    expect(registrationService.syncNfceCsc).not.toHaveBeenCalled();
+    expect(readinessService.checkFullReadiness).not.toHaveBeenCalled();
+    expect((service as any).commitFailure).toHaveBeenCalledWith(
+      'company-1',
+      'e1',
+      FiscalEnvironment.HOMOLOGACAO,
+      'NFCE',
+      'att-1',
+      'PROVIDER_NFCE_MODULE_INACTIVE',
+      'sistema',
+    );
   });
 
   it('falha no envio do CSC barra a ativação com motivo próprio', async () => {

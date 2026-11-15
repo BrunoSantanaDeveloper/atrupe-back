@@ -155,10 +155,29 @@ export class FiscalIssuerActivationService {
         signal,
       );
 
-      // 7b. NFC-e: o Invoicy monta o QR Code com o CSC do cadastro dele, não
-      // com o salvo no emissor. Sem este envio o ambiente ficava "ativo" com
-      // o CSC só no nosso banco.
       if ((options.docType ?? 'NFCE') === 'NFCE') {
+        // 7b. NFC-e: o módulo tem de estar no licenciamento da empresa no
+        // Invoicy, e o cadastro feito pelo Atrupe não o liga. Vem antes do
+        // CSC: sem o módulo, gravar o CSC falhava (Terabyte, 06/11/2026), e
+        // sem esta conferência o ambiente ficava "ativo" sem poder emitir.
+        try {
+          await this.registrationService.ensureNfceModule(
+            companyId,
+            invoicyConfigId,
+            environment,
+            signal,
+          );
+        } catch (error) {
+          throw new ReadinessFailedError(
+            'PROVIDER_NFCE_MODULE_INACTIVE',
+            `Não foi possível confirmar nem ativar o módulo NFC-e deste CNPJ no provedor fiscal (InvoiCy): ${error.message}. ` +
+              'Tente ativar de novo; se o erro continuar, fale com o suporte da Atrupe para liberar o módulo NFC-e no provedor.',
+          );
+        }
+
+        // 7c. NFC-e: o Invoicy monta o QR Code com o CSC do cadastro dele, não
+        // com o salvo no emissor. Sem este envio o ambiente ficava "ativo" com
+        // o CSC só no nosso banco.
         try {
           await this.registrationService.syncNfceCsc(
             companyId,
