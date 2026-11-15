@@ -5,6 +5,7 @@ import {
   IsInt,
   IsNumber,
   IsArray,
+  IsBoolean,
   ValidateNested,
   IsEnum,
   Min,
@@ -44,6 +45,12 @@ export class NfeItemDto {
   @ApiPropertyOptional({ description: 'Desconto' })
   @IsNumber()
   @IsOptional()
+  // vDesc não aceita negativo: barrar aqui evita gastar um número da nota numa
+  // rejeição de schema. Acréscimo vai no valor unitário.
+  @Min(0, {
+    message:
+      'O desconto do item não pode ser negativo. Para acréscimo, aumente o valor unitário.',
+  })
   discount?: number;
 
   @ApiPropertyOptional({ description: 'Descrição do produto' })
@@ -105,6 +112,65 @@ export class NfeItemDto {
   @IsNumber()
   @IsOptional()
   insurance?: number;
+}
+
+/**
+ * Item como fica no rascunho. Além do que a emissão lê, guarda o que a tela
+ * usa para exibir e casar os itens: o número (as edições casam por ele), a
+ * unidade exibida, o total, se é serviço e a O.S. de origem na consolidada.
+ */
+export class NfeDraftItemDto extends NfeItemDto {
+  @ApiPropertyOptional({ description: 'Número do item na nota' })
+  @IsInt()
+  @IsOptional()
+  itemNumber?: number;
+
+  @ApiPropertyOptional({ description: 'Unidade exibida na tela' })
+  @IsString()
+  @IsOptional()
+  unit?: string;
+
+  @ApiPropertyOptional({ description: 'Total líquido do item' })
+  @IsNumber()
+  @IsOptional()
+  totalValue?: number;
+
+  @ApiPropertyOptional({ description: 'Item de serviço' })
+  @IsBoolean()
+  @IsOptional()
+  isService?: boolean;
+
+  @ApiPropertyOptional({ description: 'Dados fiscais incompletos' })
+  @IsBoolean()
+  @IsOptional()
+  needsConfiguration?: boolean;
+
+  @ApiPropertyOptional({ description: 'O.S. de origem (nota consolidada)' })
+  @IsString()
+  @IsOptional()
+  sourceOrderId?: string;
+
+  @ApiPropertyOptional({ description: 'Código da O.S. de origem' })
+  @IsString()
+  @IsOptional()
+  sourceOrderCode?: string;
+
+  @ApiPropertyOptional({
+    description: 'A linha contada em peças (para converter a unidade na tela)',
+  })
+  @IsNumber()
+  @IsOptional()
+  pieceQuantity?: number;
+
+  @ApiPropertyOptional({ description: 'A linha medida (área, comprimento…)' })
+  @IsNumber()
+  @IsOptional()
+  measureQuantity?: number;
+
+  @ApiPropertyOptional({ description: 'Unidade da medida (M2, M, KG…)' })
+  @IsString()
+  @IsOptional()
+  measureUnit?: string;
 }
 
 // DTO simplificado para emissão a partir de uma ordem
@@ -781,12 +847,27 @@ export class UpdateNfeDraftDto {
   @Type(() => DraftDestinatarioDto)
   destinatario?: DraftDestinatarioDto;
 
-  @ApiPropertyOptional({ description: 'Itens da NF-e', type: [NfeItemDto] })
+  @ApiPropertyOptional({
+    description:
+      'Itens da NF-e. Ficam no rascunho até a O.S. mudar: aí a O.S. vale.',
+    type: [NfeDraftItemDto],
+  })
   @IsArray()
   @IsOptional()
   @ValidateNested({ each: true })
-  @Type(() => NfeItemDto)
-  items?: NfeItemDto[];
+  @Type(() => NfeDraftItemDto)
+  items?: NfeDraftItemDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Impressão da O.S. de onde a tela tirou os itens (veio com o rascunho). ' +
+      'Com ela, uma aba aberta antes de a O.S. mudar não faz a edição velha ' +
+      'valer sobre a O.S. corrigida.',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(64)
+  origemItens?: string;
 
   @ApiPropertyOptional({
     description: 'Dados da transportadora',

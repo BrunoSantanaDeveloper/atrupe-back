@@ -573,6 +573,58 @@ describe('NfceService', () => {
       });
     });
 
+    /**
+     * Mesma conta da NF-e: bruto no unitário, desconto pela diferença entre
+     * bruto e líquido (o percentual 10 virava R$ 0,10) e a unidade do
+     * cadastro fiscal.
+     */
+    it('leva o desconto da linha uma vez só e a unidade cadastrada', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce({
+        id: mockOrderId,
+        quotation: {
+          quotationProduct: [
+            {
+              productId: 'prod-placa',
+              description: 'PLACA PS 2MM',
+              quantity: 1,
+              totalValue: 53000,
+              finalValue: 47700,
+              discount: 10,
+              discountType: 'PERCENT',
+              items: [
+                { quantity: 1, unitKind: 'AREA', width: 2500, height: 1000 },
+              ],
+              product: {
+                code: 'PS2',
+                name: 'PLACA PS 2MM',
+                fiscalData: {
+                  ncm: '49111010',
+                  cfopInState: '5102',
+                  icmsCst: '102',
+                  pisCst: '99',
+                  cofinsCst: '99',
+                  commercialUnit: 'UN',
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      const resultado = await service.prepareStandalone(
+        mockCompanyId,
+        mockOrderId,
+      );
+
+      expect(resultado.itens[0]).toMatchObject({
+        quantity: 1,
+        unit: 'UN',
+        unitValue: 530,
+        discount: 53,
+        totalValue: 477,
+      });
+    });
+
     it('não busca ordem nenhuma quando a nota é avulsa de verdade', async () => {
       const resultado = await service.prepareStandalone(mockCompanyId);
 
@@ -668,6 +720,99 @@ describe('NfceService', () => {
       expect(request.Documento.total.ICMStot.vProd_ttlnfe).toBe('100.00');
       expect(request.Documento.total.ICMStot.vDesc_ttlnfe).toBe('10.00');
       expect(request.Documento.total.ICMStot.vNF).toBe('90.00');
+      // O total de desconto é conferido com a soma dos itens: sem vDesc no
+      // item, a nota com desconto era rejeitada.
+      expect(request.Documento.det[0].prod.vDesc).toBe('10.00');
+      const campos = Object.keys(request.Documento.det[0].prod);
+      expect(campos.indexOf('vDesc')).toBe(campos.indexOf('vUnTrib') + 1);
+      expect(campos.indexOf('indTot')).toBe(campos.indexOf('vDesc') + 1);
+      // Pagamento maior que a nota exige o troco, fora do grupo `pag`
+      // (rejeição 866 sem ele). O InvoiCy não o calcula.
+      expect(request.Documento.vTroco).toBe('10.00');
+      const raiz = Object.keys(request.Documento);
+      expect(raiz.indexOf('vTroco')).toBe(raiz.indexOf('pag') + 1);
+    });
+
+    /**
+     * A conferência aceita um centavo de folga entre o troco informado e o
+     * calculado. O troco que vale (XML, linha gravada, cupom) é o calculado.
+     */
+    it('grava e transmite o troco calculado, não o informado', async () => {
+      // Número livre: a emissão cria a linha (sem tentativa a reaproveitar).
+      prisma.nfce.findUnique.mockResolvedValueOnce(null);
+      await service.emit(mockCompanyId, {
+        naturezaOperacao: 'Venda',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 45.99,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 50 }],
+        valorTroco: 4,
+      });
+
+      const request = invoicyApiService.emitNfe.mock.calls[0][1][0];
+      expect(request.Documento.vTroco).toBe('4.01');
+      expect(prisma.nfce.create.mock.calls[0][0].data.valorTroco).toBe(4.01);
+    });
+
+    it('sem troco, o documento não leva vTroco', async () => {
+      await service.emit(mockCompanyId, {
+        naturezaOperacao: 'Venda',
+        itens: [
+          {
+            productId: '1',
+            codigo: '001',
+            descricao: 'Produto',
+            ncm: '12345678',
+            cfop: '5102',
+            unidade: 'UN',
+            quantidade: 1,
+            valorUnitario: 100,
+          },
+        ],
+        pagamentos: [{ tipo: '01', valor: 100 }],
+      });
+
+      const request = invoicyApiService.emitNfe.mock.calls[0][1][0];
+      expect(request.Documento).not.toHaveProperty('vTroco');
+    });
+
+    /**
+     * vNF é a soma dos itens arredondados (0,5 x 45,99 = 22,995 vira 23,00
+     * em cada item), e pagamento um centavo menor que vNF a SEFAZ recusa. A
+     * folga de um centavo que a conferência tinha deixava passar.
+     */
+    it('recusa pagamento um centavo menor que a nota', async () => {
+      const meio = {
+        productId: '1',
+        codigo: '001',
+        descricao: 'Adesivo',
+        ncm: '12345678',
+        cfop: '5102',
+        unidade: 'M2',
+        quantidade: 0.5,
+        valorUnitario: 45.99,
+      };
+
+      await expect(
+        service.emit(mockCompanyId, {
+          naturezaOperacao: 'Venda',
+          itens: [meio, meio],
+          pagamentos: [{ tipo: '01', valor: 45.99 }],
+        }),
+      ).rejects.toThrow('Valor dos pagamentos deve ser igual ou superior');
+
+      expect(
+        mockFiscalCredentialResolver.reserveNfceNumber,
+      ).not.toHaveBeenCalled();
     });
 
     it('should reject inconsistent payment change', async () => {

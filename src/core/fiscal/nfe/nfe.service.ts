@@ -6,6 +6,7 @@
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
+import { createHash } from 'crypto';
 import {
   FiscalEnvironment,
   NfeStatus,
@@ -26,7 +27,12 @@ import {
 } from '../invoicy/invoicy.types';
 import { fetchCepData } from '../utils/cep.util';
 import { getTPag } from '../utils/payment-method-map';
-import { resolveCommercialQuantity } from '../utils/commercial-quantity.util';
+import {
+  totaisDosItens,
+  totalDoItemNaNota,
+  valoresDaLinhaParaNota,
+  valoresDoItemNoXml,
+} from '../utils/fiscal-line-values.util';
 import {
   normalizeFiscalStrings,
   sanitizeFiscalText,
@@ -167,6 +173,27 @@ function formatarDataBr(isoDate: string): string {
  * que olhavam so' para AUTHORIZED tratavam essas notas como inexistentes.
  */
 const EMITIDA_NFE_STATUSES = [NfeStatus.AUTHORIZED, NfeStatus.CORRECTION_SENT];
+
+/**
+ * Versão da regra dos itens gravada no `draftData` (rascunho e tentativa de
+ * emissão). Sem ela, os itens foram montados pela regra anterior a 15/11/2026:
+ * valor unitário do líquido com o desconto abatido outra vez (percentual lido
+ * como reais) e a medida como quantidade mesmo com UN cadastrada.
+ */
+const VERSAO_ITENS_NOTA = 2;
+
+/** JSON com as chaves em ordem: o jsonb do banco não guarda a ordem delas. */
+function jsonCanonico(valor: unknown): string {
+  return JSON.stringify(valor, (_chave, campo) =>
+    campo && typeof campo === 'object' && !Array.isArray(campo)
+      ? Object.fromEntries(
+          Object.entries(campo).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : campo,
+  );
+}
 
 @Injectable()
 export class NfeService {
@@ -344,19 +371,17 @@ export class NfeService {
     // Preparar itens da NF-e com dados fiscais completos
     const items = (updatedQuotation || quotation).quotationProduct.map(
       (qp, index) => {
-        const totalValueCents = qp.finalValue || qp.totalValue || 0;
-        const totalValueReais = totalValueCents / 100;
-
-        // Quantidade COMERCIAL: a medida do que foi vendido, nao a "Qtd. Item".
-        const comercial = resolveCommercialQuantity(qp.quantity, qp.items);
-
-        // Sem toFixed(2) de proposito: vProd sai de qCOM x vUnCom no payload,
-        // e o leiaute aceita 10 casas em vUnCom. Arredondar aqui fazia
-        // 14 x 0,04 = 0,56 divergir do total da nota (0,50) e a SEFAZ rejeitar.
-        const unitValue =
-          comercial.quantity > 0 ? totalValueReais / comercial.quantity : 0;
-        const discountReais = (qp.discount || 0) / 100;
         const fiscalData = qp.product?.fiscalData;
+
+        // Quantidade COMERCIAL na unidade cadastrada do produto, valor bruto
+        // e desconto em vDesc. O valor unitario fica sem toFixed(2) de
+        // proposito: vProd sai de qCOM x vUnCom no payload, e o leiaute aceita
+        // 10 casas em vUnCom. Arredondar aqui fazia 14 x 0,04 = 0,56 divergir
+        // do total da nota (0,50) e a SEFAZ rejeitar.
+        const linha = valoresDaLinhaParaNota(
+          qp,
+          fiscalData?.commercialUnit ?? null,
+        );
 
         const selectedCfop =
           (clientAddress?.state === config.emitUf
@@ -377,16 +402,20 @@ export class NfeService {
           cstIpi: fiscalData?.ipiCst || '',
           cstPis: fiscalData?.pisCst || '',
           cstCofins: fiscalData?.cofinsCst || '',
-          unit: comercial.unit,
+          unit: linha.unit,
           // A tela exibe `unit`; o payload de emissao le `uCom` (NfeItemDto).
           // Mandar so um dos dois fazia a nota mostrar M2 e sair como UN.
-          uCom: comercial.unit,
-          quantity: comercial.quantity,
-          unitValue,
-          discount: Number(discountReais.toFixed(2)),
+          uCom: linha.unit,
+          quantity: linha.quantity,
+          unitValue: linha.unitValue,
+          discount: linha.discount,
           freight: 0,
           insurance: 0,
-          totalValue: Number(totalValueReais.toFixed(2)),
+          totalValue: linha.totalValue,
+          // Para a tela converter a quantidade quando a unidade muda.
+          pieceQuantity: linha.pieceQuantity,
+          measureQuantity: linha.measureQuantity,
+          measureUnit: linha.measureUnit,
           isService: qp.product?.isService || !!fiscalData?.isService,
           needsConfiguration:
             !fiscalData?.ncm || fiscalData.ncm.length !== 8 || !selectedCfop,
@@ -394,10 +423,13 @@ export class NfeService {
       },
     );
 
-    // Calcular totais
-    const valorProdutos = items.reduce((acc, item) => acc + item.totalValue, 0);
-    const valorDescontos = items.reduce((acc, item) => acc + item.discount, 0);
-    const valorNota = valorProdutos - valorDescontos;
+    // Calcular totais: produtos é o bruto, e o desconto sai uma vez só. Antes
+    // somava o líquido e abatia o desconto de novo.
+    const {
+      valorProdutos,
+      valorDesconto: valorDescontos,
+      valorTotal: valorNota,
+    } = totaisDosItens(items);
 
     // Verificar se já existe NF-e emitida para esta ordem
     const activeEnvironment =
@@ -723,11 +755,7 @@ export class NfeService {
       item.itemNumber = index + 1;
     });
 
-    const valorProdutos = items.reduce(
-      (acc, item) => acc + item.unitValue * item.quantity,
-      0,
-    );
-    const valorDesconto = items.reduce((acc, item) => acc + item.discount, 0);
+    const { valorProdutos, valorDesconto } = totaisDosItens(items);
     const valorFrete = items.reduce((acc, item) => acc + item.freight, 0);
     const valorSeguro = items.reduce((acc, item) => acc + item.insurance, 0);
     const valorNota = valorProdutos - valorDesconto + valorFrete + valorSeguro;
@@ -1220,20 +1248,19 @@ export class NfeService {
       }
     }
 
-    const mappedItems = itemsOverride.map((item: any) => {
-      const quantity = item.quantity ?? 0;
-      const unitValue = item.unitValue ?? 0;
-      const discount = item.discount ?? 0;
-      const freight = item.freight ?? 0;
-      const insurance = item.insurance ?? 0;
-      const totalValue = Number(
-        (quantity * unitValue - discount + freight + insurance).toFixed(2),
-      );
-      return {
-        ...item,
-        totalValue: item.totalValue ?? totalValue,
-      };
-    });
+    const mappedItems = itemsOverride.map((item: any) => ({
+      ...item,
+      // Como a nota soma: vProd e vDesc arredondados no item.
+      totalValue:
+        item.totalValue ??
+        totalDoItemNaNota({
+          quantity: item.quantity ?? 0,
+          unitValue: item.unitValue ?? 0,
+          discount: item.discount ?? 0,
+          freight: item.freight ?? 0,
+          insurance: item.insurance ?? 0,
+        }),
+    }));
 
     // Fonte da verdade para a devolução é o que foi REALMENTE transmitido na
     // nota original, não a configuração atual — o emissor padrão e seus
@@ -1483,22 +1510,26 @@ export class NfeService {
     const baseData = await this.prepareStandalone(companyId, clientId);
 
     const emissaoOverride = this.getEmissaoFromDraft(draftData);
-    const itemsOverride = draftData?.items || xmlData?.items || [];
+    const itemsOverride = await this.itensParaReemitir(
+      companyId,
+      originalNfe,
+      draftData,
+      draftData?.items || xmlData?.items || [],
+    );
 
-    const mappedItems = itemsOverride.map((item: any) => {
-      const quantity = item.quantity ?? 0;
-      const unitValue = item.unitValue ?? 0;
-      const discount = item.discount ?? 0;
-      const freight = item.freight ?? 0;
-      const insurance = item.insurance ?? 0;
-      const totalValue = Number(
-        (quantity * unitValue - discount + freight + insurance).toFixed(2),
-      );
-      return {
-        ...item,
-        totalValue: item.totalValue ?? totalValue,
-      };
-    });
+    const mappedItems = itemsOverride.map((item: any) => ({
+      ...item,
+      // Como a nota soma: vProd e vDesc arredondados no item.
+      totalValue:
+        item.totalValue ??
+        totalDoItemNaNota({
+          quantity: item.quantity ?? 0,
+          unitValue: item.unitValue ?? 0,
+          discount: item.discount ?? 0,
+          freight: item.freight ?? 0,
+          insurance: item.insurance ?? 0,
+        }),
+    }));
 
     return {
       ...baseData,
@@ -1611,20 +1642,18 @@ export class NfeService {
     // Preparar itens da NF-e (usar totalValue ou finalValue dividido pela quantidade)
     // IMPORTANTE: Valores no banco estão em centavos, dividir por 100 para reais
     const items = quotation.quotationProduct.map((qp) => {
-      const totalValueCents = qp.finalValue || qp.totalValue || 0;
-      const totalValueReais = totalValueCents / 100;
-      // Mesma quantidade comercial do prepare: sem isto a emissao a partir da
-      // ordem e a emissao direta sairiam com quantidades diferentes.
-      const comercial = resolveCommercialQuantity(qp.quantity, qp.items);
-      const unitValue =
-        comercial.quantity > 0 ? totalValueReais / comercial.quantity : 0;
-      const discountReais = (qp.discount || 0) / 100;
+      // Mesma conta do prepare: sem isto a emissao a partir da ordem e a
+      // emissao direta sairiam com quantidades e valores diferentes.
+      const linha = valoresDaLinhaParaNota(
+        qp,
+        qp.product?.fiscalData?.commercialUnit ?? null,
+      );
       return {
         productId: qp.productId,
-        quantity: comercial.quantity,
-        uCom: comercial.unit,
-        unitValue,
-        discount: discountReais,
+        quantity: linha.quantity,
+        uCom: linha.unit,
+        unitValue: linha.unitValue,
+        discount: linha.discount,
       };
     });
 
@@ -1933,6 +1962,18 @@ export class NfeService {
       throw new BadRequestException('NF-e deve conter ao menos um item');
     }
 
+    // Desconto maior que o valor do item deixa o item (ou a nota) negativo, e
+    // o schema recusa. Barrar aqui, antes de reservar o número, e dizer qual
+    // item: na tela, mudar a quantidade não mexe no desconto já digitado.
+    dto.items.forEach((item, index) => {
+      const { valorProduto, desconto } = valoresDoItemNoXml(item);
+      if (desconto > valorProduto) {
+        throw new BadRequestException(
+          `O desconto do item ${index + 1} (${item.description || item.productCode || 'sem descrição'}) é de R$ ${desconto.toFixed(2)}, maior que o valor dele (R$ ${valorProduto.toFixed(2)}). Ajuste o desconto ou a quantidade.`,
+        );
+      }
+    });
+
     // Validar destinatário
     const isForeign = dto.destPais && dto.destPais !== '1058';
     const cleanCnpjCpf = dto.destCnpjCpf?.replace(/\D/g, '') || '';
@@ -2028,20 +2069,292 @@ export class NfeService {
 
   /**
    * Valores da nota. `vProd` é bruto e o desconto entra só em `vDesc`, porque
-   * a SEFAZ valida vNF = vProd - vDesc + frete + seguro + outros.
+   * a SEFAZ valida vNF = vProd - vDesc + frete + seguro + outros. Os totais
+   * somam os itens já arredondados como vão ao XML (`valoresDoItemNoXml`):
+   * cada total é conferido com a soma dos itens.
    */
   private totaisDaNota(dto: EmitNfeDto) {
+    return totaisDosItens(dto.items);
+  }
+
+  /**
+   * `draftData` de uma tentativa de emissão: o DTO enviado, marcado com a
+   * versão da regra dos itens (ver `itensParaReemitir`).
+   */
+  private draftDataDaEmissao(dto: EmitNfeDto): any {
+    return { ...dto, versaoItens: VERSAO_ITENS_NOTA };
+  }
+
+  /** O.S. de uma nota: as do vínculo (consolidada) ou a da própria linha. */
+  private async ordensDaNota(nfe: {
+    id: string;
+    orderId?: string | null;
+  }): Promise<string[]> {
+    const vinculos = await this.prisma.nfeOrder.findMany({
+      where: { nfeId: nfe.id },
+      select: { orderId: true },
+    });
+    const orderIds = vinculos.map((vinculo) => vinculo.orderId);
+    if (!orderIds.length && nfe.orderId) orderIds.push(nfe.orderId);
+    return [...new Set(orderIds)];
+  }
+
+  /**
+   * Impressão das linhas das O.S. que geram os itens da nota. Muda quando a
+   * O.S. muda o que a nota leva (produto, quantidade, valores, medidas ou
+   * descrição) e não muda num salvamento sem alteração: não entram ids nem
+   * datas, e as linhas são ordenadas pelo conteúdo.
+   */
+  private async impressaoDasLinhas(
+    companyId: string,
+    orderIds: string[],
+  ): Promise<string> {
+    const linhas = orderIds.length
+      ? await this.prisma.quotationProduct.findMany({
+          where: {
+            quotation: { companyId, order: { id: { in: orderIds } } },
+          },
+          select: {
+            productId: true,
+            quantity: true,
+            totalValue: true,
+            finalValue: true,
+            description: true,
+            items: {
+              select: {
+                quantity: true,
+                originalQuantity: true,
+                unitKind: true,
+                width: true,
+                height: true,
+                length: true,
+                volume: true,
+                weight: true,
+                distance: true,
+                duration: true,
+              },
+            },
+          },
+        })
+      : [];
+
+    const conteudo = linhas
+      .map((linha) =>
+        JSON.stringify([
+          linha.productId,
+          linha.quantity,
+          linha.totalValue,
+          linha.finalValue,
+          linha.description,
+          linha.items
+            .map((item) =>
+              JSON.stringify([
+                item.quantity,
+                item.originalQuantity,
+                item.unitKind,
+                item.width,
+                item.height,
+                item.length,
+                item.volume,
+                item.weight,
+                item.distance,
+                item.duration,
+              ]),
+            )
+            .sort(),
+        ]),
+      )
+      .sort();
+
+    return createHash('sha1').update(JSON.stringify(conteudo)).digest('hex');
+  }
+
+  /**
+   * Item do rascunho na forma da tela. O item gravado por PATCH traz o CFOP
+   * como número (é o que o DTO aceita) e a tela trabalha com texto; o total é
+   * sempre refeito pelos valores, e `isService` vem do cadastro atual.
+   */
+  private itemDoRascunhoParaTela(
+    item: any,
+    index: number,
+    itensDaOrdem: any[],
+  ) {
+    const daOrdem = itensDaOrdem.find(
+      (preparado) => preparado.productId === item.productId,
+    );
+
     return {
-      valorProdutos: dto.items.reduce(
-        (acc, item) => acc + item.quantity * item.unitValue,
-        0,
-      ),
-      valorTotal: dto.items.reduce(
-        (acc, item) =>
-          acc + item.quantity * item.unitValue - (item.discount || 0),
-        0,
-      ),
+      ...item,
+      itemNumber: item.itemNumber ?? index + 1,
+      unit: item.unit || item.uCom || 'UN',
+      cfop:
+        item.cfop === undefined || item.cfop === null ? '' : String(item.cfop),
+      // Como a nota soma; a conta crua dava um centavo a menos que o
+      // diálogo e o total ao reabrir (2,5 x R$ 4,01).
+      totalValue: totalDoItemNaNota({
+        quantity: item.quantity ?? 0,
+        unitValue: item.unitValue ?? 0,
+        discount: item.discount ?? 0,
+        freight: item.freight ?? 0,
+        insurance: item.insurance ?? 0,
+      }),
+      isService: daOrdem?.isService ?? item.isService ?? false,
     };
+  }
+
+  /**
+   * Itens que a tela recebe ao reabrir um rascunho de NF-e de O.S.
+   *
+   * O rascunho guardava os itens do dia em que nasceu, e a tela nunca gravava
+   * as edições: reabrir desfazia o que o usuário tinha ajustado (a GrafK
+   * "altera e volta para o valor errado"), e uma O.S. corrigida depois não
+   * chegava à nota. Agora:
+   * - itens editados na tela (PATCH com `items`) ficam enquanto a O.S. não
+   *   mudar depois da edição;
+   * - sem edição, valem os itens da O.S. de agora, com o cadastro fiscal atual;
+   * - rascunho da regra antiga (sem `versaoItens`) é refeito pela O.S.
+   *
+   * Quando vale a O.S., o rascunho é regravado com ela: é o total dele que a
+   * lista de notas mostra. `editados` diz à tela que os itens não são os da
+   * O.S., para ela manter o aviso de valores ajustados à mão; `origem` é a
+   * impressão da O.S. de onde saem os itens, que a tela devolve no PATCH.
+   */
+  private async itensAoReabrirRascunho(
+    companyId: string,
+    draft: { id: string; draftData: unknown; updatedAt?: Date },
+    itensDaOrdem: any[],
+    orderIds: string[],
+  ): Promise<{ itens: any[]; editados: boolean; origem: string }> {
+    const draftData = (draft.draftData as Record<string, any>) || {};
+    const editados =
+      draftData.versaoItens === VERSAO_ITENS_NOTA &&
+      draftData.itensEditados === true &&
+      Array.isArray(draftData.items) &&
+      draftData.items.length > 0;
+
+    const atual = await this.impressaoDasLinhas(companyId, orderIds);
+    const valeAEdicao = editados && atual === draftData.origemItens;
+    const itens: any[] = valeAEdicao ? draftData.items : itensDaOrdem;
+
+    if (!valeAEdicao) {
+      // Conteúdo comparado sem a ordem das chaves: o jsonb não a guarda, e a
+      // comparação direta regravava o rascunho a cada abertura.
+      const desatualizado =
+        draftData.versaoItens !== VERSAO_ITENS_NOTA ||
+        draftData.itensEditados !== false ||
+        draftData.origemItens !== atual ||
+        jsonCanonico(draftData.items) !== jsonCanonico(itensDaOrdem);
+      if (desatualizado) {
+        // Só se o rascunho não mudou desde a leitura: um PATCH de itens
+        // gravado nesse meio-tempo (outra aba) não pode ser desfeito aqui.
+        await this.prisma.nfe.updateMany({
+          where: {
+            id: draft.id,
+            ...(draft.updatedAt ? { updatedAt: draft.updatedAt } : {}),
+          },
+          data: {
+            valorTotal: totaisDosItens(itensDaOrdem).valorTotal,
+            draftData: JSON.parse(
+              JSON.stringify({
+                ...draftData,
+                items: itensDaOrdem,
+                versaoItens: VERSAO_ITENS_NOTA,
+                itensEditados: false,
+                origemItens: atual,
+              }),
+            ),
+          },
+        });
+      }
+    }
+
+    return {
+      itens: itens.map((item, index) =>
+        this.itemDoRascunhoParaTela(item, index, itensDaOrdem),
+      ),
+      editados: valeAEdicao,
+      origem: atual,
+    };
+  }
+
+  /**
+   * Itens para reemitir uma NF-e rejeitada.
+   *
+   * Valem os da tentativa (o que o usuário mandou), com uma exceção: o item
+   * da regra antiga (sem `versaoItens`) cujo desconto veio da O.S. Nele o
+   * valor unitário já era o líquido e o desconto era abatido outra vez —
+   * percentual lido como reais, acréscimo como desconto negativo —, e a SEFAZ
+   * rejeitava pela soma dos descontos. Reemitido agora, passaria cobrando
+   * menos que a venda; por isso os valores dele são refeitos pela O.S.
+   *
+   * O desconto veio da O.S. quando é negativo (só a regra antiga gerava) ou
+   * quando a linha da O.S. tem desconto. Desconto digitado numa linha sem
+   * desconto fica, assim como descrição e dados fiscais da tentativa.
+   */
+  private async itensParaReemitir(
+    companyId: string,
+    nfe: { id: string; orderId?: string | null },
+    draftData: any,
+    itens: any[],
+  ): Promise<any[]> {
+    const regraAntiga = draftData?.versaoItens !== VERSAO_ITENS_NOTA;
+    const comDesconto = itens.some((item) => Number(item?.discount || 0) !== 0);
+    if (!regraAntiga || !comDesconto) return itens;
+
+    // Na ordem em que a tentativa foi montada (o DTO da consolidada guarda
+    // `orderIds`): o vínculo nfe_orders não tem ordem, e o mesmo produto em
+    // duas O.S. casaria com a linha da O.S. errada.
+    const orderIds: string[] =
+      Array.isArray(draftData?.orderIds) && draftData.orderIds.length
+        ? [...new Set<string>(draftData.orderIds)]
+        : await this.ordensDaNota(nfe);
+    if (!orderIds.length) return itens;
+
+    // O.S. por O.S., sem a checagem da consolidada: um rascunho aberto para
+    // as mesmas O.S. não pode impedir de corrigir a tentativa.
+    const daOrdem: any[] = [];
+    for (const orderId of orderIds) {
+      try {
+        daOrdem.push(
+          ...(await this.prepareFromOrder(companyId, orderId)).items,
+        );
+      } catch (e) {
+        this.logger.warn(
+          `Reemissão da NF-e ${nfe.id} sem refazer os itens pela O.S. ${orderId}: ${e.message}`,
+        );
+        return itens;
+      }
+    }
+
+    // Casa cada item com a linha da O.S. pela ordem dentro do mesmo produto.
+    const porProduto = new Map<string, any[]>();
+    for (const linha of daOrdem) {
+      const lista = porProduto.get(linha.productId) || [];
+      lista.push(linha);
+      porProduto.set(linha.productId, lista);
+    }
+    const usados = new Map<string, number>();
+
+    return itens.map((item) => {
+      const ordem = usados.get(item?.productId) || 0;
+      usados.set(item?.productId, ordem + 1);
+      const linha = porProduto.get(item?.productId)?.[ordem];
+      const descontoDaTentativa = Number(item?.discount || 0);
+      const veioDaOrdem =
+        descontoDaTentativa < 0 ||
+        (descontoDaTentativa > 0 && Number(linha?.discount || 0) > 0);
+      if (!linha || !veioDaOrdem) return item;
+
+      return {
+        ...item,
+        quantity: linha.quantity,
+        unit: linha.unit,
+        uCom: linha.uCom,
+        unitValue: linha.unitValue,
+        discount: linha.discount,
+        totalValue: linha.totalValue,
+      };
+    });
   }
 
   async emit(companyId: string, dto: EmitNfeDto) {
@@ -2099,7 +2412,7 @@ export class NfeService {
             valorTotal,
             motivoRejeicao: null,
             chaveAcesso: null,
-            draftData: dto as any,
+            draftData: this.draftDataDaEmissao(dto),
           },
         });
       }
@@ -2141,7 +2454,7 @@ export class NfeService {
             invoicyConfigId: config.id,
             valorTotal,
             motivoRejeicao: null,
-            draftData: dto as any,
+            draftData: this.draftDataDaEmissao(dto),
           },
         });
       }
@@ -2169,7 +2482,7 @@ export class NfeService {
             valorTotal,
             // Limpar possível mensagem de erro anterior ao tentar emitir novamente
             motivoRejeicao: null,
-            draftData: dto as any,
+            draftData: this.draftDataDaEmissao(dto),
           },
         });
       }
@@ -2188,7 +2501,7 @@ export class NfeService {
           ambiente: environment === 'PRODUCAO' ? 1 : 2,
           invoicyConfigId: config.id,
           valorTotal,
-          draftData: dto as any,
+          draftData: this.draftDataDaEmissao(dto),
         },
       });
     }
@@ -2391,7 +2704,8 @@ export class NfeService {
       destMunFromCep,
     } = ctx;
     const { numero, serie: serieReservada } = numeracao;
-    const { valorProdutos, valorTotal } = this.totaisDaNota(dto);
+    const { valorProdutos, valorDesconto, valorTotal } = this.totaisDaNota(dto);
+    const valoresDosItens = dto.items.map((item) => valoresDoItemNoXml(item));
     let emitCmunResolvidoViaCep: string | undefined;
 
     {
@@ -2655,12 +2969,19 @@ export class NfeService {
               NCM: (item.ncm || '00000000').replace(/\D/g, ''),
               CFOP: resolvedCfops[index],
               uCOM: item.uCom || 'UN',
-              qCOM: item.quantity.toFixed(4),
+              qCOM: valoresDosItens[index].quantidade.toFixed(4),
               vUnCom: item.unitValue.toFixed(10),
-              vProd: (item.quantity * item.unitValue).toFixed(2),
+              vProd: valoresDosItens[index].valorProduto.toFixed(2),
               uTrib: item.uCom || 'UN', // Usually same as uCom
-              qTrib: item.quantity.toFixed(4),
+              qTrib: valoresDosItens[index].quantidade.toFixed(4),
               vUnTrib: item.unitValue.toFixed(10),
+              // Desconto do item, entre vSeg e vOutro_item como pede o
+              // leiaute. Só o total levava vDesc, e a SEFAZ rejeitava toda nota
+              // com desconto porque o total não batia com a soma dos itens. O
+              // schema não aceita 0.00, por isso o campo só vai com valor.
+              ...(valoresDosItens[index].desconto > 0
+                ? { vDesc: valoresDosItens[index].desconto.toFixed(2) }
+                : {}),
               indTot: 1,
             },
             // Regime Normal usa o imposto calculado; Simples mantém os
@@ -2701,9 +3022,7 @@ export class NfeService {
               vProd_ttlnfe: valorProdutos.toFixed(2),
               vFrete_ttlnfe: '0.00',
               vSeg_ttlnfe: '0.00',
-              vDesc_ttlnfe: dto.items
-                .reduce((acc, i) => acc + (i.discount || 0), 0)
-                .toFixed(2),
+              vDesc_ttlnfe: valorDesconto.toFixed(2),
               vII_ttlnfe: '0.00',
               vOutro: '0.00',
               vNF: valorTotal.toFixed(2),
@@ -3894,6 +4213,12 @@ export class NfeService {
     if (existingDraft) {
       const preparedData = await this.prepareFromOrder(companyId, orderId);
       const draftData = (existingDraft.draftData as Record<string, any>) || {};
+      const reaberto = await this.itensAoReabrirRascunho(
+        companyId,
+        existingDraft,
+        preparedData.items,
+        [orderId],
+      );
 
       return {
         ...preparedData,
@@ -3904,24 +4229,9 @@ export class NfeService {
           ? { ...preparedData.emissao, ...draftData.emissao }
           : preparedData.emissao,
         destinatario: draftData.destinatario || preparedData.destinatario,
-        items: (draftData.items || preparedData.items).map((item: any) => {
-          const preparedItem = preparedData.items.find(
-            (pi) => pi.productId === item.productId,
-          );
-          const quantity = item.quantity ?? 0;
-          const unitValue = item.unitValue ?? 0;
-          const discount = item.discount ?? 0;
-          const freight = item.freight ?? 0;
-          const insurance = item.insurance ?? 0;
-          const totalValue = Number(
-            (quantity * unitValue - discount + freight + insurance).toFixed(2),
-          );
-          return {
-            ...item,
-            totalValue: item.totalValue ?? totalValue,
-            isService: preparedItem?.isService || false,
-          };
-        }),
+        items: reaberto.itens,
+        itensEditados: reaberto.editados,
+        origemItens: reaberto.origem,
         transportadora: draftData.transportadora || preparedData.transportadora,
         volumes: draftData.volumes || preparedData.volumes,
         pagamento: draftData.pagamento || preparedData.pagamento,
@@ -3935,6 +4245,8 @@ export class NfeService {
 
     // Buscar dados preparados
     const preparedData = await this.prepareFromOrder(companyId, orderId);
+    // Impressão da O.S. de onde saem os itens: a tela a devolve no PATCH.
+    const origemItens = await this.impressaoDasLinhas(companyId, [orderId]);
 
     // Criar novo rascunho
     const draft = await this.prisma.nfe.create({
@@ -3957,6 +4269,9 @@ export class NfeService {
             destinatario: preparedData.destinatario,
             emissao: preparedData.emissao,
             items: preparedData.items,
+            versaoItens: VERSAO_ITENS_NOTA,
+            itensEditados: false,
+            origemItens,
             transportadora: preparedData.transportadora,
             volumes: preparedData.volumes,
             pagamento: preparedData.pagamento,
@@ -3979,6 +4294,7 @@ export class NfeService {
       ...preparedData,
       draftId: draft.id,
       isDraft: true,
+      origemItens,
     };
   }
 
@@ -4021,6 +4337,12 @@ export class NfeService {
         existingDraft.id,
       );
       const draftData = (existingDraft.draftData as Record<string, any>) || {};
+      const reaberto = await this.itensAoReabrirRascunho(
+        companyId,
+        existingDraft,
+        preparedData.items,
+        uniqueOrderIds,
+      );
 
       return {
         ...preparedData,
@@ -4030,20 +4352,9 @@ export class NfeService {
           ? { ...preparedData.emissao, ...draftData.emissao }
           : preparedData.emissao,
         destinatario: draftData.destinatario || preparedData.destinatario,
-        items: (draftData.items || preparedData.items).map((item: any) => {
-          const quantity = item.quantity ?? 0;
-          const unitValue = item.unitValue ?? 0;
-          const discount = item.discount ?? 0;
-          const freight = item.freight ?? 0;
-          const insurance = item.insurance ?? 0;
-          const totalValue = Number(
-            (quantity * unitValue - discount + freight + insurance).toFixed(2),
-          );
-          return {
-            ...item,
-            totalValue: item.totalValue ?? totalValue,
-          };
-        }),
+        items: reaberto.itens,
+        itensEditados: reaberto.editados,
+        origemItens: reaberto.origem,
         transportadora: draftData.transportadora || preparedData.transportadora,
         volumes: draftData.volumes || preparedData.volumes,
         pagamento: draftData.pagamento || preparedData.pagamento,
@@ -4056,6 +4367,11 @@ export class NfeService {
     }
 
     const preparedData = await this.prepareConsolidatedFromOrders(
+      companyId,
+      uniqueOrderIds,
+    );
+    // Impressão das O.S. de onde saem os itens: a tela a devolve no PATCH.
+    const origemItens = await this.impressaoDasLinhas(
       companyId,
       uniqueOrderIds,
     );
@@ -4085,6 +4401,9 @@ export class NfeService {
             emissao: preparedData.emissao,
             destinatario: preparedData.destinatario,
             items: preparedData.items,
+            versaoItens: VERSAO_ITENS_NOTA,
+            itensEditados: false,
+            origemItens,
             transportadora: preparedData.transportadora,
             volumes: preparedData.volumes,
             pagamento: preparedData.pagamento,
@@ -4109,6 +4428,7 @@ export class NfeService {
       ...preparedData,
       draftId: draft.id,
       isDraft: true,
+      origemItens,
     };
   }
 
@@ -4134,6 +4454,24 @@ export class NfeService {
 
     const existingDraftData = (draft.draftData as Record<string, any>) || {};
 
+    // Itens editados na tela ficam no rascunho enquanto a O.S. não mudar
+    // depois da edição (ver itensAoReabrirRascunho). A impressão guardada é a
+    // da O.S. de onde a tela tirou os itens, que ela devolve: com a de agora,
+    // uma aba aberta antes de a O.S. ser corrigida gravaria a edição velha
+    // como se fosse posterior à correção. Sem ela (cliente antigo), a de agora.
+    const marcaDosItens = dto.items
+      ? {
+          versaoItens: VERSAO_ITENS_NOTA,
+          itensEditados: true,
+          origemItens:
+            dto.origemItens ||
+            (await this.impressaoDasLinhas(
+              companyId,
+              await this.ordensDaNota(draft),
+            )),
+        }
+      : {};
+
     // Mesclar dados existentes com novos dados
     const updatedDraftData = {
       ...existingDraftData,
@@ -4145,6 +4483,7 @@ export class NfeService {
       }),
       ...(dto.destinatario && { destinatario: dto.destinatario }),
       ...(dto.items && { items: dto.items }),
+      ...marcaDosItens,
       ...(dto.transportadora && { transportadora: dto.transportadora }),
       ...(dto.volumes && { volumes: dto.volumes }),
       ...(dto.pagamento && { pagamento: dto.pagamento }),
@@ -4159,6 +4498,9 @@ export class NfeService {
       where: { id: draftId },
       data: {
         draftData: JSON.parse(JSON.stringify(updatedDraftData)),
+        // A lista de notas mostra o total do rascunho (mesmo critério da
+        // criação, que soma todos os itens).
+        ...(dto.items && { valorTotal: totaisDosItens(dto.items).valorTotal }),
       },
     });
 
@@ -4759,13 +5101,15 @@ export class NfeService {
       const fiscal: any = item.productId
         ? porProduto.get(item.productId)
         : undefined;
+      // A base do imposto parte dos mesmos vProd e vDesc que vão ao XML.
+      const noXml = valoresDoItemNoXml(item);
 
       return {
         valores: {
-          valorProdutos: item.quantity * item.unitValue,
+          valorProdutos: noXml.valorProduto,
           frete: item.freight,
           seguro: item.insurance,
-          desconto: item.discount,
+          desconto: noXml.desconto,
         },
         // O CST do item vence o do cadastro: a emissão pode legitimamente
         // mudar a tributação de uma operação específica.

@@ -63,6 +63,11 @@ export class NfceItemDto {
   @ApiPropertyOptional({ description: 'Valor desconto' })
   @IsNumber()
   @IsOptional()
+  // vDesc não aceita negativo (ver NfeItemDto.discount).
+  @Min(0, {
+    message:
+      'O desconto do item não pode ser negativo. Para acréscimo, aumente o valor unitário.',
+  })
   valorDesconto?: number;
 
   @ApiPropertyOptional({ description: 'Código de barras (GTIN)' })

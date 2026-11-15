@@ -202,6 +202,8 @@ const mockPrismaService = {
     findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    // Regravação condicional do rascunho na reabertura.
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     delete: jest.fn(),
     count: jest.fn(),
   },
@@ -215,6 +217,12 @@ const mockPrismaService = {
   },
   nfeOrder: {
     createMany: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
+  },
+  // Linhas da O.S. lidas para a impressão que diz se a O.S. mudou depois da
+  // edição dos itens do rascunho.
+  quotationProduct: {
+    findMany: jest.fn().mockResolvedValue([]),
   },
   fiscalStandaloneDraft: {
     findMany: jest.fn(),
@@ -1019,8 +1027,19 @@ describe('NfeService', () => {
         ],
       });
 
+      /** Produto com M2 na "Unidade comercial" do cadastro fiscal. */
+      const emM2 = {
+        product: {
+          ...mockQuotation.quotationProduct[0].product,
+          fiscalData: {
+            ...mockQuotation.quotationProduct[0].product.fiscalData,
+            commercialUnit: 'M2',
+          },
+        },
+      };
+
       it('usa a medida do item, não a "Qtd. Item"', async () => {
-        prisma.quotation.findFirst.mockResolvedValue(comMedida());
+        prisma.quotation.findFirst.mockResolvedValue(comMedida(emM2));
 
         const result = await service.prepareFromOrder(
           mockCompanyId,
@@ -1035,12 +1054,65 @@ describe('NfeService', () => {
       });
 
       /**
+       * A nota segue a "Unidade comercial" do cadastro (15/11/2026). A GrafK
+       * cadastra a placa em UN e vende por peça: a nota de R$ 530,00 saía
+       * "2,5 M2 x R$ 212" e ela editava item por item para "1 x R$ 530".
+       */
+      it('com UN cadastrada, a placa sai por peça', async () => {
+        const placa = {
+          totalValue: 53000,
+          finalValue: 53000,
+          items: [{ quantity: 1, unitKind: 'AREA', width: 2500, height: 1000 }],
+        };
+        const comUnidade = (commercialUnit: string) => ({
+          ...placa,
+          product: {
+            ...mockQuotation.quotationProduct[0].product,
+            fiscalData: {
+              ...mockQuotation.quotationProduct[0].product.fiscalData,
+              commercialUnit,
+            },
+          },
+        });
+
+        prisma.quotation.findFirst.mockResolvedValue(
+          comMedida(comUnidade('UN')),
+        );
+        const porPeca = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+        expect(porPeca.items[0]).toMatchObject({
+          quantity: 1,
+          unit: 'UN',
+          uCom: 'UN',
+          unitValue: 530,
+          totalValue: 530,
+        });
+
+        prisma.quotation.findFirst.mockResolvedValue(
+          comMedida(comUnidade('M2')),
+        );
+        const porArea = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+        expect(porArea.items[0]).toMatchObject({
+          quantity: 2.5,
+          unit: 'M2',
+          uCom: 'M2',
+          unitValue: 212,
+          totalValue: 530,
+        });
+      });
+
+      /**
        * O payload monta vProd como qCOM x vUnCom. Arredondar o unitário para 2
        * casas fazia 14 x 0,04 = 0,56 divergir do total da nota (0,50) — soma
        * dos itens diferente do total é rejeição na SEFAZ.
        */
       it('mantém precisão no unitário para vProd fechar com o total', async () => {
-        prisma.quotation.findFirst.mockResolvedValue(comMedida());
+        prisma.quotation.findFirst.mockResolvedValue(comMedida(emM2));
 
         const result = await service.prepareFromOrder(
           mockCompanyId,
@@ -1073,6 +1145,84 @@ describe('NfeService', () => {
 
         expect(result.items[0].quantity).toBe(3);
         expect(result.items[0].unit).toBe('UN');
+      });
+    });
+
+    /**
+     * O unitário saía do líquido e o desconto era abatido de novo — e o
+     * percentual (10) virava R$ 0,10. A nota cobrava menos que a venda.
+     */
+    describe('desconto da linha', () => {
+      const comLinha = (over = {}) => ({
+        ...mockQuotation,
+        quotationProduct: [
+          {
+            ...mockQuotation.quotationProduct[0],
+            quantity: 1,
+            totalValue: 10000,
+            finalValue: 9000,
+            items: [],
+            ...over,
+          },
+        ],
+      });
+
+      it('bruto no unitário e o desconto uma vez só', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comLinha({ discount: 1000, discountType: 'VALUE' }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0]).toMatchObject({
+          quantity: 1,
+          unitValue: 100,
+          discount: 10,
+          totalValue: 90,
+        });
+        expect(result.totais).toMatchObject({
+          valorProdutos: 100,
+          valorDesconto: 10,
+          valorNota: 90,
+        });
+      });
+
+      it('percentual sai em reais pela diferença', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comLinha({ discount: 10, discountType: 'PERCENT' }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0].discount).toBe(10);
+        expect(result.totais.valorNota).toBe(90);
+      });
+
+      it('acréscimo entra no valor, sem desconto negativo', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comLinha({
+            finalValue: 11000,
+            discount: -1000,
+            discountType: 'VALUE',
+          }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0]).toMatchObject({
+          unitValue: 110,
+          discount: 0,
+          totalValue: 110,
+        });
       });
     });
 
@@ -1356,6 +1506,164 @@ describe('NfeService', () => {
       expect(result.emissao.operationNature).toBe('Venda aninhada');
       expect(result.informacoesComplementares).toBe('Observação do rascunho');
     });
+
+    /**
+     * A tentativa da regra antiga com desconto tinha o líquido no unitário e
+     * o desconto outra vez. A SEFAZ a rejeitava pela soma dos descontos;
+     * reemitida agora, passaria cobrando menos que a venda.
+     */
+    describe('itens da tentativa', () => {
+      const daRegraAntiga = {
+        productId: 'product-1',
+        quantity: 1,
+        unitValue: 90,
+        discount: 10,
+        description: 'Produto Teste',
+      };
+
+      beforeEach(() => {
+        prisma.quotation.findFirst.mockResolvedValue({
+          ...mockQuotation,
+          quotationProduct: [
+            {
+              ...mockQuotation.quotationProduct[0],
+              quantity: 1,
+              totalValue: 10000,
+              finalValue: 9000,
+              items: [],
+            },
+          ],
+        });
+      });
+
+      // Os mocks guardam a implementação entre testes: devolve o padrão.
+      afterEach(() => {
+        prisma.quotation.findFirst.mockResolvedValue(mockQuotation);
+      });
+
+      it('regra antiga com desconto: refaz os itens pela O.S.', async () => {
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...rejeitadaCom({ items: [daRegraAntiga] }),
+          orderId: mockOrderId,
+        });
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items).toHaveLength(1);
+        expect(result.items[0]).toMatchObject({
+          unitValue: 100,
+          discount: 10,
+          totalValue: 90,
+        });
+      });
+
+      it('desconto digitado numa linha sem desconto fica', async () => {
+        prisma.quotation.findFirst.mockResolvedValue({
+          ...mockQuotation,
+          quotationProduct: [
+            {
+              ...mockQuotation.quotationProduct[0],
+              quantity: 1,
+              totalValue: 10000,
+              finalValue: 10000,
+              items: [],
+            },
+          ],
+        });
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...rejeitadaCom({
+            items: [{ ...daRegraAntiga, unitValue: 100, discount: 5 }],
+          }),
+          orderId: mockOrderId,
+        });
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items[0]).toMatchObject({ unitValue: 100, discount: 5 });
+      });
+
+      it('regra antiga sem desconto: mantém o que o usuário mandou', async () => {
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...rejeitadaCom({
+            items: [{ ...daRegraAntiga, unitValue: 530, discount: 0 }],
+          }),
+          orderId: mockOrderId,
+        });
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items[0]).toMatchObject({ unitValue: 530, discount: 0 });
+      });
+
+      it('regra nova: mantém mesmo com desconto', async () => {
+        // Valores que a O.S. não daria (ela daria 100 com 10 de desconto):
+        // se a tentativa fosse refeita, o teste pegaria.
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...rejeitadaCom({
+            versaoItens: 2,
+            items: [{ ...daRegraAntiga, unitValue: 120, discount: 7 }],
+          }),
+          orderId: mockOrderId,
+        });
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items[0]).toMatchObject({ unitValue: 120, discount: 7 });
+      });
+
+      /**
+       * Consolidada: o mesmo produto nas duas O.S. O vínculo nfe_orders vem
+       * sem ordem, e a tentativa segue a ordem das O.S. que ela guardou.
+       */
+      it('consolidada: casa cada item com a linha da sua O.S.', async () => {
+        const linhaDa = (orderId: string) =>
+          orderId === 'ordem-a'
+            ? { totalValue: 10000, finalValue: 9000 }
+            : { totalValue: 20000, finalValue: 20000 };
+        prisma.quotation.findFirst.mockImplementation((args: any) =>
+          Promise.resolve({
+            ...mockQuotation,
+            quotationProduct: [
+              {
+                ...mockQuotation.quotationProduct[0],
+                quantity: 1,
+                items: [],
+                ...linhaDa(args?.where?.order?.id),
+              },
+            ],
+          }),
+        );
+        prisma.nfe.findFirst.mockResolvedValue(
+          rejeitadaCom({
+            orderIds: ['ordem-a', 'ordem-b'],
+            items: [
+              { ...daRegraAntiga, unitValue: 90, discount: 10 },
+              { ...daRegraAntiga, unitValue: 200, discount: 0 },
+            ],
+          }),
+        );
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items[0]).toMatchObject({ unitValue: 100, discount: 10 });
+        expect(result.items[1]).toMatchObject({ unitValue: 200, discount: 0 });
+      });
+    });
   });
 
   /**
@@ -1635,6 +1943,258 @@ describe('NfeService', () => {
 
       expect(prisma.nfe.create).not.toHaveBeenCalled();
     });
+
+    it('rascunho novo nasce com a versão da regra dos itens', async () => {
+      prisma.nfe.findFirst.mockResolvedValue(null);
+      prisma.nfe.create.mockResolvedValue(mockNfe);
+
+      const result = await service.createOrGetDraft(mockCompanyId, mockOrderId);
+
+      const gravado = prisma.nfe.create.mock.calls[0][0].data.draftData;
+      expect(gravado).toMatchObject({ versaoItens: 2, itensEditados: false });
+      // A tela recebe a impressão da O.S. de onde saíram os itens e a
+      // devolve no PATCH.
+      expect(result).toMatchObject({ origemItens: gravado.origemItens });
+      expect(gravado.origemItens).toMatch(/^[0-9a-f]{40}$/);
+    });
+
+    /**
+     * O rascunho guardava os itens do dia em que nasceu e a tela nunca gravava
+     * as edições: reabrir desfazia o ajuste ("altera e volta para o valor
+     * errado"), e a O.S. corrigida depois não chegava à nota.
+     */
+    describe('itens ao reabrir', () => {
+      const linhasDaOs = [
+        {
+          productId: 'product-1',
+          quantity: 2,
+          totalValue: 20000,
+          finalValue: 20000,
+          description: null,
+          items: [],
+        },
+        {
+          productId: 'product-2',
+          quantity: 1,
+          totalValue: 5300,
+          finalValue: 5300,
+          description: 'Placa',
+          items: [{ quantity: 1, unitKind: 'AREA', width: 2500, height: 1000 }],
+        },
+      ];
+      const editado = {
+        productId: 'product-1',
+        itemNumber: 1,
+        quantity: 1,
+        unitValue: 150,
+        discount: 0,
+        uCom: 'UN',
+        unit: 'UN',
+        cfop: 5102,
+      };
+
+      afterEach(() => {
+        prisma.quotationProduct.findMany.mockResolvedValue([]);
+      });
+
+      /** Rascunho depois de uma edição na tela (PATCH com os itens). */
+      const rascunhoEditado = async () => {
+        prisma.quotationProduct.findMany.mockResolvedValue(linhasDaOs);
+        prisma.nfe.findFirst.mockResolvedValueOnce(mockNfe);
+        prisma.nfe.update.mockResolvedValueOnce(mockNfe);
+        await service.updateDraft(mockCompanyId, mockNfeId, {
+          items: [editado],
+        });
+        const gravado = prisma.nfe.update.mock.calls[0][0].data.draftData;
+        prisma.nfe.update.mockClear();
+        return { ...mockNfe, draftData: gravado };
+      };
+
+      it('rascunho da regra antiga é refeito pela O.S. e regravado', async () => {
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...mockNfe,
+          draftData: {
+            items: [
+              {
+                productId: 'product-1',
+                quantity: 9,
+                unitValue: 1,
+                discount: 5,
+              },
+            ],
+          },
+        });
+
+        const result = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0]).toMatchObject({
+          quantity: 2,
+          unitValue: 100,
+          discount: 0,
+          totalValue: 200,
+        });
+        expect(prisma.nfe.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: mockNfeId },
+            data: expect.objectContaining({
+              valorTotal: 200,
+              draftData: expect.objectContaining({
+                versaoItens: 2,
+                itensEditados: false,
+              }),
+            }),
+          }),
+        );
+      });
+
+      /**
+       * O jsonb não guarda a ordem das chaves: comparar o JSON cru dava
+       * "diferente" sempre, e o rascunho era regravado a cada abertura.
+       */
+      it('rascunho em dia não é regravado, mesmo com as chaves em outra ordem', async () => {
+        prisma.nfe.findFirst.mockResolvedValue(null);
+        prisma.nfe.create.mockResolvedValue(mockNfe);
+        await service.createOrGetDraft(mockCompanyId, mockOrderId);
+        const gravado = prisma.nfe.create.mock.calls[0][0].data.draftData;
+        const embaralhar = (objeto: Record<string, unknown>) =>
+          Object.fromEntries(Object.entries(objeto).reverse());
+
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...mockNfe,
+          draftData: {
+            ...gravado,
+            items: gravado.items.map(embaralhar),
+          },
+        });
+        await service.createOrGetDraft(mockCompanyId, mockOrderId);
+
+        expect(prisma.nfe.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('regrava só se o rascunho não mudou desde a leitura', async () => {
+        const lidoEm = new Date('2026-11-15T10:00:00Z');
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...mockNfe,
+          updatedAt: lidoEm,
+          draftData: { items: [] },
+        });
+
+        await service.createOrGetDraft(mockCompanyId, mockOrderId);
+
+        expect(prisma.nfe.updateMany.mock.calls[0][0].where).toEqual({
+          id: mockNfeId,
+          updatedAt: lidoEm,
+        });
+      });
+
+      it('item editado na tela fica enquanto a O.S. não muda', async () => {
+        const rascunho = await rascunhoEditado();
+        prisma.nfe.findFirst.mockResolvedValue(rascunho);
+
+        const result = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items).toHaveLength(1);
+        expect(result.items[0]).toMatchObject({
+          quantity: 1,
+          unitValue: 150,
+          totalValue: 150,
+          // O DTO grava o CFOP como número; a tela trabalha com texto.
+          cfop: '5102',
+        });
+        // A tela mantém o aviso de valores ajustados à mão.
+        expect(result).toMatchObject({ itensEditados: true });
+        expect(prisma.nfe.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('O.S. alterada depois da edição: vale a O.S.', async () => {
+        const rascunho = await rascunhoEditado();
+        prisma.quotationProduct.findMany.mockResolvedValue([
+          { ...linhasDaOs[0], finalValue: 18000 },
+          linhasDaOs[1],
+        ]);
+        prisma.nfe.findFirst.mockResolvedValue(rascunho);
+
+        const result = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0]).toMatchObject({ quantity: 2, unitValue: 100 });
+        expect(result).toMatchObject({ itensEditados: false });
+        expect(
+          prisma.nfe.updateMany.mock.calls[0][0].data.draftData,
+        ).toMatchObject({ itensEditados: false });
+      });
+
+      /**
+       * Aba aberta com a O.S. de R$ 200,00; em outra aba a O.S. vai a
+       * R$ 180,00; depois a aba velha edita um item. A impressão gravada é a
+       * que a tela recebeu (a de antes), e na reabertura vale a O.S.
+       */
+      it('aba velha: edição feita depois de a O.S. mudar não vence a O.S.', async () => {
+        prisma.quotationProduct.findMany.mockResolvedValue(linhasDaOs);
+        prisma.nfe.findFirst.mockResolvedValue(null);
+        prisma.nfe.create.mockResolvedValue(mockNfe);
+        const aberta = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+        const origemDaTela = (aberta as any).origemItens;
+
+        // A O.S. muda; a aba velha grava a edição com a impressão que recebeu.
+        prisma.quotationProduct.findMany.mockResolvedValue([
+          { ...linhasDaOs[0], finalValue: 18000 },
+          linhasDaOs[1],
+        ]);
+        prisma.nfe.findFirst.mockResolvedValueOnce(mockNfe);
+        prisma.nfe.update.mockResolvedValueOnce(mockNfe);
+        await service.updateDraft(mockCompanyId, mockNfeId, {
+          items: [editado],
+          origemItens: origemDaTela,
+        });
+        const gravado = prisma.nfe.update.mock.calls[0][0].data.draftData;
+        expect(gravado.origemItens).toBe(origemDaTela);
+        prisma.nfe.update.mockClear();
+
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...mockNfe,
+          draftData: gravado,
+        });
+        const reaberta = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(reaberta.items[0]).toMatchObject({
+          quantity: 2,
+          unitValue: 100,
+        });
+        expect(reaberta).toMatchObject({ itensEditados: false });
+      });
+
+      it('a O.S. salva sem mudança não desfaz a edição', async () => {
+        const rascunho = await rascunhoEditado();
+        // Mesmos valores em outra ordem (e em objetos novos, como vêm de uma
+        // O.S. regravada): a impressão não depende disso.
+        prisma.quotationProduct.findMany.mockResolvedValue(
+          [...linhasDaOs].reverse().map((linha) => ({ ...linha })),
+        );
+        prisma.nfe.findFirst.mockResolvedValue(rascunho);
+
+        const result = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0]).toMatchObject({ unitValue: 150 });
+      });
+    });
   });
 
   describe('emitFromOrder', () => {
@@ -1683,6 +2243,47 @@ describe('NfeService', () => {
       await expect(
         service.updateDraft('invalid-id', mockCompanyId, {}),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('grava os itens editados com a versão, a impressão da O.S. e o total', async () => {
+      prisma.nfe.findFirst.mockResolvedValue(mockNfe);
+      prisma.quotationProduct.findMany.mockResolvedValueOnce([
+        {
+          productId: 'product-1',
+          quantity: 2,
+          totalValue: 20000,
+          finalValue: 20000,
+          description: null,
+          items: [],
+        },
+      ]);
+
+      await service.updateDraft(mockCompanyId, mockNfeId, {
+        items: [
+          { productId: 'product-1', quantity: 2, unitValue: 100, discount: 10 },
+        ],
+      });
+
+      const { data } = prisma.nfe.update.mock.calls[0][0];
+      expect(data.valorTotal).toBe(190);
+      expect(data.draftData).toMatchObject({
+        versaoItens: 2,
+        itensEditados: true,
+        origemItens: expect.stringMatching(/^[0-9a-f]{40}$/),
+      });
+    });
+
+    it('sem itens no corpo, não marca edição nem mexe no total', async () => {
+      prisma.nfe.findFirst.mockResolvedValue(mockNfe);
+
+      await service.updateDraft(mockCompanyId, mockNfeId, {
+        informacoesComplementares: 'Entregar na portaria',
+      });
+
+      const { data } = prisma.nfe.update.mock.calls[0][0];
+      expect(data).not.toHaveProperty('valorTotal');
+      expect(data.draftData).not.toHaveProperty('itensEditados');
+      expect(prisma.quotationProduct.findMany).not.toHaveBeenCalled();
     });
   });
 
@@ -2381,6 +2982,99 @@ describe('NfeService', () => {
         expect(enviado().det[0].prod.cProd).toBe(
           mockEmitDto.items[0].productId,
         );
+      });
+    });
+
+    /**
+     * Só o total levava vDesc. A SEFAZ confere o total de desconto com a soma
+     * dos itens, e toda nota com desconto era rejeitada.
+     */
+    describe('desconto do item no XML', () => {
+      const enviado = () =>
+        invoicyApiService.emitNfe.mock.calls[0][1][0].Documento;
+
+      it('leva vDesc no item, e o total é a soma dos itens', async () => {
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          items: [
+            {
+              ...mockEmitDto.items[0],
+              quantity: 1,
+              unitValue: 100,
+              discount: 10,
+            },
+            { ...mockEmitDto.items[0], quantity: 2, unitValue: 50 },
+          ],
+        });
+
+        const documento = enviado();
+        expect(documento.det[0].prod.vDesc).toBe('10.00');
+        // O schema não aceita 0.00: sem desconto, o campo não vai.
+        expect(documento.det[1].prod).not.toHaveProperty('vDesc');
+        expect(documento.total.ICMStot).toMatchObject({
+          vProd_ttlnfe: '200.00',
+          vDesc_ttlnfe: '10.00',
+          vNF: '190.00',
+        });
+        expect(documento.pag[0].vPag).toBe('190.00');
+      });
+
+      it('vDesc fica entre vUnTrib e indTot, na ordem do leiaute', async () => {
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          items: [{ ...mockEmitDto.items[0], discount: 5 }],
+        });
+
+        const campos = Object.keys(enviado().det[0].prod);
+        expect(campos.indexOf('vDesc')).toBe(campos.indexOf('vUnTrib') + 1);
+        expect(campos.indexOf('indTot')).toBe(campos.indexOf('vDesc') + 1);
+      });
+
+      it('qCOM e vProd saem da mesma quantidade de 4 casas', async () => {
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          items: [
+            { ...mockEmitDto.items[0], quantity: 0.123456, unitValue: 1000 },
+          ],
+        });
+
+        const prod = enviado().det[0].prod;
+        expect(prod.qCOM).toBe('0.1235');
+        expect(prod.vProd).toBe('123.50');
+        expect(enviado().total.ICMStot.vProd_ttlnfe).toBe('123.50');
+      });
+
+      it('marca a tentativa com a versão da regra dos itens', async () => {
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(prisma.nfe.create.mock.calls[0][0].data.draftData).toMatchObject(
+          { versaoItens: 2 },
+        );
+      });
+
+      /**
+       * Na tela, mudar a quantidade não mexe no desconto já digitado: 2 x R$ 10
+       * com R$ 50 de desconto deixaria o item negativo, e o schema recusa.
+       */
+      it('recusa desconto maior que o item antes de reservar o número', async () => {
+        await expect(
+          service.emit(mockCompanyId, {
+            ...mockEmitDto,
+            items: [
+              {
+                ...mockEmitDto.items[0],
+                quantity: 2,
+                unitValue: 10,
+                discount: 50,
+              },
+            ],
+          }),
+        ).rejects.toThrow(/maior que o valor dele/);
+
+        expect(
+          mockFiscalCredentialResolver.reserveNfeNumber,
+        ).not.toHaveBeenCalled();
+        expect(invoicyApiService.emitNfe).not.toHaveBeenCalled();
       });
     });
 

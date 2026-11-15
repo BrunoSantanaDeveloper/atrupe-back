@@ -361,6 +361,12 @@ export interface InvoicyNfeDocumento {
   det: InvoicyNfeDet[];
   total: InvoicyNfeTotal;
   pag: InvoicyNfePag[];
+  /**
+   * Troco da NFC-e (soma de vPag − vNF). No leiaute do InvoiCy fica fora do
+   * grupo `pag`, logo depois dele; sem ele, pagamento maior que a nota é
+   * rejeitado pela SEFAZ.
+   */
+  vTroco?: string;
   transp?: {
     modFrete: string;
   };

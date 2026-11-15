@@ -149,7 +149,11 @@ export class NfeController {
     return this.nfeService.createOrGetDraft(req.user.companyId, orderId);
   }
 
+  // Fora do teto de 10/min: só grava no banco, e a tela grava aqui cada
+  // edição de item (e a data de saída a cada tecla). Com o teto, a 11ª
+  // gravação do minuto voltava 429 e a edição não ficava no rascunho.
   @Patch('draft/:id')
+  @SkipThrottle()
   @HasPermission('edit', 'nota_fiscal:emitir')
   @ApiOperation({ summary: 'Atualizar rascunho de NF-e' })
   async updateDraft(

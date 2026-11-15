@@ -4118,8 +4118,11 @@ export class ReportService {
    *
    * Mesma base do gráfico "Produtos mais vendidos" — orçamentos aprovados no
    * período cuja O.S. não está cancelada — porém sem o corte de top 10. A
-   * quantidade sai de `resolveCommercialQuantity`, a mesma regra que a NF-e
-   * usa em qCOM/uCOM, para o sistema não ganhar um terceiro jeito de contar.
+   * quantidade sai de `resolveCommercialQuantity` SEM a unidade cadastrada:
+   * conta a medida vendida (m², m, kg…), que é o que a produção quer somar.
+   * A NF-e passa a unidade cadastrada desde 15/11/2026 e pode contar a mesma
+   * venda em peças (placa cadastrada em UN sai "1 UN" na nota e "2,5 M2"
+   * aqui).
    */
   async getProductsSold(
     companyId: string,

@@ -57,7 +57,12 @@ import {
 } from './dtos/nfce.dto';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { montarImpostosNfe } from '../utils/nfe-imposto-payload.util';
-import { resolveCommercialQuantity } from '../utils/commercial-quantity.util';
+import {
+  ItemDaEmissao,
+  totaisDosItens,
+  valoresDaLinhaParaNota,
+  valoresDoItemNoXml,
+} from '../utils/fiscal-line-values.util';
 import { isRegimeNormal } from '../utils/regime-tributario.util';
 import {
   aliquotasReformaTributaria,
@@ -115,6 +120,15 @@ const NFCE_CAMPOS_DA_TENTATIVA_ZERADOS = {
   invoicyProtocol: null,
 };
 
+/** Item da NFC-e (nomes do DTO) na forma de `valoresDoItemNoXml`. */
+function itemNfceParaXml(item: EmitNfceDto['itens'][number]): ItemDaEmissao {
+  return {
+    quantity: item.quantidade,
+    unitValue: item.valorUnitario,
+    discount: item.valorDesconto,
+  };
+}
+
 @Injectable()
 export class NfceService {
   private readonly logger = new Logger(NfceService.name);
@@ -165,12 +179,13 @@ export class NfceService {
     if (!order?.quotation?.quotationProduct?.length) return [];
 
     return order.quotation.quotationProduct.map((qp: any, index: number) => {
-      const totalValueCents = qp.finalValue || qp.totalValue || 0;
-      const totalValueReais = totalValueCents / 100;
-      const comercial = resolveCommercialQuantity(qp.quantity, qp.items);
-      const unitValue =
-        comercial.quantity > 0 ? totalValueReais / comercial.quantity : 0;
       const fiscalData = qp.product?.fiscalData;
+      // Unidade cadastrada, valor bruto e desconto em vDesc: a mesma conta da
+      // NF-e (`valoresDaLinhaParaNota`).
+      const linha = valoresDaLinhaParaNota(
+        qp,
+        fiscalData?.commercialUnit ?? null,
+      );
 
       return {
         itemNumber: index + 1,
@@ -184,16 +199,20 @@ export class NfceService {
         cstIpi: '',
         cstPis: fiscalData?.pisCst || '',
         cstCofins: fiscalData?.cofinsCst || '',
-        unit: comercial.unit,
-        uCom: comercial.unit,
+        unit: linha.unit,
+        uCom: linha.unit,
         ean: fiscalData?.cean || '',
         ceantrib: '',
-        quantity: comercial.quantity,
-        unitValue,
-        discount: Number(((qp.discount || 0) / 100).toFixed(2)),
+        quantity: linha.quantity,
+        unitValue: linha.unitValue,
+        discount: linha.discount,
         freight: 0,
         insurance: 0,
-        totalValue: Number(totalValueReais.toFixed(2)),
+        totalValue: linha.totalValue,
+        // Para a tela converter a quantidade quando a unidade muda.
+        pieceQuantity: linha.pieceQuantity,
+        measureQuantity: linha.measureQuantity,
+        measureUnit: linha.measureUnit,
         isService: false,
         needsConfiguration:
           !fiscalData?.ncm ||
@@ -420,16 +439,10 @@ export class NfceService {
       );
     }
 
-    // Calcular totais
-    const valorProdutos = dto.itens.reduce((acc, item) => {
-      const valorItem = item.quantidade * item.valorUnitario;
-      return acc + valorItem;
-    }, 0);
-    const valorDesconto = dto.itens.reduce(
-      (acc, item) => acc + (item.valorDesconto || 0),
-      0,
+    // Calcular totais pela soma dos itens já arredondados como vão ao XML.
+    const { valorProdutos, valorDesconto, valorTotal } = totaisDosItens(
+      dto.itens.map(itemNfceParaXml),
     );
-    const valorTotal = Number((valorProdutos - valorDesconto).toFixed(2));
 
     if (valorTotal <= 0) {
       throw new BadRequestException(
@@ -443,13 +456,15 @@ export class NfceService {
       0,
     );
 
-    // Validar pagamentos
-    const expectedTroco = Number(
-      Math.max(0, valorPagamentos - valorTotal).toFixed(2),
-    );
+    // Validar pagamentos, em centavos. Sem a tolerância de um centavo que
+    // havia aqui: vNF é a soma dos itens arredondados e pode passar um centavo
+    // da conta da tela, e pagamento menor que vNF a SEFAZ recusa.
+    const centavos = (valor: number) => Math.round(valor * 100);
+    const expectedTroco =
+      Math.max(0, centavos(valorPagamentos) - centavos(valorTotal)) / 100;
     const valorTroco = Number((dto.valorTroco || 0).toFixed(2));
 
-    if (valorPagamentos + 0.01 < valorTotal) {
+    if (centavos(valorPagamentos) < centavos(valorTotal)) {
       throw new BadRequestException(
         'Valor dos pagamentos deve ser igual ou superior ao valor total da NFC-e.',
       );
@@ -511,10 +526,11 @@ export class NfceService {
             const fiscal: any = item.productId
               ? fiscalDataMap.get(item.productId)
               : undefined;
+            const noXml = valoresDoItemNoXml(itemNfceParaXml(item));
             return {
               valores: {
-                valorProdutos: item.quantidade * item.valorUnitario,
-                desconto: item.valorDesconto,
+                valorProdutos: noXml.valorProduto,
+                desconto: noXml.desconto,
               },
               tributacao: {
                 icmsCst: item.icmsCst || fiscal?.icmsCst || '',
@@ -562,7 +578,10 @@ export class NfceService {
       valorProdutos,
       valorDesconto,
       valorTotal,
-      valorTroco,
+      // O troco é o calculado aqui (soma de vPag − vNF), e não o informado,
+      // que a conferência acima aceita com um centavo de folga: o XML, a
+      // linha gravada, o cupom e a prévia mostram o mesmo valor.
+      valorTroco: expectedTroco,
     };
   }
 
@@ -589,6 +608,7 @@ export class NfceService {
       valorProdutos,
       valorDesconto,
       valorTotal,
+      valorTroco,
     } = ctx;
     const reservedNumber = numeracao.numero;
     const series = numeracao.serie;
@@ -687,6 +707,7 @@ export class NfceService {
           const icmsCst = item.icmsCst || fiscalData?.icmsCst || '102';
           const pisCst = item.pisCst || fiscalData?.pisCst || '49';
           const cofinsCst = item.cofinsCst || fiscalData?.cofinsCst || '49';
+          const noXml = valoresDoItemNoXml(itemNfceParaXml(item));
 
           return {
             prod: {
@@ -708,12 +729,17 @@ export class NfceService {
                   ? Number(fiscalData.cfopInState)
                   : 5102,
               uCOM: item.unidade || fiscalData?.commercialUnit || 'UN',
-              qCOM: item.quantidade.toFixed(4),
+              qCOM: noXml.quantidade.toFixed(4),
               vUnCom: item.valorUnitario.toFixed(10),
-              vProd: (item.quantidade * item.valorUnitario).toFixed(2),
+              vProd: noXml.valorProduto.toFixed(2),
               uTrib: item.unidade || fiscalData?.commercialUnit || 'UN',
-              qTrib: item.quantidade.toFixed(4),
+              qTrib: noXml.quantidade.toFixed(4),
               vUnTrib: item.valorUnitario.toFixed(10),
+              // Desconto do item (ver o mesmo trecho da NF-e): sem ele o
+              // total de desconto não batia com a soma dos itens.
+              ...(noXml.desconto > 0
+                ? { vDesc: noXml.desconto.toFixed(2) }
+                : {}),
               indTot: 1,
             },
             imposto: impostosCalculados?.impostos[index] ?? {
@@ -764,6 +790,9 @@ export class NfceService {
           tPag: pag.tipo,
           vPag: pag.valor.toFixed(2),
         })),
+        // Pagamento maior que a nota exige o troco (rejeição 866 sem ele). O
+        // InvoiCy não calcula: o campo é de entrada, fora do grupo `pag`.
+        ...(valorTroco > 0 ? { vTroco: valorTroco.toFixed(2) } : {}),
         transp: {
           modFrete: '9',
         },

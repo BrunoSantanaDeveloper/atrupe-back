@@ -165,6 +165,9 @@ export class ProductService {
               select: {
                 ncm: true,
                 cest: true,
+                // A busca de produtos da nota fiscal escolhe valor e unidade
+                // pela unidade comercial cadastrada.
+                commercialUnit: true,
                 cfopInState: true,
                 cfopOutState: true,
                 icmsCst: true,
@@ -382,14 +385,18 @@ export class ProductService {
       const itemsWithId = items?.filter((item) => item.id);
       const itemsWithoutId = items?.filter((item) => !item.id);
 
-      // Identificar IDs dos itens presentes no banco e não enviados no body
+      // Identificar IDs dos itens presentes no banco e não enviados no body.
+      // Corpo sem `items` não mexe nos itens: antes contava como "nenhum
+      // enviado" e apagava todos, junto com as composições das O.S.
       const existingItemIds = product.items.map((item) => item.id);
       const incomingItemIds = itemsWithId?.map((item) => item.id) || [];
-      const itemsToRemove = existingItemIds.filter(
-        (id) => !incomingItemIds.includes(id),
-      );
+      const itemsToRemove = items
+        ? existingItemIds.filter((id) => !incomingItemIds.includes(id))
+        : [];
 
-      const productionStages = updateProductDto.productionStages || [];
+      // Mesma regra para as etapas: sem o campo, ficam as que estão. O
+      // "Salvar no produto" da nota mandava só os itens e zerava as etapas.
+      const productionStages = updateProductDto.productionStages;
 
       // Remover itens que não foram enviados no body
       if (itemsToRemove.length > 0) {
@@ -454,15 +461,21 @@ export class ProductService {
           ...(updateProductDto.allowEditValues !== undefined && {
             allowEditValues: updateProductDto.allowEditValues,
           }),
-          items: {
-            upsert: itemsWithId?.map((item) => ({
-              where: { id: item.id },
-              create: item,
-              update: item,
-            })),
-            create: itemsWithoutId?.map((item) => ({ ...item })),
-          },
-          productionStages: JSON.parse(JSON.stringify(productionStages)),
+          ...(items && {
+            items: {
+              upsert: itemsWithId?.map((item) => ({
+                where: { id: item.id },
+                create: item,
+                update: item,
+              })),
+              create: itemsWithoutId?.map((item) => ({ ...item })),
+            },
+          }),
+          ...(productionStages !== undefined && {
+            productionStages: JSON.parse(
+              JSON.stringify(productionStages || []),
+            ),
+          }),
         },
       });
     } catch (error) {
