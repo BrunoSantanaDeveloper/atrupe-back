@@ -124,7 +124,13 @@ export interface ItemDaEmissao {
   quantity: number;
   unitValue: number;
   discount?: number | null;
+  /** Frete e seguro do item, em reais (vFrete e vSeg). */
+  freight?: number | null;
+  insurance?: number | null;
 }
+
+/** Nome de antes, para quem já o importava. */
+export type ItemComAcessorios = ItemDaEmissao;
 
 export interface ValoresDoItemNoXml {
   /** qCOM com 4 casas. */
@@ -133,6 +139,9 @@ export interface ValoresDoItemNoXml {
   valorProduto: number;
   /** vDesc com 2 casas; zero quando não há desconto. */
   desconto: number;
+  /** vFrete e vSeg com 2 casas; zero quando não há. */
+  frete: number;
+  seguro: number;
 }
 
 /**
@@ -147,26 +156,19 @@ export function valoresDoItemNoXml(item: ItemDaEmissao): ValoresDoItemNoXml {
     quantidade,
     valorProduto: arredondar(quantidade * item.unitValue, 2),
     desconto: arredondar(item.discount || 0, 2),
+    frete: arredondar(item.freight || 0, 2),
+    seguro: arredondar(item.insurance || 0, 2),
   };
 }
 
-/** Item com frete e seguro, como a tela mostra o "Valor final" da linha. */
-export interface ItemComAcessorios extends ItemDaEmissao {
-  freight?: number | null;
-  insurance?: number | null;
-}
-
 /**
- * Líquido da linha como a tela mostra: vProd − vDesc já arredondados, mais
- * frete e seguro. Com a conta sem arredondar, 2,5 x R$ 4,01 dava R$ 10,02
- * na linha e R$ 10,03 no total da nota.
+ * Líquido da linha como a tela mostra: vProd − vDesc + vFrete + vSeg, cada um
+ * já arredondado. Com a conta sem arredondar, 2,5 x R$ 4,01 dava R$ 10,02 na
+ * linha e R$ 10,03 no total da nota.
  */
-export function totalDoItemNaNota(item: ItemComAcessorios): number {
-  const { valorProduto, desconto } = valoresDoItemNoXml(item);
-  return arredondar(
-    valorProduto - desconto + (item.freight || 0) + (item.insurance || 0),
-    2,
-  );
+export function totalDoItemNaNota(item: ItemDaEmissao): number {
+  const { valorProduto, desconto, frete, seguro } = valoresDoItemNoXml(item);
+  return arredondar(valorProduto - desconto + frete + seguro, 2);
 }
 
 export interface TotaisDosItens {
@@ -174,23 +176,41 @@ export interface TotaisDosItens {
   valorProdutos: number;
   /** vDesc do total: soma dos vDesc dos itens. */
   valorDesconto: number;
-  /** vNF sem frete, seguro e outros: produtos − desconto. */
+  /** vFrete e vSeg do total: soma dos itens. */
+  valorFrete: number;
+  valorSeguro: number;
+  /**
+   * vNF sem impostos destacados e outros: produtos − desconto + frete +
+   * seguro. O frete e o seguro do item entravam no total da tela e na base do
+   * ICMS, mas não no XML: a nota saía com o valor sem eles.
+   */
   valorTotal: number;
 }
 
 export function totaisDosItens(itens: ItemDaEmissao[]): TotaisDosItens {
   let produtos = 0;
   let desconto = 0;
+  let frete = 0;
+  let seguro = 0;
   for (const item of itens) {
     const valores = valoresDoItemNoXml(item);
     produtos += valores.valorProduto;
     desconto += valores.desconto;
+    frete += valores.frete;
+    seguro += valores.seguro;
   }
   const valorProdutos = arredondar(produtos, 2);
   const valorDesconto = arredondar(desconto, 2);
+  const valorFrete = arredondar(frete, 2);
+  const valorSeguro = arredondar(seguro, 2);
   return {
     valorProdutos,
     valorDesconto,
-    valorTotal: arredondar(valorProdutos - valorDesconto, 2),
+    valorFrete,
+    valorSeguro,
+    valorTotal: arredondar(
+      valorProdutos - valorDesconto + valorFrete + valorSeguro,
+      2,
+    ),
   };
 }

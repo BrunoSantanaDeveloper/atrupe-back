@@ -103,14 +103,17 @@ export class NfeItemDto {
   @IsOptional()
   cstIpi?: string;
 
+  // vFrete e vSeg vão ao XML (e entram no vNF); o schema não aceita negativo.
   @ApiPropertyOptional({ description: 'Valor do Frete' })
   @IsNumber()
   @IsOptional()
+  @Min(0, { message: 'O frete do item não pode ser negativo.' })
   freight?: number;
 
   @ApiPropertyOptional({ description: 'Valor do Seguro' })
   @IsNumber()
   @IsOptional()
+  @Min(0, { message: 'O seguro do item não pode ser negativo.' })
   insurance?: number;
 }
 

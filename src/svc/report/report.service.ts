@@ -4118,11 +4118,10 @@ export class ReportService {
    *
    * Mesma base do gráfico "Produtos mais vendidos" — orçamentos aprovados no
    * período cuja O.S. não está cancelada — porém sem o corte de top 10. A
-   * quantidade sai de `resolveCommercialQuantity` SEM a unidade cadastrada:
-   * conta a medida vendida (m², m, kg…), que é o que a produção quer somar.
-   * A NF-e passa a unidade cadastrada desde 15/11/2026 e pode contar a mesma
-   * venda em peças (placa cadastrada em UN sai "1 UN" na nota e "2,5 M2"
-   * aqui).
+   * quantidade sai de `resolveCommercialQuantity` com a "Unidade comercial"
+   * do cadastro fiscal, a mesma regra da NF-e em qCOM/uCOM: placa cadastrada
+   * em UN conta peças, em M2 conta área. Quem confere o vendido contra as
+   * notas emitidas vê o mesmo número.
    */
   async getProductsSold(
     companyId: string,
@@ -4139,7 +4138,13 @@ export class ReportService {
         },
       },
       include: {
-        product: { select: { id: true, name: true } },
+        product: {
+          select: {
+            id: true,
+            name: true,
+            fiscalData: { select: { commercialUnit: true } },
+          },
+        },
         items: {
           select: {
             quantity: true,
@@ -4163,6 +4168,7 @@ export class ReportService {
       const { quantity, unit } = resolveCommercialQuantity(
         qp.quantity,
         qp.items,
+        qp.product?.fiscalData?.commercialUnit ?? null,
       );
       const key = `${qp.productId}|${unit}`;
       const current = totals.get(key) ?? {

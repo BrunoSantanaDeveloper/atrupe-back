@@ -195,7 +195,13 @@ describe('valoresDoItemNoXml e totaisDosItens', () => {
   it('vProd sai da quantidade de 4 casas que vai em qCOM', () => {
     expect(
       valoresDoItemNoXml({ quantity: 2.12345, unitValue: 10, discount: 0 }),
-    ).toEqual({ quantidade: 2.1235, valorProduto: 21.24, desconto: 0 });
+    ).toEqual({
+      quantidade: 2.1235,
+      valorProduto: 21.24,
+      desconto: 0,
+      frete: 0,
+      seguro: 0,
+    });
   });
 
   it('os totais somam os itens já arredondados', () => {
@@ -206,7 +212,28 @@ describe('valoresDoItemNoXml e totaisDosItens', () => {
     expect(totaisDosItens([terco, terco, terco])).toEqual({
       valorProdutos: 0.99,
       valorDesconto: 0,
+      valorFrete: 0,
+      valorSeguro: 0,
       valorTotal: 0.99,
+    });
+  });
+
+  /**
+   * Frete e seguro do item entravam no total da tela e na base do ICMS, mas
+   * não no XML: a nota saía sem eles.
+   */
+  it('o total soma o frete e o seguro dos itens', () => {
+    expect(
+      totaisDosItens([
+        { quantity: 1, unitValue: 100, discount: 10, freight: 20 },
+        { quantity: 1, unitValue: 50, insurance: 5.5 },
+      ]),
+    ).toEqual({
+      valorProdutos: 150,
+      valorDesconto: 10,
+      valorFrete: 20,
+      valorSeguro: 5.5,
+      valorTotal: 165.5,
     });
   });
 
@@ -216,7 +243,13 @@ describe('valoresDoItemNoXml e totaisDosItens', () => {
         { quantity: 1, unitValue: 100, discount: 10 },
         { quantity: 2, unitValue: 50, discount: null },
       ]),
-    ).toEqual({ valorProdutos: 200, valorDesconto: 10, valorTotal: 190 });
+    ).toEqual({
+      valorProdutos: 200,
+      valorDesconto: 10,
+      valorFrete: 0,
+      valorSeguro: 0,
+      valorTotal: 190,
+    });
   });
 });
 

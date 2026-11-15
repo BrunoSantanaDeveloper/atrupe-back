@@ -376,7 +376,11 @@ describe('ReportService', () => {
       quantity: 1,
       finalValue: 100,
       totalValue: 100,
-      product: { id: 'p1', name: 'Adesivo impresso' },
+      product: {
+        id: 'p1',
+        name: 'Adesivo impresso',
+        fiscalData: { commercialUnit: 'M2' },
+      },
       items,
       ...overrides,
     });
@@ -423,6 +427,37 @@ describe('ReportService', () => {
         ],
       );
       expect(result.totalValue).toBe(1200);
+    });
+
+    /**
+     * Mesma regra da NF-e: com UN no cadastro fiscal a placa conta peças, e o
+     * vendido bate com as notas emitidas.
+     */
+    it('conta na unidade comercial cadastrada, como a nota', async () => {
+      const emUn = {
+        id: 'p1',
+        name: 'Adesivo impresso',
+        fiscalData: { commercialUnit: 'UN' },
+      };
+      getPrisma().quotationProduct.findMany.mockResolvedValue([
+        buildProduct({ quantity: 2, finalValue: 500, product: emUn }, [
+          areaItem({ width: 2000 }),
+        ]),
+        buildProduct({ quantity: 1, finalValue: 250, product: emUn }),
+      ]);
+
+      const result = await service.getProductsSold('company-1', {});
+
+      // 2 placas de 2 m² + 1 placa de 1 m², contadas como 3 peças.
+      expect(result.products).toEqual([
+        {
+          productId: 'p1',
+          name: 'Adesivo impresso',
+          unit: 'UN',
+          quantity: 3,
+          value: 750,
+        },
+      ]);
     });
 
     it('usa o valor do item quando a venda antiga não gravou finalValue', async () => {

@@ -2989,6 +2989,65 @@ describe('NfeService', () => {
      * Só o total levava vDesc. A SEFAZ confere o total de desconto com a soma
      * dos itens, e toda nota com desconto era rejeitada.
      */
+    /**
+     * O diálogo do item tem Frete e Seguro, que a tela soma no total e o
+     * imposto põe na base, mas o XML não levava: a nota saía sem eles.
+     */
+    describe('frete e seguro do item no XML', () => {
+      const enviado = () =>
+        invoicyApiService.emitNfe.mock.calls[0][1][0].Documento;
+
+      it('levam vFrete e vSeg no item e entram no vNF e no pagamento', async () => {
+        await service.emit(mockCompanyId, {
+          ...mockEmitDto,
+          items: [
+            {
+              ...mockEmitDto.items[0],
+              quantity: 1,
+              unitValue: 100,
+              discount: 10,
+              freight: 20,
+              insurance: 5,
+            },
+          ],
+        });
+
+        const documento = enviado();
+        const prod = documento.det[0].prod;
+        expect(prod).toMatchObject({
+          vFrete: '20.00',
+          vSeg: '5.00',
+          vDesc: '10.00',
+        });
+        // Ordem do leiaute: vUnTrib, vFrete, vSeg, vDesc, indTot.
+        const campos = Object.keys(prod);
+        expect(campos.slice(campos.indexOf('vUnTrib'))).toEqual([
+          'vUnTrib',
+          'vFrete',
+          'vSeg',
+          'vDesc',
+          'indTot',
+        ]);
+        expect(documento.total.ICMStot).toMatchObject({
+          vProd_ttlnfe: '100.00',
+          vFrete_ttlnfe: '20.00',
+          vSeg_ttlnfe: '5.00',
+          vDesc_ttlnfe: '10.00',
+          vNF: '115.00',
+        });
+        expect(documento.pag[0].vPag).toBe('115.00');
+      });
+
+      it('sem frete nem seguro, os campos não vão no item', async () => {
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        const prod = enviado().det[0].prod;
+        expect(prod).not.toHaveProperty('vFrete');
+        expect(prod).not.toHaveProperty('vSeg');
+        expect(enviado().total.ICMStot.vFrete_ttlnfe).toBe('0.00');
+      });
+    });
+
     describe('desconto do item no XML', () => {
       const enviado = () =>
         invoicyApiService.emitNfe.mock.calls[0][1][0].Documento;

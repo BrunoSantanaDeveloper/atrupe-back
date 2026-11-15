@@ -2704,7 +2704,13 @@ export class NfeService {
       destMunFromCep,
     } = ctx;
     const { numero, serie: serieReservada } = numeracao;
-    const { valorProdutos, valorDesconto, valorTotal } = this.totaisDaNota(dto);
+    const {
+      valorProdutos,
+      valorDesconto,
+      valorFrete,
+      valorSeguro,
+      valorTotal,
+    } = this.totaisDaNota(dto);
     const valoresDosItens = dto.items.map((item) => valoresDoItemNoXml(item));
     let emitCmunResolvidoViaCep: string | undefined;
 
@@ -2975,6 +2981,15 @@ export class NfeService {
               uTrib: item.uCom || 'UN', // Usually same as uCom
               qTrib: valoresDosItens[index].quantidade.toFixed(4),
               vUnTrib: item.unitValue.toFixed(10),
+              // Frete e seguro do item, logo depois de vUnTrib, na ordem do
+              // leiaute. A tela os somava no total e a base do ICMS também,
+              // mas o XML não os levava: a nota saía sem eles.
+              ...(valoresDosItens[index].frete > 0
+                ? { vFrete: valoresDosItens[index].frete.toFixed(2) }
+                : {}),
+              ...(valoresDosItens[index].seguro > 0
+                ? { vSeg: valoresDosItens[index].seguro.toFixed(2) }
+                : {}),
               // Desconto do item, entre vSeg e vOutro_item como pede o
               // leiaute. Só o total levava vDesc, e a SEFAZ rejeitava toda nota
               // com desconto porque o total não batia com a soma dos itens. O
@@ -3020,8 +3035,8 @@ export class NfeService {
               }),
               vICMSDeson_ttlnfe: '0.00',
               vProd_ttlnfe: valorProdutos.toFixed(2),
-              vFrete_ttlnfe: '0.00',
-              vSeg_ttlnfe: '0.00',
+              vFrete_ttlnfe: valorFrete.toFixed(2),
+              vSeg_ttlnfe: valorSeguro.toFixed(2),
               vDesc_ttlnfe: valorDesconto.toFixed(2),
               vII_ttlnfe: '0.00',
               vOutro: '0.00',
@@ -5101,14 +5116,15 @@ export class NfeService {
       const fiscal: any = item.productId
         ? porProduto.get(item.productId)
         : undefined;
-      // A base do imposto parte dos mesmos vProd e vDesc que vão ao XML.
+      // A base do imposto parte dos mesmos vProd, vFrete, vSeg e vDesc que
+      // vão ao XML.
       const noXml = valoresDoItemNoXml(item);
 
       return {
         valores: {
           valorProdutos: noXml.valorProduto,
-          frete: item.freight,
-          seguro: item.insurance,
+          frete: noXml.frete,
+          seguro: noXml.seguro,
           desconto: noXml.desconto,
         },
         // O CST do item vence o do cadastro: a emissão pode legitimamente
