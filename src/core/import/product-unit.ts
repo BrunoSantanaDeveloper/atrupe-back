@@ -82,6 +82,19 @@ export function displayToRawUnitCost(
   return divisor ? valueInCents / divisor : valueInCents;
 }
 
+/**
+ * Inverso de `displayToRawUnitCost`: a taxa que o banco guarda (R$/mm²) no
+ * valor por unidade de exibição (R$/m²), em centavos.
+ */
+export function rawToDisplayUnitCost(
+  rawUnitCost: number | null,
+  kind: UnitKind | null,
+): number | null {
+  if (rawUnitCost === null || rawUnitCost === 0) return rawUnitCost;
+  const factor = kind ? RAW_PER_DISPLAY_UNIT[kind] : undefined;
+  return factor ? rawUnitCost * factor : rawUnitCost;
+}
+
 export interface ImportedItemMeasures {
   widthMm?: number | null;
   heightMm?: number | null;
