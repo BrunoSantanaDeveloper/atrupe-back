@@ -1926,6 +1926,112 @@ describe('NfseService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    /**
+     * O evento ia como `{ Documento: { Cancelamento: {...} } }`, nomes que nao
+     * existem no dicionario do provedor: toda tentativa voltava com a frase
+     * generica "verifique os dados enviados" e nenhuma NFS-e foi cancelada.
+     * A forma correta esta em Eventos/Layouts/Layout eventos NFSe.xlsx.
+     */
+    it('identifica a nota como o layout de eventos manda', async () => {
+      mockInvoicyService.getConfig.mockResolvedValue({
+        id: 'config-1',
+        ambiente: 1,
+        company: { cnpj: '01.327.126/0001-38' },
+      });
+      prisma.nfse.findFirst.mockResolvedValue({
+        ...authorizedNfse,
+        numero: 184,
+        rpsNumero: 195,
+        rpsSerie: '1',
+        ambiente: 1,
+        protocolo: 'protocolo-1',
+        invoicyConfigId: 'config-1',
+      });
+
+      await service.cancel(mockNfseId, mockCompanyId, {
+        justificativa: 'Cancelamento por erro de digitacao',
+      });
+
+      const [, documento, motivo, codigo, ambiente] =
+        invoicyApiService.cancelNfse.mock.calls.at(-1);
+      expect(documento).toEqual({
+        cnpj: '01.327.126/0001-38',
+        nfseNumero: 184,
+        rpsNumero: 195,
+        rpsSerie: '1',
+        codigoVerificacao: 'ABC123',
+        protocolo: 'protocolo-1',
+        invoicyConfigId: 'config-1',
+      });
+      expect(motivo).toBe('Cancelamento por erro de digitacao');
+      expect(codigo).toBe('1');
+      expect(ambiente).toBe(1);
+    });
+
+    it('leva o codigo de cancelamento informado', async () => {
+      await service.cancel(mockNfseId, mockCompanyId, {
+        justificativa: 'Servico nao foi prestado ao cliente',
+        codigoCancelamento: '2',
+      });
+
+      expect(invoicyApiService.cancelNfse.mock.calls.at(-1)[3]).toBe('2');
+    });
+
+    // EveMotivo e' C(100): acima disso o provedor recusa ou corta o texto que
+    // fica registrado na prefeitura.
+    it('recusa justificativa acima de 100 caracteres', async () => {
+      await expect(
+        service.cancel(mockNfseId, mockCompanyId, {
+          justificativa: 'x'.repeat(101),
+        }),
+      ).rejects.toThrow(/100 caracteres/);
+
+      expect(invoicyApiService.cancelNfse).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A frase generica do provedor nao diz nada a quem cancelou; o codigo e a
+     * mensagem especifica precisam chegar na tela.
+     */
+    it('nao repassa a frase generica do provedor sozinha', async () => {
+      invoicyApiService.cancelNfse.mockResolvedValue([
+        {
+          Codigo: 606,
+          Descricao:
+            'Não foi possível processar a operação, verifique os dados enviados e tente novamente.',
+        },
+      ]);
+
+      await expect(
+        service.cancel(mockNfseId, mockCompanyId, {
+          justificativa: 'Cancelamento por erro de digitacao',
+        }),
+      ).rejects.toThrow(/código 606/);
+    });
+
+    it('usa a situacao devolvida quando o provedor explica a recusa', async () => {
+      invoicyApiService.cancelNfse.mockResolvedValue([
+        {
+          Codigo: 100,
+          Descricao: 'Documentos processados com sucesso',
+          Documentos: [
+            {
+              Situacao: {
+                SitCodigo: 2,
+                SitDescricao: 'Prazo de cancelamento expirado',
+              },
+            },
+          ],
+        },
+      ]);
+
+      await expect(
+        service.cancel(mockNfseId, mockCompanyId, {
+          justificativa: 'Cancelamento por erro de digitacao',
+        }),
+      ).rejects.toThrow(/Prazo de cancelamento expirado/);
+    });
   });
 
   describe('consultStatus', () => {

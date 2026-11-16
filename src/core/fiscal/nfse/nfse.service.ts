@@ -2487,6 +2487,42 @@ export class NfseService {
       : 'Erro fiscal desconhecido';
   }
 
+  /**
+   * Motivo legível de uma recusa de cancelamento.
+   *
+   * "Não foi possível processar a operação, verifique os dados enviados e
+   * tente novamente." é a frase que o provedor devolve quando o payload não
+   * bate com o layout dele; repassá-la sozinha não diz nada a quem cancelou.
+   * Procura uma mensagem específica no retorno e, não achando, pelo menos
+   * nomeia o código.
+   */
+  private motivoRecusaCancelamento(response: any): string {
+    const generica =
+      'Não foi possível processar a operação, verifique os dados enviados e tente novamente.';
+    const doc = response?.Documentos?.[0];
+    const especifica = [
+      doc?.Situacao?.SitDescricao,
+      doc?.MensagemSefaz?.DscMsg,
+      response?.ErrorInvoicy,
+      response?.Mensagem,
+      response?.Descricao,
+    ]
+      .filter(
+        (mensagem): mensagem is string =>
+          typeof mensagem === 'string' && Boolean(mensagem.trim()),
+      )
+      .map((mensagem) => mensagem.trim())
+      .find((mensagem) => mensagem !== generica);
+
+    const codigo = response?.Codigo ? ` (código ${response.Codigo})` : '';
+    if (especifica) return `Recusado pelo provedor${codigo}: ${especifica}`;
+
+    return (
+      `O provedor recusou o cancelamento${codigo} sem informar o motivo. ` +
+      'A resposta completa ficou no log do servidor.'
+    );
+  }
+
   async cancel(id: string, companyId: string, dto: CancelNfseDto) {
     const nfse = await this.findById(id, companyId);
 
@@ -2502,6 +2538,16 @@ export class NfseService {
       );
     }
 
+    // EveMotivo é C(100) no layout do provedor. Truncar em silêncio mudaria o
+    // texto que fica registrado na prefeitura.
+    if (dto.justificativa.length > 100) {
+      throw new BadRequestException(
+        'A justificativa do cancelamento deve ter no máximo 100 caracteres',
+      );
+    }
+
+    const config = await this.invoicyService.getConfig(companyId);
+
     try {
       this.logger.log(
         `Cancelando NFS-e ${nfse.numero} para empresa ${companyId}`,
@@ -2510,9 +2556,17 @@ export class NfseService {
       // Chamar API do Invoicy para cancelamento de NFS-e
       const invoicyResponses = await this.invoicyApiService.cancelNfse(
         companyId,
-        nfse.numero,
-        nfse.codigoVerificacao,
+        {
+          cnpj: config?.company?.cnpj || '',
+          nfseNumero: nfse.numero,
+          rpsNumero: nfse.rpsNumero,
+          rpsSerie: nfse.rpsSerie,
+          codigoVerificacao: nfse.codigoVerificacao,
+          protocolo: nfse.protocolo,
+          invoicyConfigId: nfse.invoicyConfigId,
+        },
         dto.justificativa,
+        dto.codigoCancelamento || '1',
         nfse.ambiente,
       );
 
@@ -2523,16 +2577,25 @@ export class NfseService {
       }
 
       if (response.Codigo !== INVOICY_SUCCESS_CODES.DOCUMENTS_PROCESSED) {
-        throw new Error(
-          response.Descricao || `Erro Invoicy: código ${response.Codigo}`,
+        // Sem isto, a recusa chegava ao usuário como a frase genérica do
+        // provedor ("verifique os dados enviados") e não sobrava nada no log
+        // para descobrir o motivo.
+        this.logger.warn(
+          `Cancelamento da NFS-e ${nfse.id} recusado pelo provedor: ` +
+            JSON.stringify(response).slice(0, 2000),
         );
+        throw new Error(this.motivoRecusaCancelamento(response));
       }
 
       const doc = response.Documentos?.[0];
       const situacao = doc?.Situacao;
-      const isCancelled = situacao?.SitCodigo === 101; // Cancelamento autorizado
+      const isCancelled = Number(situacao?.SitCodigo) === 101; // Cancelamento autorizado
 
       if (!isCancelled) {
+        this.logger.warn(
+          `Cancelamento da NFS-e ${nfse.id} não efetivado: ` +
+            JSON.stringify(response).slice(0, 2000),
+        );
         throw new Error(
           situacao?.SitDescricao ||
             'Cancelamento não autorizado pela Prefeitura',

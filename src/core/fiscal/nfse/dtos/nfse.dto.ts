@@ -8,6 +8,7 @@ import {
   ValidateNested,
   IsEnum,
   IsBoolean,
+  IsIn,
   Min,
   ValidateIf,
   Max,
@@ -997,8 +998,21 @@ export class CancelNfseDto {
   @IsNotEmpty()
   justificativa: string;
 
-  @ApiPropertyOptional({ description: 'Código do cancelamento' })
+  /**
+   * EveCodigo do layout de eventos do InvoiCy. O domínio é fechado: 1 (erro na
+   * emissão), 2 (serviço não prestado) e 4 (duplicidade da nota) — o 3 não
+   * existe. Sem valor, vai 1, que é o caso de longe mais comum.
+   */
+  @ApiPropertyOptional({
+    description:
+      'Código do cancelamento: 1 erro na emissão, 2 serviço não prestado, 4 duplicidade',
+    enum: ['1', '2', '4'],
+  })
   @IsString()
+  @IsIn(['1', '2', '4'], {
+    message:
+      'Código de cancelamento inválido: use 1 (erro na emissão), 2 (serviço não prestado) ou 4 (duplicidade da nota)',
+  })
   @IsOptional()
   codigoCancelamento?: string;
 }

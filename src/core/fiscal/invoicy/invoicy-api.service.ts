@@ -483,44 +483,79 @@ export class InvoicyApiService {
   /**
    * Cancel NFS-e document
    */
+  /**
+   * Cancela uma NFS-e (evento 110111).
+   *
+   * A forma é a do layout oficial `Eventos/Layouts/Layout eventos NFSe.xlsx`
+   * (migrate-company/integracao-InvoiCy-BR) e do schema
+   * `Eventos/Schemas/Cancelamento_NFSe.xsd`, cuja raiz é `EnvioEvento`: NÃO
+   * existe o wrapper `Documento` aqui — ele só vale na emissão. É o mesmo
+   * engano que o evento de NF-e tinha (ver buildFiscalEvent).
+   *
+   * Enquanto isto era `{ Documento: { Cancelamento: { NumeroNFSe,
+   * CodigoVerificacao, Motivo } } }` — três nomes que não existem no
+   * dicionário do provedor — toda tentativa voltava com a mensagem genérica
+   * "Não foi possível processar a operação" e nenhuma NFS-e jamais foi
+   * cancelada pelo sistema.
+   *
+   * Obrigatórios: CNPJ, NFSeNumero, RPSNumero, RPSSerie, EveTp, tpAmb,
+   * EveCodigo e EveMotivo. `NotaExiste: 'S'` diz que a nota já está registrada
+   * na prefeitura — é o único estado em que cancelamos — e é o que habilita
+   * NFSeCodVerificacao e Protocolo.
+   */
   async cancelNfse(
     companyId: string,
-    numero: number,
-    codigoVerificacao: string,
+    documento: {
+      cnpj: string;
+      nfseNumero: number;
+      rpsNumero: number;
+      rpsSerie: string;
+      codigoVerificacao?: string | null;
+      protocolo?: string | null;
+      invoicyConfigId?: string | null;
+    },
     motivo: string,
+    codigoCancelamento = '1',
     ambiente?: number,
   ): Promise<InvoicyResponse[]> {
-    this.logger.log(`Canceling NFS-e ${numero} for company ${companyId}`);
+    this.logger.log(
+      `Canceling NFS-e ${documento.nfseNumero} (RPS ${documento.rpsNumero}/${documento.rpsSerie}) for company ${companyId}`,
+    );
 
     const cancelRequest = [
       {
-        Documento: {
-          ModeloDocumento: 'NFSE',
-          Versao: 1,
-          Cancelamento: {
-            NumeroNFSe: numero,
-            CodigoVerificacao: codigoVerificacao,
-            Motivo: motivo,
-          },
+        ModeloDocumento: 'NFSe',
+        Versao: 1,
+        Evento: {
+          CNPJ: (documento.cnpj || '').replace(/\D/g, ''),
+          NFSeNumero: documento.nfseNumero,
+          RPSNumero: documento.rpsNumero,
+          RPSSerie: documento.rpsSerie,
+          EveTp: 110111,
+          tpAmb: ambiente === 1 ? 1 : 2,
+          NotaExiste: 'S',
+          ...(documento.codigoVerificacao
+            ? { NFSeCodVerificacao: documento.codigoVerificacao }
+            : {}),
+          ...(documento.protocolo ? { Protocolo: documento.protocolo } : {}),
+          EveCodigo: codigoCancelamento,
+          EveMotivo: motivo,
         },
       },
     ];
 
-    const forceEnvironment =
-      ambiente !== undefined
-        ? ambiente === 1
-          ? FiscalEnvironment.PRODUCAO
-          : FiscalEnvironment.HOMOLOGACAO
-        : undefined;
+    const forceEnvironment = this.toFiscalEnvironment(ambiente);
 
+    // Evento fiscal não é idempotente: ver o comentário em cancelNfe.
     return this.invoicyHttpService.makeRequest<InvoicyResponse[]>(
       companyId,
       'POST',
       '/senddocuments/nfse?type=Evento',
       cancelRequest,
-      undefined,
-      undefined,
+      documento.invoicyConfigId ?? undefined,
+      AbortSignal.timeout(this.FISCAL_EVENT_TIMEOUT_MS),
       forceEnvironment,
+      true,
     );
   }
 
