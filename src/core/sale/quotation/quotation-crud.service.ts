@@ -775,7 +775,10 @@ export class QuotationCrudService {
     try {
       const existingQuotation = await this.prisma.quotation.findUnique({
         where: { id },
-        include: { series: { select: { code: true } } },
+        include: {
+          series: { select: { code: true } },
+          pendingSale: { select: { id: true } },
+        },
       });
 
       if (!existingQuotation) {
@@ -820,6 +823,13 @@ export class QuotationCrudService {
         !!updateQuotationDto.seriesId &&
         updateQuotationDto.seriesId !== existingQuotation.seriesId;
       if (!isSeriesChange) delete updateData.seriesId;
+      // A venda cobrada na hora ou enviada ao caixa já recebeu pelo
+      // faturamento da série: não troca (VR-11, 16/11/2026)
+      if (isSeriesChange && existingQuotation.pendingSale) {
+        throw new BadRequestException(
+          'Esta venda já foi cobrada ou enviada ao caixa, então não troca de série. Cancele e faça a venda de novo na série certa.',
+        );
+      }
       // `as` evita que o TS estreite para null: a atribuição acontece dentro
       // do callback da transação, que a análise de fluxo não acompanha.
       let seriesChange = null as { before: string; after: string } | null;
@@ -892,6 +902,23 @@ export class QuotationCrudService {
             );
             updateData.seriesId = reassigned.seriesId;
             updateData.quotationNumber = reassigned.quotationNumber;
+            // O faturamento é da série (VR-5): antes de aprovar, a venda
+            // passa a seguir o da série nova. Assim a venda rápida que vira
+            // venda padrão (VR-11) deixa de ser "Cobrar na venda" e ganha as
+            // condições de pagamento. Depois de aprovada, o faturamento já
+            // aconteceu e fica como está
+            if (existingQuotation.status !== QuotationStatus.APPROVED) {
+              const target = await prisma.saleSeries.findUnique({
+                where: { id: reassigned.seriesId },
+                select: { billing: true },
+              });
+              if (target) {
+                await prisma.quotationPayment.updateMany({
+                  where: { quotationId: id },
+                  data: { billing: target.billing },
+                });
+              }
+            }
             seriesChange = {
               before: `${existingQuotation.quotationNumber ?? ''}-${existingQuotation.series?.code ?? ''}`,
               after: `${reassigned.quotationNumber}-${reassigned.code}`,

@@ -55,7 +55,11 @@ describe('accountForMethod', () => {
     const db = {
       ...tx([], null),
       paymentCondition: {
-        findMany: jest.fn().mockResolvedValue([{ id: 'pix' }]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'pix', name: 'Pix', paymentMethod: { code: 'PIX' } },
+          ]),
       },
     } as any;
     await expect(
@@ -70,5 +74,50 @@ describe('accountForMethod', () => {
         'Escolha a conta do PIX: nenhuma conta ativa recebe essa forma em Contas bancárias',
       ),
     );
+  });
+
+  // VR-11 (16/11/2026): o balcão só recebe à vista, pelo tipo do cadastro
+  it('boleto não é recebido no balcão, mesmo enviado como dinheiro', async () => {
+    const db = {
+      ...tx([], null),
+      paymentCondition: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'bol', name: 'Boleto', paymentMethod: { code: 'BOL' } },
+          ]),
+      },
+    } as any;
+    await expect(
+      resolveParts(
+        db,
+        'c-1',
+        [{ method: 'CASH', paymentConditionId: 'bol', amount: 1000 }],
+        { cashNeedsAccount: true },
+      ),
+    ).rejects.toThrow('A forma "Boleto" não é recebida no balcão');
+  });
+
+  it('a forma enviada precisa ser a do cadastro (cartão não entra como PIX)', async () => {
+    const db = {
+      ...tx([], null),
+      paymentCondition: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'deb',
+            name: 'Cartão de Débito',
+            paymentMethod: { code: 'DEB' },
+          },
+        ]),
+      },
+    } as any;
+    await expect(
+      resolveParts(
+        db,
+        'c-1',
+        [{ method: 'PIX', paymentConditionId: 'deb', amount: 1000 }],
+        { cashNeedsAccount: true },
+      ),
+    ).rejects.toThrow('não é recebida no balcão');
   });
 });

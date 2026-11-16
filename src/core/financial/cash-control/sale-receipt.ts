@@ -81,6 +81,14 @@ export async function accountForMethod(
   return rule?.bankAccountId ?? null;
 }
 
+/** O tipo do cadastro da forma (`payment_methods.code`) no balcão */
+const BALCAO_METHOD: Record<string, CashMethod | undefined> = {
+  DIN: 'CASH',
+  PIX: 'PIX',
+  CRD: 'CARD',
+  DEB: 'CARD',
+};
+
 /**
  * A conta de cada parte (CX-2): a escolhida, se for da empresa e estiver
  * ativa; senão a da frente de caixa para aquela forma (cada frente pode ter
@@ -100,10 +108,22 @@ export async function resolveParts(
   const conditionIds = [...new Set(parts.map((p) => p.paymentConditionId))];
   const conditions = await tx.paymentCondition.findMany({
     where: { id: { in: conditionIds }, companyId },
-    select: { id: true },
+    select: { id: true, name: true, paymentMethod: { select: { code: true } } },
   });
   if (conditions.length !== conditionIds.length) {
     throw new BadRequestException('Forma de pagamento não encontrada');
+  }
+  // O balcão só recebe à vista (VR-11, 16/11/2026): dinheiro, PIX e cartão,
+  // pelo tipo do cadastro. Boleto, cheque, depósito e os outros vão pela
+  // venda padrão, que gera o título em A receber
+  for (const part of parts) {
+    const condition = conditions.find((c) => c.id === part.paymentConditionId);
+    const method = BALCAO_METHOD[condition?.paymentMethod?.code ?? ''];
+    if (!method || method !== part.method) {
+      throw new BadRequestException(
+        `${condition?.name ? `A forma "${condition.name}"` : 'Esta forma'} não é recebida no balcão, que só aceita dinheiro, PIX e cartão. Para boleto ou faturar, passe a venda para venda padrão`,
+      );
+    }
   }
   const resolved: ReceiptPart[] = [];
   for (const part of parts) {

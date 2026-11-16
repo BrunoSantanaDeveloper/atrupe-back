@@ -97,6 +97,7 @@ const createMockPrismaService = () => {
     quotationPayment: {
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
     quotationProduct: {
       create: jest.fn(),
@@ -382,7 +383,64 @@ describe('QuotationCrudService', () => {
         code: 'V1',
         companyId: mockCompanyId,
         isActive: true,
+        billing: 'ON_ORDER',
       };
+
+      // VR-11 (16/11/2026): a venda rápida que vira venda padrão
+      it('antes de aprovar, a venda passa a seguir o faturamento da série nova', async () => {
+        prisma.quotation.findUnique.mockResolvedValue(quotationNaSerieAntiga);
+        prisma.saleSeries.findUnique.mockResolvedValue(serieNova);
+        prisma.saleSeries.update.mockResolvedValue({ currentBudgetNumber: 12 });
+        prisma.quotation.update.mockResolvedValue(quotationNaSerieAntiga);
+
+        await service.update(
+          mockQuotationId,
+          { seriesId: newSeriesId, quickSale: false },
+          undefined,
+          mockCompanyId,
+        );
+
+        expect(prisma.quotationPayment.updateMany).toHaveBeenCalledWith({
+          where: { quotationId: mockQuotationId },
+          data: { billing: 'ON_ORDER' },
+        });
+      });
+
+      it('depois de aprovada, a troca de série não mexe no faturamento', async () => {
+        prisma.quotation.findUnique.mockResolvedValue({
+          ...quotationNaSerieAntiga,
+          status: QuotationStatus.APPROVED,
+        });
+        prisma.saleSeries.findUnique.mockResolvedValue(serieNova);
+        prisma.saleSeries.update.mockResolvedValue({ currentBudgetNumber: 12 });
+        prisma.quotation.update.mockResolvedValue(quotationNaSerieAntiga);
+
+        await service.update(
+          mockQuotationId,
+          { seriesId: newSeriesId },
+          undefined,
+          mockCompanyId,
+        );
+
+        expect(prisma.quotationPayment.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('a venda já cobrada ou enviada ao caixa não troca de série', async () => {
+        prisma.quotation.findUnique.mockResolvedValue({
+          ...quotationNaSerieAntiga,
+          pendingSale: { id: 'ps-1' },
+        });
+
+        await expect(
+          service.update(
+            mockQuotationId,
+            { seriesId: newSeriesId },
+            undefined,
+            mockCompanyId,
+          ),
+        ).rejects.toThrow('não troca de série');
+        expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+      });
 
       it('renumera pelo contador da série nova', async () => {
         prisma.quotation.findUnique.mockResolvedValue(quotationNaSerieAntiga);
