@@ -397,7 +397,7 @@ export class QuickSaleService {
           const paid = dto.parts.reduce((sum, part) => sum + part.amount, 0);
           if (paid + discount !== total) {
             bad(
-              'O "Cobrar" recebe pelo total. Para parcelar ou cobrar depois, envie ao caixa ou use uma série que fatura no pedido',
+              'O "Cobrar" recebe pelo total. Para parcelar ou cobrar depois, use uma série que fatura no pedido',
             );
           }
           const parts = await resolveParts(tx, user.companyId, dto.parts, {
