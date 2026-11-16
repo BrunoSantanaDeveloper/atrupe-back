@@ -215,13 +215,18 @@ function makeService(
         run: jest.fn(async () => ({ ok: true, plano: 'PRO' })),
       },
     ],
-  } as unknown as AtendimentoTools;
+    perfilDoContato: jest.fn(async () => ({
+      profile: 'ativo',
+      label: 'Cliente ativo',
+      facts: { empresa: 'Gráfica Sol', etapa: 'Lite' },
+    })),
+  };
   const service = new AtendimentoService(
     store as unknown as AtendimentoStore,
-    tools,
+    tools as unknown as AtendimentoTools,
     source,
   );
-  return { service, kit, store, data };
+  return { service, kit, store, data, tools };
 }
 
 describe('AtendimentoService', () => {
@@ -387,8 +392,32 @@ describe('AtendimentoService', () => {
       expect(store.savePlatformSettings).toHaveBeenCalledWith({ mode: 'auto' });
       expect(kit.settings.validateSettings).toHaveBeenLastCalledWith(
         { mode: 'auto' },
-        { declaredTools: ['situacao_da_conta'], scope: 'plataforma' },
+        {
+          declaredTools: ['situacao_da_conta'],
+          declaredProfiles: expect.arrayContaining([
+            expect.objectContaining({ key: 'novo_contato' }),
+            expect.objectContaining({ key: 'cancelado' }),
+          ]),
+          scope: 'plataforma',
+        },
       );
+    });
+
+    it('a tela recebe os seis perfis de quem escreve', async () => {
+      const { service } = makeService();
+      const answer = await service.readSettings(superadmin, 'plataforma');
+      expect(
+        (answer.body as any).profiles.map(
+          (perfil: { key: string }) => perfil.key,
+        ),
+      ).toEqual([
+        'novo_contato',
+        'teste',
+        'ativo',
+        'inadimplente',
+        'bloqueado',
+        'cancelado',
+      ]);
     });
 
     it('recusa escolhas.json com outro modelo', async () => {
@@ -580,6 +609,83 @@ describe('AtendimentoService', () => {
         },
       });
       expect(await handlers.getConfig(8)).toBeNull();
+    });
+
+    it('a rota contact devolve o perfil da conta do Atrupe, com a conversa para a confirmação por código', async () => {
+      const { service, kit, tools } = makeService({
+        store: makeStore({
+          state: { account_id: 7, bot_token: 'bot', bot_secret: 'bs' },
+        }),
+      });
+      const handlers = await botCall(service, kit);
+      const payload = {
+        account_id: 7,
+        conversation_id: 3,
+        inbox_id: 1,
+        contact: {
+          id: 1,
+          name: 'Ana',
+          phone: '+5547999990000',
+          identifier: null,
+        },
+        previous_profile: null,
+      };
+      expect(await handlers.getContact(7, payload)).toEqual({
+        profile: 'ativo',
+        label: 'Cliente ativo',
+        facts: { empresa: 'Gráfica Sol', etapa: 'Lite' },
+      });
+      expect(tools.perfilDoContato).toHaveBeenCalledWith(kit, payload.contact, {
+        accountId: 7,
+        conversationId: 3,
+      });
+      // Outra conta do Chatwoot não é do Atrupe.
+      expect(
+        await handlers.getContact(8, { ...payload, account_id: 8 }),
+      ).toBeNull();
+    });
+
+    it('a configuração do robô leva os perfis declarados', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({
+          state: { account_id: 7, bot_token: 'bot', bot_secret: 'bs' },
+          platform: { mode: 'auto' },
+        }),
+      });
+      await (await botCall(service, kit)).getConfig(7);
+      expect(kit.settings.botConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          profiles: expect.arrayContaining([
+            expect.objectContaining({
+              key: 'teste',
+              label: 'Cliente em teste',
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('na Anthropic, a parte fixa do prompt fica uma hora no cache (o ambiente pode voltar a 5 min)', async () => {
+      const state = { account_id: 7, bot_token: 'bot', bot_secret: 'bs' };
+      const padrao = makeService({
+        store: makeStore({ state, platform: { mode: 'auto' } }),
+      });
+      const config = await (
+        await botCall(padrao.service, padrao.kit)
+      ).getConfig(7);
+      expect(config.ai).toMatchObject({
+        provider: 'anthropic',
+        model: 'claude-opus-5-5',
+        cache_ttl: '1h',
+      });
+
+      process.env.SUPPORT_AI_CACHE_TTL = '5m';
+      const curto = makeService({
+        store: makeStore({ state, platform: { mode: 'auto' } }),
+      });
+      expect(
+        (await (await botCall(curto.service, curto.kit)).getConfig(7)).ai,
+      ).toMatchObject({ cache_ttl: '5m' });
     });
 
     it('consulta desligada pelo superadmin não roda', async () => {

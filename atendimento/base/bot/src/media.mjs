@@ -49,12 +49,18 @@ const EXTENSIONS = {
   document: DOCUMENT_EXTENSIONS,
 };
 
-/** image, audio, video, document ou null, pelo file_type do Chatwoot e, sem ele, pela extensão do endereço. */
+/**
+ * image, audio, video, document ou null, pelo file_type do Chatwoot e, sem ele, pela extensão do endereço.
+ * Um arquivo sem extensão nenhuma também é document: o adaptador do OpenWA chama de "file" o documento que
+ * chega do WhatsApp sem nome, e o tipo ou os primeiros bytes dizem depois, no download, se é PDF ou planilha.
+ */
 export function mediaKind(attachment) {
   const type = String(attachment?.file_type ?? "").toLowerCase();
   if (["image", "audio", "video"].includes(type)) return type;
   const path = String(attachment?.data_url ?? "").split("?")[0];
   for (const [kind, pattern] of Object.entries(EXTENSIONS)) if (pattern.test(path) || pattern.test(`.${attachment?.extension ?? ""}`)) return kind;
+  const name = path.split("/").pop() ?? "";
+  if ((type === "file" || type === "") && path && !/\.[a-z0-9]{1,8}$/i.test(name) && !String(attachment?.extension ?? "").trim()) return "document";
   return null;
 }
 

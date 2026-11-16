@@ -60,6 +60,19 @@ export function documentFormat({ name = "", mime = "", buffer = null } = {}) {
   if (type.includes("opendocument.spreadsheet")) return "ods";
   if (type.includes("opendocument.text")) return "odt";
   if (buffer && buffer.subarray(0, 5).toString("latin1") === "%PDF-") return "pdf";
+  // O OpenWA entrega documento como application/octet-stream: um ZIP diz pelo conteúdo se é planilha ou texto.
+  if (buffer && buffer.length > 30 && buffer.readUInt32LE(0) === 0x04034b50) {
+    try {
+      const parts = readZip(buffer, (part) => ["xl/workbook.xml", "word/document.xml", "mimetype"].includes(part), { maxBytes: 2_000_000 });
+      if (parts.has("xl/workbook.xml")) return "xlsx";
+      if (parts.has("word/document.xml")) return "docx";
+      const declared = parts.get("mimetype")?.toString("latin1").trim() ?? "";
+      if (declared === "application/vnd.oasis.opendocument.spreadsheet") return "ods";
+      if (declared === "application/vnd.oasis.opendocument.text") return "odt";
+    } catch {
+      return null;
+    }
+  }
   return null;
 }
 

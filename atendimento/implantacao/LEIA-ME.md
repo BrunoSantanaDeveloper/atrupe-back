@@ -135,6 +135,23 @@ a API confere o número atual a cada 15 minutos (a sessão no OpenWA, ou a saúd
 A conferência não vê uma mensagem que se perde no caminho antes de chegar ao adaptador: depois de implantar
 e de cada atualização, mande uma mensagem de outro celular e veja a resposta chegar.
 
+## Bateria de conversas
+
+Antes de abrir o Léo para os clientes, e depois de cada mudança grande nas instruções ou nos perfis, rode a
+bateria. Ela usa a IA de verdade e a configuração de produção, e não envia nada a ninguém. Os casos ficam em
+`atendimento/bateria.json`, um ou mais por perfil e um para cada coisa que nunca pode acontecer. O formato está em
+`references/bateria.md` do kit.
+
+Da raiz do `atrupe-back` (máquina com o kit), com o `robo.env` desta máquina copiado para
+`atendimento/segredos/`, que o git ignora:
+
+```
+node <kit>/scripts/kit.mjs bateria atendimento --casos atendimento/bateria.json --env atendimento/segredos/robo.env --account 2
+```
+
+O relatório sai em `atendimento/conferencia/bateria-<data-hora>/relatorio.md`, para a Nathiely e o Maicol
+aprovarem. Cada caso custa o mesmo que uma conversa no atendimento.
+
 ## Conferir
 
 Com o atendimento no ar, da raiz do `atrupe-back` (máquina com o kit instalado):

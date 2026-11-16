@@ -13,7 +13,7 @@ import {
   parseSupportBase,
   readDefaultSupportBase,
 } from './atendimento-base-suporte';
-import { AtendimentoTools } from './atendimento-tools';
+import { AtendimentoTools, PERFIS_DECLARADOS } from './atendimento-tools';
 import {
   AtendimentoPerson,
   AtendimentoStore,
@@ -27,9 +27,18 @@ import type {
 import type { SupportState } from '../../../atendimento/base/server/provision.mjs';
 import type {
   AiSettings,
+  DeclaredProfile,
   PlatformSettings,
   Scope,
 } from '../../../atendimento/base/shared/settings.mjs';
+
+/**
+ * Os perfis de quem escreve que o Atrupe sabe dizer (perfilDoContato). O
+ * superadmin escreve na tela do robô o que muda em cada um.
+ */
+const DECLARED_PROFILES: DeclaredProfile[] = PERFIS_DECLARADOS.map(
+  ({ key, label, description }) => ({ key, label, description }),
+);
 
 /** Como o serviço obtém a base do kit e as escolhas; trocado nos testes. */
 export const ATENDIMENTO_KIT = Symbol('ATENDIMENTO_KIT');
@@ -104,6 +113,13 @@ function defaultAi(): Partial<AiSettings> {
       process.env.SUPPORT_AI_EFFORT?.trim() ||
       (provider === 'anthropic' ? 'low' : null),
   };
+  // A parte fixa do prompt (persona, instruções e base) fica no cache do
+  // provedor. Com poucas conversas, uma hora rende mais leituras do cache que
+  // os 5 minutos padrão (decisão de 16/11/2026); SUPPORT_AI_CACHE_TTL=5m volta.
+  const cacheTtl =
+    process.env.SUPPORT_AI_CACHE_TTL?.trim() ||
+    (provider === 'anthropic' ? '1h' : '');
+  if (cacheTtl === '1h' || cacheTtl === '5m') ai.cache_ttl = cacheTtl;
   if (process.env.SUPPORT_AI_BASE_URL?.trim()) {
     ai.base_url = process.env.SUPPORT_AI_BASE_URL.trim();
   }
@@ -224,6 +240,7 @@ export class AtendimentoService {
     const declared = (await this.declaredTools()).map((tool) => tool.name);
     const problems = kit.settings.validateSettings(settings, {
       declaredTools: declared,
+      declaredProfiles: DECLARED_PROFILES,
       scope: 'plataforma',
     });
     if (problems.length) {
@@ -375,6 +392,8 @@ export class AtendimentoService {
         scope,
         settings,
         editable,
+        // Os perfis de quem escreve: o cartão "Perfis" mostra um bloco para cada um.
+        profiles: DECLARED_PROFILES,
         tools: tools.map(({ name, description }) => ({ name, description })),
         media: await this.mediaSupport(kit, editable, settings),
       },
@@ -411,6 +430,7 @@ export class AtendimentoService {
     const declared = (await this.declaredTools()).map((tool) => tool.name);
     const problems = kit.settings.validateSettings(incoming, {
       declaredTools: declared,
+      declaredProfiles: DECLARED_PROFILES,
       scope,
     });
     if (problems.length) {
@@ -705,6 +725,7 @@ export class AtendimentoService {
       const declared = (await this.declaredTools()).map((tool) => tool.name);
       const problems = kit.settings.validateSettings(next, {
         declaredTools: declared,
+        declaredProfiles: DECLARED_PROFILES,
         scope: 'plataforma',
       });
       if (problems.length) {
@@ -950,6 +971,7 @@ export class AtendimentoService {
         state,
         tools,
         ai: defaultAi(),
+        profiles: DECLARED_PROFILES,
       }),
     };
   }
@@ -971,6 +993,16 @@ export class AtendimentoService {
       secret: env.botSecret(),
       getConfig: async (accountId) =>
         (await this.configFor(accountId))?.config ?? null,
+      // O perfil de quem escreve, pelo telefone ou pela confirmação por código
+      // nesta conversa. O robô espera 3 s e segue sem perfil.
+      getContact: async (accountId, payload) => {
+        const tenantId = await this.store.tenantByAccount(accountId);
+        if (!tenantId) return null;
+        return this.projectTools.perfilDoContato(kit, payload.contact, {
+          accountId,
+          conversationId: Number(payload.conversation_id),
+        });
+      },
       runTool,
       getHistory: async (accountId, conversationId, limit) => {
         const tenantId = await this.store.tenantByAccount(accountId);
