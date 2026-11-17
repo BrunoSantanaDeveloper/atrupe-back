@@ -166,6 +166,46 @@ export const FINANCIAL_IMPORT_SCHEMA = {
       },
     },
     {
+      name: 'FornecedorCodigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Código do fornecedor no sistema legado. Tem precedência sobre FornecedorCpfCnpj e é o único caminho para fornecedores sem documento.',
+      example: '57',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value || value.trim() === '') return null;
+
+        const supplier = await prisma.supplier.findFirst({
+          where: { companyId, legacyId: value.trim() },
+        });
+        if (!supplier) {
+          return 'Fornecedor não encontrado pelo código do legado. Importe os fornecedores antes do financeiro';
+        }
+        return null;
+      },
+    },
+    {
+      name: 'ColaboradorCodigoLegado',
+      required: false,
+      type: 'string',
+      maxLength: 60,
+      description:
+        'Código do colaborador no sistema legado (folha, vale, comissão). Tem precedência sobre FuncionarioEmail: colaborador migrado não tem usuário nem e-mail.',
+      example: '12',
+      validate: async (value: string, companyId: string, prisma: any) => {
+        if (!value || value.trim() === '') return null;
+
+        const employee = await prisma.employee.findFirst({
+          where: { companyId, legacyId: value.trim() },
+        });
+        if (!employee) {
+          return 'Colaborador não encontrado pelo código do legado. Importe os colaboradores antes do financeiro';
+        }
+        return null;
+      },
+    },
+    {
       name: 'FuncionarioEmail',
       required: false,
       type: 'string',

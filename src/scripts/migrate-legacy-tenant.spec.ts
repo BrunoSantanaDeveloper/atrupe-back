@@ -516,6 +516,28 @@ describe('FINANCIAL_EXTRACTOR', () => {
       'dtcancelamento IS NULL',
     );
   });
+
+  /**
+   * A conta aponta para uma entidade que pode ser cliente, fornecedor ou
+   * colaborador. Só o cliente era traduzido: despesa de fornecedor sem
+   * documento e a folha entravam sem ninguém.
+   */
+  it('traduz também o fornecedor e o colaborador da conta', () => {
+    const sql = FINANCIAL_EXTRACTOR.sql('acn_1');
+    expect(sql).toContain('acn_1.forn_fornecedor');
+    expect(sql).toContain('acn_1.rh_funcionario');
+
+    const row = FINANCIAL_EXTRACTOR.map({
+      ...parcela,
+      tipoLegado: 2,
+      ClienteCodigoLegado: null,
+      FornecedorCodigoLegado: 57,
+      ColaboradorCodigoLegado: 12,
+    });
+    expect(row.FornecedorCodigoLegado).toBe('57');
+    expect(row.ColaboradorCodigoLegado).toBe('12');
+    expect(row.ClienteCodigoLegado).toBe('');
+  });
 });
 
 describe('PAYMENT_CONDITION_EXTRACTOR', () => {

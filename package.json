@@ -70,7 +70,9 @@
     "documentos:quantidade": "node dist/src/scripts/normalize-imported-line-quantity.js",
     "documentos:quantidade:dev": "ts-node src/scripts/normalize-imported-line-quantity.ts",
     "produtos:salvar-no-produto": "node dist/src/scripts/repair-nfe-saved-product-prices.js",
-    "produtos:salvar-no-produto:dev": "ts-node src/scripts/repair-nfe-saved-product-prices.ts"
+    "produtos:salvar-no-produto:dev": "ts-node src/scripts/repair-nfe-saved-product-prices.ts",
+    "financeiro:vinculos": "node dist/src/scripts/link-imported-financial-parties.js",
+    "financeiro:vinculos:dev": "ts-node src/scripts/link-imported-financial-parties.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
