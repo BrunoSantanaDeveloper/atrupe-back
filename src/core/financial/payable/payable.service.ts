@@ -1221,6 +1221,7 @@ export class PayableService {
     await this.prisma.$transaction(async (tx) => {
       const installment = await tx.payableInstallment.findFirst({
         where: { id: installmentId },
+        include: { payable: { select: { description: true } } },
       });
       if (!installment) {
         throw new BadRequestException('Parcela não encontrada.');
@@ -1247,7 +1248,9 @@ export class PayableService {
         data: {
           type: TransactionType.OUTCOME,
           amount: amount,
-          description: `Pagamento da parcela ${installment.id}`,
+          // O número da parcela e o título, como na criação (N1b, 17/11/2026):
+          // antes ia o id da parcela, que aparecia no caixa e na conciliação
+          description: `Pagamento da parcela ${installment.installmentNumber} - ${installment.payable?.description || 'Sem descrição'}`,
           transactionDate: new Date(paidDateFormatted),
           payableInstallment: { connect: { id: installment.id } },
           ...(openCashRegister.id

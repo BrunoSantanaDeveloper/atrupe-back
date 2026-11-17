@@ -1308,6 +1308,7 @@ export class ReceivableService {
     await this.prisma.$transaction(async (tx) => {
       const installment = await tx.receivableInstallment.findFirst({
         where: { id: installmentId },
+        include: { receivable: { select: { description: true } } },
       });
       if (!installment) {
         throw new BadRequestException('Parcela não encontrada.');
@@ -1335,7 +1336,9 @@ export class ReceivableService {
         data: {
           type: TransactionType.INCOME,
           amount: amount,
-          description: `Pagamento da parcela ${installment.id}`,
+          // O número da parcela e o título, como na criação (N1b, 17/11/2026):
+          // antes ia o id da parcela, que aparecia no caixa e na conciliação
+          description: `Recebimento da parcela ${installment.installmentNumber} - ${installment.receivable?.description || 'Sem descrição'}`,
           transactionDate: new Date(paidDateFormatted),
           receivableInstallment: { connect: { id: installment.id } },
           ...(openCashRegister.id
