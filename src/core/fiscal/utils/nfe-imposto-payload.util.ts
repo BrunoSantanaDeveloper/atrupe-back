@@ -68,6 +68,8 @@ export interface TotaisNfe {
   vBCST_ttlnfe: string;
   vST_ttlnfe: string;
   vFCPST_ttlnfe?: string;
+  /** Total do FCP sobre o ICMS próprio. */
+  vFCP_ttlnfe?: string;
   vIPI_ttlnfe: string;
   vPIS_ttlnfe: string;
   vCOFINS_ttlnfe: string;
@@ -83,6 +85,18 @@ export interface ImpostosNfeMontados {
   ibsCbsTotais?: TotaisIbsCbs;
   /** Impedimentos acumulados de todos os itens. Não vazio deve barrar a emissão. */
   bloqueios: string[];
+  /**
+   * Tributos que a SEFAZ manda somar em `vNF` (tag W16): ICMS-ST, FCP retido
+   * por ST e IPI. São cobrados do destinatário por fora do valor da
+   * mercadoria, e sem eles a validação `vNF = vProd - vDesc + vST + vFCPST +
+   * vFrete + vSeg + vOutro + vII + vIPI` não fecha.
+   *
+   * Fica fora de `totais` de propósito: aquele objeto vai inteiro para o JSON
+   * do provedor, cujo schema é `xs:all` de elementos declarados e recusa
+   * campo desconhecido. O FCP sobre o ICMS próprio não entra aqui — como o
+   * ICMS, ele já está dentro do preço.
+   */
+  acrescimosNoTotal: number;
 }
 
 function montarIcms(calc: ImpostoItemCalculado): ImpostoPayload['ICMS'] {
@@ -101,6 +115,14 @@ function montarIcms(calc: ImpostoItemCalculado): ImpostoPayload['ICMS'] {
   saida.pICMS = icms.pICMS;
   // Nome do schema: o valor do ICMS próprio é vICMS_icms, não vICMS.
   saida.vICMS_icms = icms.vICMS;
+
+  // FCP sobre o ICMS próprio, quando o produto tem a alíquota cadastrada.
+  if (icms.vFCP !== undefined) {
+    saida.vBCFCP = icms.vBCFCP;
+    saida.pFCP = icms.pFCP;
+    saida.vFCP = icms.vFCP;
+  }
+
   aplicarSt(saida, icms);
   return saida;
 }
@@ -192,6 +214,7 @@ export function montarImpostosNfe(
     vBCST: 0,
     vST: 0,
     vFCPST: 0,
+    vFCP: 0,
     vIPI: 0,
     vPIS: 0,
     vCOFINS: 0,
@@ -227,6 +250,7 @@ export function montarImpostosNfe(
     totais.vBCST += calc.icms.st?.vBCST ?? 0;
     totais.vST += calc.icms.st?.vICMSST ?? 0;
     totais.vFCPST += calc.icms.st?.vFCPST ?? 0;
+    totais.vFCP += calc.icms.vFCP ?? 0;
     totais.vICMS += calc.icms.vICMS ?? 0;
     totais.vIPI += calc.ipi?.valor ?? 0;
     totais.vPIS += calc.pis.valor ?? 0;
@@ -280,14 +304,21 @@ export function montarImpostosNfe(
     totaisPayload.vFCPST_ttlnfe = moeda(totais.vFCPST);
   }
 
+  if (totais.vFCP > 0) {
+    totaisPayload.vFCP_ttlnfe = moeda(totais.vFCP);
+  }
+
   if (cabeDifal) {
     totaisPayload.vICMSUFDest_ttlnfe = moeda(totais.vICMSUFDest);
     totaisPayload.vICMSUFRemet_ttlnfe = moeda(totais.vICMSUFRemet);
     totaisPayload.vFCPUFDest_ttlnfe = moeda(totais.vFCPUFDest);
   }
 
+  // ST, FCP-ST e IPI são cobrados por fora e entram em vNF.
+  const acrescimosNoTotal = duasCasas(totais.vST + totais.vFCPST + totais.vIPI);
+
   if (!ctx.reformaTributaria) {
-    return { impostos, totais: totaisPayload, bloqueios };
+    return { impostos, totais: totaisPayload, bloqueios, acrescimosNoTotal };
   }
 
   return {
@@ -295,5 +326,6 @@ export function montarImpostosNfe(
     totais: totaisPayload,
     ibsCbsTotais: montarIbsCbsTotais(valoresIbsCbs),
     bloqueios,
+    acrescimosNoTotal,
   };
 }

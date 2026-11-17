@@ -1405,6 +1405,90 @@ describe('NfeService', () => {
       });
     });
 
+    /**
+     * O caso da empresa que migra de regime: a tentativa guardou o CSOSN que
+     * era o do cadastro, e "Corrigir e reemitir" existe para depois de
+     * arrumar o cadastro. Sem reler, a nota volta a sair com o código que o
+     * cálculo acabou de recusar.
+     */
+    describe('CST do outro regime guardado na tentativa', () => {
+      const tentativaComCsosn = () =>
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...rejeitadaCom({
+            versaoItens: 2,
+            items: [
+              {
+                productId: 'product-1',
+                itemNumber: 1,
+                quantity: 2,
+                unitValue: 100,
+                discount: 0,
+                cstIcms: '102',
+                cstPis: '99',
+                cstCofins: '99',
+              },
+            ],
+          }),
+          motivoRejeicao:
+            'Item 1: O código 102 é CSOSN, do Simples Nacional, e não vale no Regime Normal.',
+          invoicyConfigId: 'config-id',
+        });
+
+      it('relê o CST do cadastro quando o emissor é do Regime Normal', async () => {
+        tentativaComCsosn();
+        prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 3 });
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          { productId: 'product-1', icmsCst: '00' },
+        ]);
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items[0].cstIcms).toBe('00');
+        // Só do próprio tenant: o productId vem do rascunho.
+        expect(prisma.productFiscalData.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              productId: { in: ['product-1'] },
+              product: { companyId: mockCompanyId },
+            },
+          }),
+        );
+      });
+
+      /** Cadastro ainda errado: mantém o código e deixa o cálculo orientar. */
+      it('mantém o código quando o cadastro também não foi corrigido', async () => {
+        tentativaComCsosn();
+        prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 3 });
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          { productId: 'product-1', icmsCst: '102' },
+        ]);
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items[0].cstIcms).toBe('102');
+      });
+
+      /** No Simples o CSOSN é o código certo: nada a reler. */
+      it('não toca no CSOSN quando o emissor é optante do Simples', async () => {
+        tentativaComCsosn();
+        prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 1 });
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items[0].cstIcms).toBe('102');
+        expect(prisma.productFiscalData.findMany).not.toHaveBeenCalled();
+      });
+    });
+
     it('preserva as informações complementares digitadas antes da rejeição', async () => {
       prisma.nfe.findFirst.mockResolvedValue(
         rejeitadaCom({ additionalInfo: 'Pedido 4821 - entregar na portaria' }),
@@ -2534,6 +2618,148 @@ describe('NfeService', () => {
       const totaisEnviados = () =>
         invoicyApiService.emitNfe.mock.calls.at(-1)[1][0].Documento.total
           .ICMStot;
+
+      const documentoEnviado = () =>
+        invoicyApiService.emitNfe.mock.calls.at(-1)[1][0].Documento;
+
+      /**
+       * `vNF` soma ST, FCP-ST e IPI (tag W16), e a SEFAZ confere o pagamento
+       * contra ele. O total saía só com produtos, frete e seguro: no Simples
+       * esses tributos são sempre zero, mas a primeira nota do Regime Normal
+       * com IPI ou ST voltaria rejeitada.
+       */
+      describe('total da nota no Regime Normal', () => {
+        it('soma o IPI em vNF, no pagamento e na cobrança', async () => {
+          comRegime(3);
+          prisma.productFiscalData.findMany.mockResolvedValue([
+            {
+              productId: 'product-1',
+              icmsCst: '00',
+              icmsOrigin: '0',
+              icmsRate: 18,
+              pisCst: '99',
+              cofinsCst: '99',
+              ipiCst: '50',
+              ipiRate: 10,
+            },
+          ]);
+
+          await service.emit(mockCompanyId, {
+            ...mockEmitDto,
+            duplicatas: [{ numero: '001', dataVencimento: '2026-12-01' }],
+          } as any);
+
+          // 2 x 100 = 200 de produtos, IPI de 10% = 20.
+          expect(totaisEnviados().vProd_ttlnfe).toBe('200.00');
+          expect(totaisEnviados().vIPI_ttlnfe).toBe('20.00');
+          expect(totaisEnviados().vNF).toBe('220.00');
+          expect(documentoEnviado().pag[0].vPag).toBe('220.00');
+          expect(documentoEnviado().cobr.fat.vOrig).toBe('220.00');
+          expect(documentoEnviado().cobr.fat.vLiq).toBe('220.00');
+        });
+
+        it('soma o ICMS-ST em vNF', async () => {
+          comRegime(3);
+          prisma.productFiscalData.findMany.mockResolvedValue([
+            {
+              productId: 'product-1',
+              icmsCst: '10',
+              icmsOrigin: '0',
+              icmsRate: 18,
+              icmsStMva: 40,
+              icmsStRate: 18,
+              pisCst: '99',
+              cofinsCst: '99',
+            },
+          ]);
+
+          await service.emit(mockCompanyId, mockEmitDto);
+
+          const vSt = Number(totaisEnviados().vST_ttlnfe);
+          expect(vSt).toBeGreaterThan(0);
+          expect(totaisEnviados().vNF).toBe((200 + vSt).toFixed(2));
+        });
+
+        /** O FCP do ICMS próprio já está no preço: destaca, mas não soma. */
+        it('destaca o FCP próprio sem mexer no vNF', async () => {
+          comRegime(3);
+          prisma.productFiscalData.findMany.mockResolvedValue([
+            {
+              productId: 'product-1',
+              icmsCst: '00',
+              icmsOrigin: '0',
+              icmsRate: 18,
+              fcpRate: 2,
+              pisCst: '99',
+              cofinsCst: '99',
+            },
+          ]);
+
+          await service.emit(mockCompanyId, mockEmitDto);
+
+          expect(impostoEnviado().ICMS).toMatchObject({
+            vBCFCP: 200,
+            pFCP: 2,
+            vFCP: 4,
+          });
+          expect(totaisEnviados().vFCP_ttlnfe).toBe('4.00');
+          expect(totaisEnviados().vNF).toBe('200.00');
+        });
+
+        it('mantém o total sem acréscimo quando não há ST nem IPI', async () => {
+          comRegime(3);
+          prisma.productFiscalData.findMany.mockResolvedValue([
+            {
+              productId: 'product-1',
+              icmsCst: '00',
+              icmsOrigin: '0',
+              icmsRate: 18,
+              pisCst: '99',
+              cofinsCst: '99',
+            },
+          ]);
+
+          await service.emit(mockCompanyId, mockEmitDto);
+
+          expect(totaisEnviados().vNF).toBe('200.00');
+          expect(documentoEnviado().pag[0].vPag).toBe('200.00');
+        });
+      });
+
+      /**
+       * Os productId chegam no corpo da requisição. Sem o filtro por empresa,
+       * a nota de um tenant era calculada com o cadastro fiscal (NCM, CST,
+       * alíquota, MVA) de um produto de outro.
+       */
+      it('busca cadastro fiscal e regra de ST apenas da própria empresa', async () => {
+        comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: 'product-1',
+            icmsCst: '00',
+            icmsOrigin: '0',
+            icmsRate: 18,
+            pisCst: '99',
+            cofinsCst: '99',
+          },
+        ]);
+
+        await service.emit(mockCompanyId, mockEmitDto);
+
+        expect(prisma.productFiscalData.findMany).toHaveBeenCalledWith({
+          where: {
+            productId: { in: ['product-1'] },
+            product: { companyId: mockCompanyId },
+          },
+        });
+        expect(prisma.productStRule.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              product: { companyId: mockCompanyId },
+            }),
+          }),
+        );
+      });
 
       it('mantém apenas os códigos e totais zerados no Simples Nacional', async () => {
         comRegime(1);

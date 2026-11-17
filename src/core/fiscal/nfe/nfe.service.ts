@@ -28,6 +28,7 @@ import {
 import { fetchCepData } from '../utils/cep.util';
 import { getTPag } from '../utils/payment-method-map';
 import {
+  arredondar,
   totaisDosItens,
   totalDoItemNaNota,
   valoresDaLinhaParaNota,
@@ -44,6 +45,7 @@ import {
 } from '../utils/project-date.util';
 import { aliquotaInterestadual as aliquotaInterestadualIcms } from '../utils/icms-interestadual.util';
 import { resolverMva } from '../utils/icms-st.util';
+import { codigosCstDeOutroRegime } from '../utils/icms-cst.util';
 import {
   isOptanteSimples,
   isRegimeNormal,
@@ -1510,11 +1512,15 @@ export class NfeService {
     const baseData = await this.prepareStandalone(companyId, clientId);
 
     const emissaoOverride = this.getEmissaoFromDraft(draftData);
-    const itemsOverride = await this.itensParaReemitir(
+    const itemsOverride = await this.itensComCstDoRegime(
       companyId,
       originalNfe,
-      draftData,
-      draftData?.items || xmlData?.items || [],
+      await this.itensParaReemitir(
+        companyId,
+        originalNfe,
+        draftData,
+        draftData?.items || xmlData?.items || [],
+      ),
     );
 
     const mappedItems = itemsOverride.map((item: any) => ({
@@ -2291,6 +2297,72 @@ export class NfeService {
    * quando a linha da O.S. tem desconto. Desconto digitado numa linha sem
    * desconto fica, assim como descrição e dados fiscais da tentativa.
    */
+  /**
+   * Relê do cadastro o CST de ICMS dos itens cujo código guardado não serve ao
+   * regime do emissor.
+   *
+   * O CST do item vence o do cadastro no cálculo — é o que permite mudar a
+   * tributação de uma operação específica. Mas a tentativa rejeitada guardou o
+   * código que ERA o do cadastro, e "Corrigir e reemitir" existe justamente
+   * para depois de arrumar o cadastro: sem reler, a nota volta a sair com o
+   * CSOSN que o cálculo acabou de recusar, e quem corrigiu os produtos conclui
+   * que a correção não funcionou.
+   *
+   * Troca só o código do outro regime (CSOSN em emissor do Regime Normal, CST
+   * em optante do Simples), que nunca é escolha deliberada: o cálculo o
+   * recusa, e a SEFAZ também. Um CST válido digitado na nota continua valendo.
+   */
+  private async itensComCstDoRegime(
+    companyId: string,
+    nfe: { invoicyConfigId?: string | null },
+    itens: any[],
+  ): Promise<any[]> {
+    const productIds = [
+      ...new Set(itens.map((item) => item?.productId).filter(Boolean)),
+    ] as string[];
+    if (!productIds.length) return itens;
+
+    // O emissor da tentativa, não o padrão de hoje: a nota pode ter saído por
+    // outro, com regime diferente.
+    const emissor = await this.prisma.invoicyConfig.findFirst({
+      where: nfe.invoicyConfigId
+        ? { id: nfe.invoicyConfigId, companyId }
+        : { companyId, isDefault: true },
+      select: { emitCrt: true },
+    });
+
+    const doOutroRegime = new Set(codigosCstDeOutroRegime(emissor?.emitCrt));
+    const precisaReler = itens.some((item) =>
+      doOutroRegime.has(String(item?.cstIcms ?? '').trim()),
+    );
+    if (!precisaReler) return itens;
+
+    const fiscais = await this.prisma.productFiscalData.findMany({
+      where: { productId: { in: productIds }, product: { companyId } },
+      select: { productId: true, icmsCst: true },
+    });
+    const porProduto = new Map(fiscais.map((f) => [f.productId, f]));
+
+    return itens.map((item) => {
+      const guardado = String(item?.cstIcms ?? '').trim();
+      if (!doOutroRegime.has(guardado)) return item;
+
+      const doCadastro = (
+        porProduto.get(item?.productId)?.icmsCst || ''
+      ).trim();
+      // Cadastro ainda não corrigido: mantém o código e deixa o cálculo barrar
+      // com a mensagem que manda arrumar o produto. Apagar aqui trocaria essa
+      // orientação por um erro de campo vazio.
+      if (!doCadastro || doOutroRegime.has(doCadastro)) return item;
+
+      this.logger.log(
+        `Reemissão: item ${item?.productId} tinha CST ${guardado}, do outro ` +
+          `regime; relido do cadastro como ${doCadastro}.`,
+      );
+      return { ...item, cstIcms: doCadastro };
+    });
+  }
+
   private async itensParaReemitir(
     companyId: string,
     nfe: { id: string; orderId?: string | null },
@@ -2780,7 +2852,7 @@ export class NfeService {
        */
       const regimeNormal = isRegimeNormal(config.emitCrt);
       const impostosCalculados = regimeNormal
-        ? await this.calcularImpostosRegimeNormal(dto, config, {
+        ? await this.calcularImpostosRegimeNormal(companyId, dto, config, {
             ufOrigem: config.company.address.state,
             ufDestino: destUfFromCep,
             interestadual: isInterestadual,
@@ -2797,6 +2869,23 @@ export class NfeService {
           ].join(String.fromCharCode(10)),
         );
       }
+
+      /**
+       * Total da nota com os tributos que o destinatário paga por fora.
+       *
+       * `vNF` soma vST, vFCPST e vIPI (tag W16). Enquanto só o Simples emitia,
+       * esses valores eram sempre zero e `valorTotal` servia como vNF; no
+       * Regime Normal, a primeira nota com ST ou IPI sairia com vNF menor que
+       * a soma dos itens e voltaria rejeitada pela SEFAZ.
+       *
+       * O mesmo valor serve a vNF, ao pagamento e à cobrança: a SEFAZ confere
+       * o pagamento contra vNF, e deixar o vPag no total sem os tributos
+       * trocaria uma rejeição por outra.
+       */
+      const valorTotalNota = arredondar(
+        valorTotal + (impostosCalculados?.acrescimosNoTotal ?? 0),
+        2,
+      );
 
       const resolvedCfops = dto.items.map((item) => {
         // Precedência: CFOP do item > CFOP da natureza > default do emissor.
@@ -3040,7 +3129,7 @@ export class NfeService {
               vDesc_ttlnfe: valorDesconto.toFixed(2),
               vII_ttlnfe: '0.00',
               vOutro: '0.00',
-              vNF: valorTotal.toFixed(2),
+              vNF: valorTotalNota.toFixed(2),
             },
             // Totalizador da Reforma. `vNFIBScbsIS` e' irmao de ICMStot, nao
             // filho: e' o total COM os novos tributos, que a regra nacional
@@ -3049,7 +3138,7 @@ export class NfeService {
               ? {
                   IBSCBSTot: impostosCalculados.ibsCbsTotais,
                   vNFIBScbsIS: calcularVNFIBScbsIS(
-                    valorTotal,
+                    valorTotalNota,
                     impostosCalculados.ibsCbsTotais,
                   ),
                 }
@@ -3059,7 +3148,9 @@ export class NfeService {
             {
               tPag: dto.pagamento?.forma || '99',
               vPag:
-                dto.pagamento?.forma === '90' ? '0.00' : valorTotal.toFixed(2),
+                dto.pagamento?.forma === '90'
+                  ? '0.00'
+                  : valorTotalNota.toFixed(2),
             },
           ],
           transp: {
@@ -3081,9 +3172,9 @@ export class NfeService {
                 cobr: {
                   fat: {
                     nFat: numero.toString(),
-                    vOrig: valorTotal.toFixed(2),
+                    vOrig: valorTotalNota.toFixed(2),
                     vDesc: '0.00',
-                    vLiq: valorTotal.toFixed(2),
+                    vLiq: valorTotalNota.toFixed(2),
                   },
                   dup: dto.duplicatas.map((d) => ({
                     nDup: d.numero || '',
@@ -3151,7 +3242,9 @@ export class NfeService {
         resolvedCfops,
         tipoDocumento,
         valorProdutos,
-        valorTotal,
+        // O valor da nota é o vNF transmitido, com ST, FCP-ST e IPI: é o que
+        // a listagem, o financeiro e a DANFE precisam mostrar.
+        valorTotal: valorTotalNota,
         emitCmun,
         emitCmunResolvidoViaCep,
         avisos,
@@ -5037,6 +5130,7 @@ export class NfeService {
   }
 
   private async calcularImpostosRegimeNormal(
+    companyId: string,
     dto: EmitNfeDto,
     config: any,
     operacao: { ufOrigem: string; ufDestino: string; interestadual: boolean },
@@ -5045,9 +5139,12 @@ export class NfeService {
       ...new Set(dto.items.map((i) => i.productId).filter(Boolean)),
     ] as string[];
 
+    // Escopo por empresa: os productIds vêm do corpo da requisição, e sem o
+    // filtro a nota de um tenant era calculada com o cadastro fiscal (NCM,
+    // CST, alíquota, MVA) de um produto de outro.
     const fiscais = productIds.length
       ? await this.prisma.productFiscalData.findMany({
-          where: { productId: { in: productIds } },
+          where: { productId: { in: productIds }, product: { companyId } },
         })
       : [];
     const porProduto = new Map(fiscais.map((f) => [f.productId, f]));
@@ -5059,6 +5156,7 @@ export class NfeService {
           where: {
             productId: { in: productIds },
             ufDestino: operacao.ufDestino,
+            product: { companyId },
           },
         })
       : [];
@@ -5135,6 +5233,7 @@ export class NfeService {
           icmsRate: fiscal?.icmsRate,
           icmsReducao: fiscal?.icmsReducao,
           icmsBaseModality: fiscal?.icmsBaseModality,
+          fcpRate: fiscal?.fcpRate,
           pisCst: item.cstPis || fiscal?.pisCst,
           pisRate: fiscal?.pisRate,
           cofinsCst: item.cstCofins || fiscal?.cofinsCst,

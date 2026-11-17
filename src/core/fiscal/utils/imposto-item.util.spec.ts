@@ -91,6 +91,64 @@ describe('imposto-item.util', () => {
    * O ponto central do módulo: em vez de emitir com imposto zerado, o cálculo
    * devolve o impedimento para que a emissão seja barrada.
    */
+  /**
+   * O FCP sobre o ICMS próprio ficava cadastrado no produto e fora da nota: a
+   * alíquota era lida pela tela de cadastro e ignorada pelo cálculo, o que
+   * subdeclarava o tributo em silêncio.
+   */
+  describe('FCP sobre o ICMS próprio', () => {
+    it('destaca o FCP na mesma base do ICMS', () => {
+      const r = calcularImpostoItem(
+        { valorProdutos: 1000 },
+        { ...tributado, fcpRate: 2 },
+      );
+
+      expect(r.bloqueios).toEqual([]);
+      expect(r.icms.vBCFCP).toBe(1000);
+      expect(r.icms.pFCP).toBe(2);
+      expect(r.icms.vFCP).toBe(20);
+      // O ICMS próprio não muda: o FCP é um destaque a mais, não um desconto.
+      expect(r.icms.vICMS).toBe(180);
+    });
+
+    it('usa a base reduzida quando o CST reduz a base', () => {
+      const r = calcularImpostoItem(
+        { valorProdutos: 1000 },
+        { ...tributado, icmsCst: '20', icmsReducao: 40, fcpRate: 2 },
+      );
+
+      expect(r.bloqueios).toEqual([]);
+      expect(r.icms.vBC).toBe(600);
+      expect(r.icms.vBCFCP).toBe(600);
+      expect(r.icms.vFCP).toBe(12);
+    });
+
+    /** Zero e ausente não são a mesma coisa: o fundo não existe em toda UF. */
+    it('não destaca FCP sem alíquota cadastrada, nem com alíquota zero', () => {
+      for (const fcpRate of [undefined, null, 0]) {
+        const r = calcularImpostoItem(
+          { valorProdutos: 1000 },
+          { ...tributado, fcpRate },
+        );
+
+        expect(r.icms).not.toHaveProperty('vFCP');
+        expect(r.icms).not.toHaveProperty('pFCP');
+        expect(r.icms).not.toHaveProperty('vBCFCP');
+      }
+    });
+
+    /** Sem ICMS próprio não há base de FCP a destacar. */
+    it('não destaca FCP em CST que não tem ICMS próprio', () => {
+      const r = calcularImpostoItem(
+        { valorProdutos: 1000 },
+        { ...tributado, icmsCst: '40', fcpRate: 2 },
+      );
+
+      expect(r.bloqueios).toEqual([]);
+      expect(r.icms).not.toHaveProperty('vFCP');
+    });
+  });
+
   describe('bloqueios', () => {
     it('bloqueia quando o CST 00 não tem alíquota cadastrada', () => {
       const r = calcularImpostoItem(

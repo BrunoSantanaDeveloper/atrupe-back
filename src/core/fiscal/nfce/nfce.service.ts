@@ -57,6 +57,7 @@ import {
 } from './dtos/nfce.dto';
 import { FiscalCredentialResolverService } from '../shared/fiscal-credential-resolver.service';
 import { montarImpostosNfe } from '../utils/nfe-imposto-payload.util';
+import { ipiTributado } from '../utils/imposto-item.util';
 import {
   ItemDaEmissao,
   totaisDosItens,
@@ -496,8 +497,11 @@ export class NfceService {
 
     // Buscar dados fiscais dos produtos (antes da transação)
     const productIds = dto.itens.map((item) => item.productId).filter(Boolean);
+    // Escopo por empresa: os productIds vêm do corpo da requisição, e sem o
+    // filtro a venda de um tenant era calculada com o cadastro fiscal de um
+    // produto de outro.
     const fiscalDataList = await this.prisma.productFiscalData.findMany({
-      where: { productId: { in: productIds } },
+      where: { productId: { in: productIds }, product: { companyId } },
     });
     const fiscalDataMap = new Map(
       fiscalDataList.map((fd) => [fd.productId, fd]),
@@ -538,6 +542,7 @@ export class NfceService {
                 icmsRate: fiscal?.icmsRate,
                 icmsReducao: fiscal?.icmsReducao,
                 icmsBaseModality: fiscal?.icmsBaseModality,
+                fcpRate: fiscal?.fcpRate,
                 pisCst: item.pisCst || fiscal?.pisCst,
                 pisRate: fiscal?.pisRate,
                 cofinsCst: item.cofinsCst || fiscal?.cofinsCst,
@@ -564,6 +569,41 @@ export class NfceService {
           ...impostosCalculados.bloqueios,
         ].join(String.fromCharCode(10)),
       );
+    }
+
+    /**
+     * IPI tributado no cadastro, em venda que a NFC-e não sabe carregar.
+     *
+     * Este caminho nunca passou `ipiCst` ao cálculo, então o IPI do produto
+     * era descartado em silêncio e a nota saía subdeclarada. Passar a calcular
+     * não resolveria sozinho: o IPI entra em `vNF` (tag W16), e o total da
+     * venda — com o pagamento e o troco já conferidos acima — foi fechado sem
+     * ele; a nota sairia cobrando mais do que o caixa recebeu.
+     *
+     * Então a emissão para e diz o que fazer. A NFC-e é venda presencial no
+     * balcão; quem precisa destacar IPI emite NF-e, onde o total já sai com o
+     * tributo somado.
+     *
+     * A ST não precisa de guarda: o CST dela exige MVA, e sem MVA o cálculo
+     * já barra com a mensagem certa.
+     */
+    if (isRegimeNormal(config.emitCrt)) {
+      const comIpi = dto.itens.find((item) => {
+        const fiscal: any = item.productId
+          ? fiscalDataMap.get(item.productId)
+          : undefined;
+        return ipiTributado(fiscal?.ipiCst) && Number(fiscal?.ipiRate) > 0;
+      });
+
+      if (comIpi) {
+        throw new BadRequestException(
+          `O produto "${comIpi.descricao || comIpi.codigo}" tem IPI tributado ` +
+            'no cadastro, e a NFC-e precisaria somar esse valor ao total da ' +
+            'nota — que o caixa já fechou sem ele. Emita uma NF-e para esta ' +
+            'venda, ou revise o CST de IPI do produto se ele não deveria ter ' +
+            'o tributo.',
+        );
+      }
     }
 
     return {
@@ -758,10 +798,17 @@ export class NfceService {
         }),
         total: {
           ICMStot: {
+            // Os zeros ficam DENTRO do padrão: espalhados depois do cálculo,
+            // `vIPI_ttlnfe`, `vPIS_ttlnfe` e `vCOFINS_ttlnfe` sobrescreviam os
+            // valores calculados e a nota do Regime Normal ia com os
+            // totalizadores zerados, em desacordo com os itens.
             ...(impostosCalculados?.totais ?? {
               vBC_ttlnfe: '0.00',
               vICMS_ttlnfe: '0.00',
               vBCST_ttlnfe: '0.00',
+              vIPI_ttlnfe: '0.00',
+              vPIS_ttlnfe: '0.00',
+              vCOFINS_ttlnfe: '0.00',
             }),
             vICMSDeson_ttlnfe: '0.00',
             vProd_ttlnfe: valorProdutos.toFixed(2),
@@ -769,9 +816,6 @@ export class NfceService {
             vSeg_ttlnfe: '0.00',
             vDesc_ttlnfe: valorDesconto.toFixed(2),
             vII_ttlnfe: '0.00',
-            vIPI_ttlnfe: '0.00',
-            vPIS_ttlnfe: '0.00',
-            vCOFINS_ttlnfe: '0.00',
             vOutro: '0.00',
             vNF: valorTotal.toFixed(2),
           },

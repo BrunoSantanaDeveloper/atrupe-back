@@ -233,6 +233,10 @@ export interface InvoicyNfeImposto {
     pICMS?: number;
     /** Valor do ICMS próprio. O sufixo é do layout, não engano. */
     vICMS_icms?: number;
+    /** Fundo de Combate à Pobreza sobre o ICMS próprio (tags N17a-N17c). */
+    vBCFCP?: number;
+    pFCP?: number;
+    vFCP?: number;
     pCredSN?: string;
     vCredICMSSN?: string;
     /** Substituição tributária. modBCST 4 = margem de valor agregado. */
