@@ -594,6 +594,13 @@ export const FINANCIAL_EXTRACTOR: LegacyExtractor = {
       c.dtcadastro_conta        AS dataCadastro,
       c.valor                   AS ValorTotal,
       cl.idcliente              AS ClienteCodigoLegado,
+      -- A conta aponta para uma entidade, que pode ser cliente, fornecedor
+      -- ou colaborador. Só o cliente era traduzido: despesa de fornecedor
+      -- sem documento e folha de pagamento entravam sem ninguém.
+      (SELECT MIN(f.idfornecedor) FROM ${base}.forn_fornecedor f
+        WHERE f.fkidentidade = c.fkidentidade) AS FornecedorCodigoLegado,
+      (SELECT MIN(r.idfuncionario) FROM ${base}.rh_funcionario r
+        WHERE r.fkidentidade = c.fkidentidade) AS ColaboradorCodigoLegado,
       nat.natureza              AS Natureza,
       cat.categoria             AS SubCategoria,
       cc.nome                   AS ContaBancaria,
@@ -631,6 +638,8 @@ export const FINANCIAL_EXTRACTOR: LegacyExtractor = {
     QuantidadeParcelas: text(row.QuantidadeParcelas),
     ClienteCodigoLegado: text(row.ClienteCodigoLegado),
     ClienteCpfCnpj: '',
+    FornecedorCodigoLegado: text(row.FornecedorCodigoLegado),
+    ColaboradorCodigoLegado: text(row.ColaboradorCodigoLegado),
     Natureza: text(row.Natureza),
     SubCategoria: text(row.SubCategoria),
     ContaBancaria: text(row.ContaBancaria),

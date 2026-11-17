@@ -1404,3 +1404,157 @@ describe('ImportService migrated sale lines', () => {
     expect(composicoes.map((c) => c.quantity)).toEqual([1, 1]);
   });
 });
+
+/**
+ * Financeiro migrado: a outra parte do lançamento. Só o cliente era
+ * traduzido, e só na receita — despesa de fornecedor sem documento e toda a
+ * folha entravam sem ninguém, e o Fluxo financeiro mostrava linhas sem nome.
+ */
+describe('ImportService financeiro: cliente, fornecedor e colaborador', () => {
+  let service: ImportService;
+  let payables: any[];
+  let receivables: any[];
+
+  const linha = (over: Record<string, string> = {}) => ({
+    Tipo: 'DESPESA',
+    Descricao: 'FOLHA #188 - 09/2026 - SALÁRIO [2715]',
+    Referencia: 'FOLHA #188',
+    DataReferencia: '2026-09-30',
+    ValorTotal: '1500.00',
+    QuantidadeParcelas: '1',
+    Parcela: '1',
+    DataVencimento: '2026-10-05',
+    ValorParcela: '1500.00',
+    Status: 'PENDENTE',
+    ...over,
+  });
+
+  beforeEach(() => {
+    payables = [];
+    receivables = [];
+    const prisma = {
+      client: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'cli-1', legacyId: '482', cpf: null, cnpj: null },
+          ]),
+      },
+      supplier: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'for-1', legacyId: '57' }]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      employee: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'col-1', legacyId: '12' }]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      paymentCondition: { findMany: jest.fn().mockResolvedValue([]) },
+      nature: { findFirst: jest.fn().mockResolvedValue(null) },
+      subCategory: { findFirst: jest.fn().mockResolvedValue(null) },
+      bankAccount: { findFirst: jest.fn().mockResolvedValue(null) },
+      payable: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockImplementation(({ data }) => {
+          payables.push(data);
+          return Promise.resolve({ id: `pay-${payables.length}`, ...data });
+        }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      payableInstallment: { create: jest.fn().mockResolvedValue({}) },
+      receivable: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockImplementation(({ data }) => {
+          receivables.push(data);
+          return Promise.resolve({ id: `rec-${receivables.length}`, ...data });
+        }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      receivableInstallment: { create: jest.fn().mockResolvedValue({}) },
+    };
+    service = new ImportService(prisma as any, {} as any, {} as any);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  const importar = (rows: any[]) =>
+    (service as any).importFinancial(rows, 'company-1');
+
+  it('folha aponta para o colaborador pelo código do legado', async () => {
+    await importar([linha({ ColaboradorCodigoLegado: '12' })]);
+
+    expect(payables[0]).toMatchObject({
+      employeeId: 'col-1',
+      supplierId: null,
+      clientId: null,
+    });
+  });
+
+  it('despesa de fornecedor sem documento liga pelo código do legado', async () => {
+    await importar([
+      linha({
+        Descricao: 'Lona 440g [903]',
+        FornecedorCodigoLegado: '57',
+        ClienteCodigoLegado: '482',
+      }),
+    ]);
+
+    // A entidade é cliente e fornecedor: na despesa vale o fornecedor.
+    expect(payables[0]).toMatchObject({ supplierId: 'for-1', clientId: null });
+  });
+
+  it('despesa de quem é só cliente (estorno) fica no cliente', async () => {
+    await importar([
+      linha({ Descricao: 'Estorno [904]', ClienteCodigoLegado: '482' }),
+    ]);
+
+    expect(payables[0]).toMatchObject({ clientId: 'cli-1', supplierId: null });
+  });
+
+  it('receita de quem é só fornecedor fica no fornecedor', async () => {
+    await importar([
+      linha({
+        Tipo: 'RECEITA',
+        Descricao: 'Devolução [905]',
+        FornecedorCodigoLegado: '57',
+      }),
+    ]);
+
+    expect(receivables[0]).toMatchObject({
+      supplierId: 'for-1',
+      clientId: null,
+    });
+  });
+
+  it('código do legado sem cadastro falha a linha com o motivo', async () => {
+    const resultado = await importar([
+      linha({ ColaboradorCodigoLegado: '999' }),
+    ]);
+
+    expect(payables).toHaveLength(0);
+    expect(JSON.stringify(resultado)).toContain(
+      "Colaborador com código legado '999' não encontrado",
+    );
+  });
+
+  it('despesas distintas sem ninguém não viram uma só', async () => {
+    // Mesmo valor e mesma data: só a descrição as separa.
+    await importar([
+      linha({ Descricao: 'Tarifa [906]' }),
+      linha({ Descricao: 'Tarifa [907]' }),
+    ]);
+
+    const busca = (service as any).prisma.payable.findFirst.mock.calls;
+    expect(busca[0][0].where.description).toBe('Tarifa [906]');
+    expect(busca[1][0].where.description).toBe('Tarifa [907]');
+    expect(payables).toHaveLength(2);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Despesa sem cliente, fornecedor ou colaborador'),
+    );
+  });
+});

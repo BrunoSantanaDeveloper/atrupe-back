@@ -2575,6 +2575,44 @@ export class ImportService {
     return { byLegacyId, byDocument };
   }
 
+  /** Fornecedores ou colaboradores da empresa pelo código do legado. */
+  private async buildLegacyIdIndex(
+    model: 'supplier' | 'employee',
+    companyId: string,
+  ): Promise<Map<string, string>> {
+    const rows: { id: string; legacyId: string | null }[] = await (
+      this.prisma[model] as any
+    ).findMany({
+      where: { companyId, legacyId: { not: null } },
+      select: { id: true, legacyId: true },
+    });
+    return new Map(
+      rows
+        .filter((row) => row.legacyId)
+        .map((row) => [(row.legacyId as string).trim(), row.id]),
+    );
+  }
+
+  /**
+   * Id pelo código do legado; sem o cadastro, a linha falha com o motivo,
+   * como no cliente — o lançamento sem a outra parte é o que se quer evitar.
+   */
+  private idByLegacyIdOrFail(
+    index: Map<string, string>,
+    legacyId: string,
+    rotulo: 'Fornecedor' | 'Colaborador',
+  ): string {
+    const id = index.get(legacyId);
+    if (!id) {
+      const cadastro =
+        rotulo === 'Fornecedor' ? 'os fornecedores' : 'os colaboradores';
+      throw new Error(
+        `${rotulo} com código legado '${legacyId}' não encontrado. Importe ${cadastro} antes do financeiro.`,
+      );
+    }
+    return id;
+  }
+
   /**
    * Resolve o cliente de uma linha do arquivo.
    *
@@ -3938,6 +3976,15 @@ export class ImportService {
     const clientIndex = await this.buildClientIndex(companyId);
     const paymentConditionIndex =
       await this.buildPaymentConditionIndex(companyId);
+    // Fornecedores e colaboradores pelo código do legado, lidos uma vez só.
+    const supplierByLegacyId = await this.buildLegacyIdIndex(
+      'supplier',
+      companyId,
+    );
+    const employeeByLegacyId = await this.buildLegacyIdIndex(
+      'employee',
+      companyId,
+    );
 
     // Processar cada lançamento
     for (const [key, installments] of financialMap) {
@@ -3945,36 +3992,60 @@ export class ImportService {
         const firstItem = installments[0];
         const isReceivable = firstItem.Tipo.toUpperCase() === 'RECEITA';
 
-        // Buscar cliente (se for receita)
+        // Quem é a outra parte do lançamento.
         //
-        // A condicao testava so o CPF/CNPJ, mas resolveClient resolve antes
-        // pelo ClienteCodigoLegado — que o schema documenta como o unico
-        // caminho para cliente sem documento. Linha com codigo legado e sem
-        // documento nem chegava a procurar o cliente, e o lancamento era
-        // criado sem ninguem, em silencio (2.270 de 2.273 numa migracao).
+        // No legado a conta aponta para uma entidade, que pode ser cliente,
+        // fornecedor ou colaborador, e o extrator manda o código de cada
+        // papel que ela tem. A despesa só procurava fornecedor pelo
+        // documento e funcionário pelo e-mail (que colaborador migrado não
+        // tem): fornecedor sem documento e toda a folha entravam sem ninguém,
+        // em silêncio — o Fluxo financeiro mostrava linhas sem nome. O código
+        // do legado tem precedência sobre documento e e-mail, como no cliente.
+        //
+        // Receita: cliente; se a entidade é só fornecedor, fornecedor.
+        // Despesa: fornecedor e/ou colaborador; se não for nenhum dos dois, o
+        // cliente (estorno, devolução) — o Payable aceita cliente.
         let clientId: string | null = null;
-        if (
-          isReceivable &&
-          (firstItem.ClienteCodigoLegado || firstItem.ClienteCpfCnpj)
-        ) {
-          const client = this.resolveClient(clientIndex, firstItem);
+        let supplierId: string | null = null;
+        let employeeId: string | null = null;
+        const hasClientReference = !!(
+          firstItem.ClienteCodigoLegado || firstItem.ClienteCpfCnpj
+        );
+        const supplierLegacyId = firstItem.FornecedorCodigoLegado?.trim();
+        const employeeLegacyId = firstItem.ColaboradorCodigoLegado?.trim();
 
+        // A condicao de cliente testava so o CPF/CNPJ, mas resolveClient
+        // resolve antes pelo ClienteCodigoLegado — que o schema documenta como
+        // o unico caminho para cliente sem documento (2.270 de 2.273 receitas
+        // entraram sem ninguem numa migracao antes disso).
+        const resolveClientOrFail = () => {
+          const client = this.resolveClient(clientIndex, firstItem);
           if (!client) {
             throw new Error(this.clientNotFoundMessage(firstItem));
           }
-          clientId = client.id;
-        } else if (isReceivable) {
-          // Sem identificacao nenhuma o lancamento entra sem cliente. Nao da
-          // para adivinhar, mas tem de ficar no log: depois da carga nao ha
-          // como saber de quem era a cobranca.
-          console.warn(
-            `Receita sem identificacao de cliente (ClienteCodigoLegado e ClienteCpfCnpj vazios): "${firstItem.Descricao}" — lancamento criado sem cliente.`,
-          );
+          return client.id as string;
+        };
+
+        if (isReceivable) {
+          if (hasClientReference) {
+            clientId = resolveClientOrFail();
+          } else if (supplierLegacyId) {
+            supplierId = this.idByLegacyIdOrFail(
+              supplierByLegacyId,
+              supplierLegacyId,
+              'Fornecedor',
+            );
+          }
         }
 
         // Buscar fornecedor (se for despesa)
-        let supplierId: string | null = null;
-        if (!isReceivable && firstItem.FornecedorCpfCnpj) {
+        if (!isReceivable && supplierLegacyId) {
+          supplierId = this.idByLegacyIdOrFail(
+            supplierByLegacyId,
+            supplierLegacyId,
+            'Fornecedor',
+          );
+        } else if (!isReceivable && firstItem.FornecedorCpfCnpj) {
           const cleanCpfCnpj = firstItem.FornecedorCpfCnpj.replace(
             /[^\d]/g,
             '',
@@ -3996,9 +4067,14 @@ export class ImportService {
           supplierId = supplier.id;
         }
 
-        // Buscar funcionário (se for despesa de salário)
-        let employeeId: string | null = null;
-        if (!isReceivable && firstItem.FuncionarioEmail) {
+        // Buscar colaborador (se for despesa: folha, vale, comissão)
+        if (!isReceivable && employeeLegacyId) {
+          employeeId = this.idByLegacyIdOrFail(
+            employeeByLegacyId,
+            employeeLegacyId,
+            'Colaborador',
+          );
+        } else if (!isReceivable && firstItem.FuncionarioEmail) {
           const employee = await this.prisma.employee.findFirst({
             where: {
               user: {
@@ -4014,6 +4090,20 @@ export class ImportService {
             );
           }
           employeeId = employee.id;
+        }
+
+        // Despesa de quem não é fornecedor nem colaborador: o cliente.
+        if (!isReceivable && !supplierId && !employeeId && hasClientReference) {
+          clientId = resolveClientOrFail();
+        }
+
+        if (!clientId && !supplierId && !employeeId) {
+          // Sem identificacao nenhuma o lancamento entra sem ninguem. Nao da
+          // para adivinhar, mas tem de ficar no log: depois da carga nao ha
+          // como saber de quem era a conta.
+          console.warn(
+            `${isReceivable ? 'Receita' : 'Despesa'} sem cliente, fornecedor ou colaborador identificado: "${firstItem.Descricao}" — lancamento criado sem ninguem.`,
+          );
         }
 
         // Buscar natureza
@@ -4066,6 +4156,7 @@ export class ImportService {
               companyId,
               description: firstItem.Descricao,
               clientId: clientId || undefined,
+              supplierId: supplierId || undefined,
               totalAmount,
               subCategoryId: subCategoryId || undefined,
               referenceDate,
@@ -4094,6 +4185,7 @@ export class ImportService {
               totalValue: totalAmount,
               companyId,
               clientId,
+              supplierId,
               natureId,
               subCategoryId,
               notes: firstItem.Observacoes || null,
@@ -4189,11 +4281,17 @@ export class ImportService {
             : null;
 
           // Verificar se já existe Payable similar (evitar duplicatas)
+          // A descrição entra na chave, como na receita: `supplierId:
+          // undefined` remove o filtro em vez de exigir nulo, e duas despesas
+          // distintas sem ninguém, de mesmo valor e data, viravam uma só — a
+          // segunda era pulada e contada como sucesso.
           const existingPayable = await this.prisma.payable.findFirst({
             where: {
               companyId,
+              description: firstItem.Descricao,
               supplierId: supplierId || undefined,
               employeeId: employeeId || undefined,
+              clientId: clientId || undefined,
               totalAmount,
               subCategoryId: subCategoryId || undefined,
               referenceDate,
@@ -4223,6 +4321,7 @@ export class ImportService {
               companyId,
               supplierId,
               employeeId,
+              clientId,
               natureId,
               subCategoryId,
               notes: firstItem.Observacoes || null,
