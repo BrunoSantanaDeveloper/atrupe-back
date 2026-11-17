@@ -65,6 +65,14 @@ export interface TributacaoItem {
   stAliquota?: number | null;
   stReducaoBase?: number | null;
   stFcpRate?: number | null;
+  /**
+   * Alíquota do Fundo de Combate à Pobreza sobre o ICMS próprio (%).
+   *
+   * Cadastrada no produto e, até aqui, ignorada pelo cálculo: a nota saía sem
+   * o grupo de FCP mesmo com a alíquota preenchida, subdeclarando o tributo em
+   * silêncio — exatamente o que este módulo existe para impedir.
+   */
+  fcpRate?: number | null;
 }
 
 export interface IcmsCalculado {
@@ -75,6 +83,10 @@ export interface IcmsCalculado {
   pRedBC?: number;
   pICMS?: number;
   vICMS?: number;
+  /** Base do FCP sobre o ICMS próprio; igual à base do ICMS. */
+  vBCFCP?: number;
+  pFCP?: number;
+  vFCP?: number;
   /** Grupo de substituição tributária, nos CSTs que a exigem. */
   st?: StCalculado;
 }
@@ -105,6 +117,16 @@ const PIS_COFINS_COM_ALIQUOTA = new Set(['01', '02']);
 
 /** CST de IPI de saída tributada. */
 const IPI_TRIBUTADO = new Set(['50']);
+
+/**
+ * CST de IPI que destaca valor, e por isso exige alíquota.
+ *
+ * Exportado porque a NFC-e precisa reconhecer o caso para recusar a venda: lá
+ * o IPI não cabe no total já cobrado no caixa.
+ */
+export function ipiTributado(cst?: string | null): boolean {
+  return IPI_TRIBUTADO.has((cst || '').trim());
+}
 
 /**
  * Base de cálculo da operação: valor dos produtos mais acessórias, menos o
@@ -192,6 +214,15 @@ function calcularIcms(
     icms.vBC = duasCasas(baseIcms);
     icms.pICMS = duasCasas(trib.icmsRate);
     icms.vICMS = duasCasas((baseIcms * trib.icmsRate) / 100);
+
+    // FCP sobre o ICMS próprio, na mesma base (tags N17a-N17c). Só sai quando a
+    // alíquota está cadastrada: o fundo existe em parte das UFs e para parte
+    // das mercadorias, então zero e ausente não são a mesma coisa.
+    if (temAliquota(trib.fcpRate) && trib.fcpRate > 0) {
+      icms.vBCFCP = duasCasas(baseIcms);
+      icms.pFCP = duasCasas(trib.fcpRate);
+      icms.vFCP = duasCasas((baseIcms * trib.fcpRate) / 100);
+    }
   }
 
   if (temSt) {

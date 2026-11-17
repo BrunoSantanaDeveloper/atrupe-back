@@ -416,6 +416,110 @@ describe('NfceService', () => {
         });
       });
 
+      /**
+       * Os totalizadores de IPI, PIS e COFINS eram escritos como '0.00' depois
+       * do espalhamento do cálculo, e sobrescreviam o que havia sido
+       * calculado: a nota do Regime Normal ia com imposto no item e zero no
+       * total.
+       */
+      it('leva ao total o PIS e o COFINS calculados, em vez de zero', async () => {
+        await comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: '1',
+            ncm: '12345678',
+            cfopInState: '5102',
+            commercialUnit: 'UN',
+            icmsCst: '00',
+            icmsOrigin: '0',
+            icmsRate: 18,
+            pisCst: '01',
+            pisRate: 1.65,
+            cofinsCst: '01',
+            cofinsRate: 7.6,
+          },
+        ]);
+
+        await service.emit(mockCompanyId, dtoPadrao);
+
+        const totais =
+          invoicyApiService.emitNfe.mock.calls.at(-1)[1][0].Documento.total
+            .ICMStot;
+        expect(totais.vICMS_ttlnfe).toBe('18.00');
+        expect(totais.vPIS_ttlnfe).toBe('1.65');
+        expect(totais.vCOFINS_ttlnfe).toBe('7.60');
+      });
+
+      it('mantém os totais zerados no Simples Nacional', async () => {
+        await comRegime(1);
+
+        await service.emit(mockCompanyId, dtoPadrao);
+
+        const totais =
+          invoicyApiService.emitNfe.mock.calls.at(-1)[1][0].Documento.total
+            .ICMStot;
+        expect(totais.vICMS_ttlnfe).toBe('0.00');
+        expect(totais.vPIS_ttlnfe).toBe('0.00');
+        expect(totais.vCOFINS_ttlnfe).toBe('0.00');
+        expect(totais.vIPI_ttlnfe).toBe('0.00');
+      });
+
+      /**
+       * ST e IPI entram em vNF, mas o total da venda — e o pagamento já
+       * conferido — foi fechado sem eles. Emitir sairia com vNF maior que o
+       * pago; somar faria a nota cobrar mais do que o caixa recebeu.
+       */
+      it('barra a NFC-e de produto com IPI tributado, em vez de emitir sem ele', async () => {
+        await comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: '1',
+            ncm: '12345678',
+            cfopInState: '5102',
+            commercialUnit: 'UN',
+            icmsCst: '00',
+            icmsOrigin: '0',
+            icmsRate: 18,
+            ipiCst: '50',
+            ipiRate: 10,
+            pisCst: '99',
+            cofinsCst: '99',
+          },
+        ]);
+
+        await expect(service.emit(mockCompanyId, dtoPadrao)).rejects.toThrow(
+          /IPI tributado/,
+        );
+        expect(invoicyApiService.emitNfe).not.toHaveBeenCalled();
+      });
+
+      /** Os productId vêm do corpo: sem o filtro, o cadastro era de outro tenant. */
+      it('busca cadastro fiscal apenas da própria empresa', async () => {
+        await comRegime(3);
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          {
+            productId: '1',
+            ncm: '12345678',
+            cfopInState: '5102',
+            commercialUnit: 'UN',
+            icmsCst: '00',
+            icmsOrigin: '0',
+            icmsRate: 18,
+            pisCst: '99',
+            cofinsCst: '99',
+          },
+        ]);
+
+        await service.emit(mockCompanyId, dtoPadrao);
+
+        expect(prisma.productFiscalData.findMany).toHaveBeenCalledWith({
+          where: {
+            productId: { in: ['1'] },
+            product: { companyId: mockCompanyId },
+          },
+        });
+      });
+
       it('barra a emissão do Regime Normal quando falta alíquota', async () => {
         await comRegime(3);
         prisma.productFiscalData.findMany.mockResolvedValue([

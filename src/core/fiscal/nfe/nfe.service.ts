@@ -28,6 +28,7 @@ import {
 import { fetchCepData } from '../utils/cep.util';
 import { getTPag } from '../utils/payment-method-map';
 import {
+  arredondar,
   totaisDosItens,
   totalDoItemNaNota,
   valoresDaLinhaParaNota,
@@ -2780,7 +2781,7 @@ export class NfeService {
        */
       const regimeNormal = isRegimeNormal(config.emitCrt);
       const impostosCalculados = regimeNormal
-        ? await this.calcularImpostosRegimeNormal(dto, config, {
+        ? await this.calcularImpostosRegimeNormal(companyId, dto, config, {
             ufOrigem: config.company.address.state,
             ufDestino: destUfFromCep,
             interestadual: isInterestadual,
@@ -2797,6 +2798,23 @@ export class NfeService {
           ].join(String.fromCharCode(10)),
         );
       }
+
+      /**
+       * Total da nota com os tributos que o destinatário paga por fora.
+       *
+       * `vNF` soma vST, vFCPST e vIPI (tag W16). Enquanto só o Simples emitia,
+       * esses valores eram sempre zero e `valorTotal` servia como vNF; no
+       * Regime Normal, a primeira nota com ST ou IPI sairia com vNF menor que
+       * a soma dos itens e voltaria rejeitada pela SEFAZ.
+       *
+       * O mesmo valor serve a vNF, ao pagamento e à cobrança: a SEFAZ confere
+       * o pagamento contra vNF, e deixar o vPag no total sem os tributos
+       * trocaria uma rejeição por outra.
+       */
+      const valorTotalNota = arredondar(
+        valorTotal + (impostosCalculados?.acrescimosNoTotal ?? 0),
+        2,
+      );
 
       const resolvedCfops = dto.items.map((item) => {
         // Precedência: CFOP do item > CFOP da natureza > default do emissor.
@@ -3040,7 +3058,7 @@ export class NfeService {
               vDesc_ttlnfe: valorDesconto.toFixed(2),
               vII_ttlnfe: '0.00',
               vOutro: '0.00',
-              vNF: valorTotal.toFixed(2),
+              vNF: valorTotalNota.toFixed(2),
             },
             // Totalizador da Reforma. `vNFIBScbsIS` e' irmao de ICMStot, nao
             // filho: e' o total COM os novos tributos, que a regra nacional
@@ -3049,7 +3067,7 @@ export class NfeService {
               ? {
                   IBSCBSTot: impostosCalculados.ibsCbsTotais,
                   vNFIBScbsIS: calcularVNFIBScbsIS(
-                    valorTotal,
+                    valorTotalNota,
                     impostosCalculados.ibsCbsTotais,
                   ),
                 }
@@ -3059,7 +3077,9 @@ export class NfeService {
             {
               tPag: dto.pagamento?.forma || '99',
               vPag:
-                dto.pagamento?.forma === '90' ? '0.00' : valorTotal.toFixed(2),
+                dto.pagamento?.forma === '90'
+                  ? '0.00'
+                  : valorTotalNota.toFixed(2),
             },
           ],
           transp: {
@@ -3081,9 +3101,9 @@ export class NfeService {
                 cobr: {
                   fat: {
                     nFat: numero.toString(),
-                    vOrig: valorTotal.toFixed(2),
+                    vOrig: valorTotalNota.toFixed(2),
                     vDesc: '0.00',
-                    vLiq: valorTotal.toFixed(2),
+                    vLiq: valorTotalNota.toFixed(2),
                   },
                   dup: dto.duplicatas.map((d) => ({
                     nDup: d.numero || '',
@@ -3151,7 +3171,9 @@ export class NfeService {
         resolvedCfops,
         tipoDocumento,
         valorProdutos,
-        valorTotal,
+        // O valor da nota é o vNF transmitido, com ST, FCP-ST e IPI: é o que
+        // a listagem, o financeiro e a DANFE precisam mostrar.
+        valorTotal: valorTotalNota,
         emitCmun,
         emitCmunResolvidoViaCep,
         avisos,
@@ -5037,6 +5059,7 @@ export class NfeService {
   }
 
   private async calcularImpostosRegimeNormal(
+    companyId: string,
     dto: EmitNfeDto,
     config: any,
     operacao: { ufOrigem: string; ufDestino: string; interestadual: boolean },
@@ -5045,9 +5068,12 @@ export class NfeService {
       ...new Set(dto.items.map((i) => i.productId).filter(Boolean)),
     ] as string[];
 
+    // Escopo por empresa: os productIds vêm do corpo da requisição, e sem o
+    // filtro a nota de um tenant era calculada com o cadastro fiscal (NCM,
+    // CST, alíquota, MVA) de um produto de outro.
     const fiscais = productIds.length
       ? await this.prisma.productFiscalData.findMany({
-          where: { productId: { in: productIds } },
+          where: { productId: { in: productIds }, product: { companyId } },
         })
       : [];
     const porProduto = new Map(fiscais.map((f) => [f.productId, f]));
@@ -5059,6 +5085,7 @@ export class NfeService {
           where: {
             productId: { in: productIds },
             ufDestino: operacao.ufDestino,
+            product: { companyId },
           },
         })
       : [];
@@ -5135,6 +5162,7 @@ export class NfeService {
           icmsRate: fiscal?.icmsRate,
           icmsReducao: fiscal?.icmsReducao,
           icmsBaseModality: fiscal?.icmsBaseModality,
+          fcpRate: fiscal?.fcpRate,
           pisCst: item.cstPis || fiscal?.pisCst,
           pisRate: fiscal?.pisRate,
           cofinsCst: item.cstCofins || fiscal?.cofinsCst,

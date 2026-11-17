@@ -25,6 +25,98 @@ const interna: ContextoOperacaoNfe = {
 };
 
 describe('nfe-imposto-payload.util', () => {
+  /**
+   * `vNF` soma os tributos cobrados do destinatário por fora da mercadoria —
+   * ST, FCP retido por ST e IPI (tag W16). O total da nota era fechado sem
+   * eles: enquanto só o Simples emitia, eram sempre zero; no Regime Normal, a
+   * primeira nota com ST ou IPI sairia com vNF menor que a soma dos itens.
+   */
+  describe('acréscimos que entram em vNF', () => {
+    it('é zero quando só há ICMS próprio', () => {
+      const { acrescimosNoTotal } = montarImpostosNfe([item(1000)], interna);
+
+      expect(acrescimosNoTotal).toBe(0);
+    });
+
+    it('soma o IPI destacado', () => {
+      const { acrescimosNoTotal, totais } = montarImpostosNfe(
+        [item(1000, { ipiCst: '50', ipiRate: 10 })],
+        interna,
+      );
+
+      expect(totais.vIPI_ttlnfe).toBe('100.00');
+      expect(acrescimosNoTotal).toBe(100);
+    });
+
+    it('soma o ICMS-ST e o FCP-ST', () => {
+      const { acrescimosNoTotal, totais } = montarImpostosNfe(
+        [
+          item(1000, {
+            icmsCst: '10',
+            stMva: 40,
+            stAliquota: 18,
+            stFcpRate: 2,
+          }),
+        ],
+        interna,
+      );
+
+      const esperado =
+        Number(totais.vST_ttlnfe) + Number(totais.vFCPST_ttlnfe ?? '0');
+      expect(esperado).toBeGreaterThan(0);
+      expect(acrescimosNoTotal).toBe(esperado);
+    });
+
+    /** O FCP do ICMS próprio já está dentro do preço: não entra em vNF. */
+    it('não soma o FCP do ICMS próprio', () => {
+      const { acrescimosNoTotal, totais } = montarImpostosNfe(
+        [item(1000, { fcpRate: 2 })],
+        interna,
+      );
+
+      expect(totais.vFCP_ttlnfe).toBe('20.00');
+      expect(acrescimosNoTotal).toBe(0);
+    });
+
+    it('acumula os itens da nota', () => {
+      const { acrescimosNoTotal } = montarImpostosNfe(
+        [
+          item(1000, { ipiCst: '50', ipiRate: 10 }),
+          item(500, { ipiCst: '50', ipiRate: 10 }),
+        ],
+        interna,
+      );
+
+      expect(acrescimosNoTotal).toBe(150);
+    });
+  });
+
+  describe('FCP sobre o ICMS próprio', () => {
+    it('envia o grupo de FCP no item e o total da nota', () => {
+      const { impostos, totais } = montarImpostosNfe(
+        [item(1000, { fcpRate: 2 })],
+        interna,
+      );
+
+      expect(impostos[0].ICMS).toMatchObject({
+        vBC: 1000,
+        vICMS_icms: 180,
+        vBCFCP: 1000,
+        pFCP: 2,
+        vFCP: 20,
+      });
+      expect(totais.vFCP_ttlnfe).toBe('20.00');
+    });
+
+    /** Campo ausente e campo zerado dizem coisas diferentes à SEFAZ. */
+    it('não envia o total de FCP quando nenhum item tem o fundo', () => {
+      const { impostos, totais } = montarImpostosNfe([item(1000)], interna);
+
+      expect(impostos[0].ICMS).not.toHaveProperty('vFCP');
+      expect(totais).not.toHaveProperty('vFCP_ttlnfe');
+    });
+  });
+
   describe('nomes de campo do schema', () => {
     /**
      * O schema usa sufixos: o valor do ICMS próprio é `vICMS_icms`. Enviar
