@@ -25,6 +25,7 @@ import { basePriceContext } from './item-base-price';
 import { PlanControlService } from '../../plan/plan-control.service';
 import { QuotationGroup } from './quotation.service';
 import { reassignQuotationSeries } from './quotation-series.util';
+import { PENDING_PAYMENT_LOCKED } from './quotation-workflow.service';
 import { copyItemLines } from './quotation-lines.service';
 import { itemValue } from './quotation-totals';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
@@ -229,6 +230,31 @@ export class QuotationCrudService {
         }
       }
 
+      // A condição padrão vem da empresa onde o orçamento é gravado (a
+      // principal, para a filial): as condições são cadastradas nela. Antes,
+      // a busca era pela filial e falhava depois de gravar o orçamento e
+      // consumir o número da série, deixando um orçamento sem pagamento
+      // (teste do LITE, 17/11/2026)
+      const quotationCompanyId =
+        mainCompany.principalCompanyId ?? mainCompany.id;
+      // A da empresa do orçamento primeiro; a da filial só se ela não tiver
+      // nenhuma
+      const defaultPaymentCondition =
+        (await this.prisma.paymentCondition.findFirst({
+          where: { companyId: quotationCompanyId, isActive: true },
+        })) ??
+        (quotationCompanyId !== mainCompany.id
+          ? await this.prisma.paymentCondition.findFirst({
+              where: { companyId: mainCompany.id, isActive: true },
+            })
+          : null);
+
+      if (!defaultPaymentCondition) {
+        throw new BadRequestException(
+          'Nenhuma condição de pagamento ativa encontrada para a empresa. Cadastre uma condição de pagamento antes de criar o orçamento.',
+        );
+      }
+
       // Atomic increment: increment first, then use the returned value
       const updatedSeries = await this.prisma.saleSeries.update({
         where: { id: seriesId },
@@ -240,9 +266,7 @@ export class QuotationCrudService {
         data: {
           description,
           contactSourceId,
-          companyId: mainCompany.principalCompanyId
-            ? mainCompany.principalCompanyId
-            : mainCompany.id,
+          companyId: quotationCompanyId,
           subCompanyId: mainCompany.id,
           sellerId,
           clientId,
@@ -270,20 +294,6 @@ export class QuotationCrudService {
           },
         },
       });
-
-      const defaultPaymentCondition =
-        await this.prisma.paymentCondition.findFirst({
-          where: {
-            companyId: createQuotationDto.companyId,
-            isActive: true,
-          },
-        });
-
-      if (!defaultPaymentCondition) {
-        throw new Error(
-          'Nenhuma condição de pagamento encontrada para a empresa',
-        );
-      }
 
       await this.prisma.quotationPayment.create({
         data: {
@@ -829,6 +839,15 @@ export class QuotationCrudService {
         throw new BadRequestException(
           'Esta venda já foi cobrada ou enviada ao caixa, então não troca de série. Cancele e faça a venda de novo na série certa.',
         );
+      }
+      // A venda pendente de pagamento também não troca: o título da entrada
+      // já saiu pelo faturamento da série, e a liberação seguiria o
+      // faturamento da série nova (PA, 12/11; VR-11, 17/11/2026)
+      if (
+        isSeriesChange &&
+        existingQuotation.status === QuotationStatus.PENDING_PAYMENT
+      ) {
+        throw new BadRequestException(PENDING_PAYMENT_LOCKED);
       }
       // `as` evita que o TS estreite para null: a atribuição acontece dentro
       // do callback da transação, que a análise de fluxo não acompanha.

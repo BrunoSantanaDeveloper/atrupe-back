@@ -3,6 +3,7 @@ import { QuotationCrudService } from './quotation-crud.service';
 import { PrismaService } from 'nestjs-prisma';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { QuotationStatus } from '@prisma/client';
+import { PENDING_PAYMENT_LOCKED } from './quotation-workflow.service';
 
 const mockCompanyId = 'company-uuid-123';
 const mockQuotationId = 'quotation-uuid-456';
@@ -178,6 +179,69 @@ describe('QuotationCrudService', () => {
       expect(result).toBeDefined();
       expect(result.id).toBe(mockQuotationId);
       expect(prisma.quotation.create).toHaveBeenCalled();
+    });
+
+    // Teste do LITE (17/11/2026): o orçamento pelo segundo CNPJ não achava a
+    // condição, cadastrada na principal, e ficava gravado sem pagamento
+    describe('pela filial', () => {
+      const filialId = 'filial-uuid';
+      beforeEach(() => {
+        prisma.company.findMany.mockResolvedValue([
+          { id: mockCompanyId, principalCompanyId: null },
+          { id: filialId, principalCompanyId: mockCompanyId },
+        ]);
+        prisma.company.findUnique.mockResolvedValue({
+          id: filialId,
+          principalCompanyId: mockCompanyId,
+        });
+        prisma.saleSeries.findUnique.mockResolvedValue(mockSeries);
+        prisma.quotation.create.mockResolvedValue(mockQuotation);
+        prisma.saleSeries.update.mockResolvedValue(mockSeries);
+        prisma.deliveryInfo.create.mockResolvedValue({});
+        prisma.quotationPayment.create.mockResolvedValue({});
+      });
+      afterEach(() => {
+        prisma.company.findMany.mockResolvedValue([
+          { id: mockCompanyId, principalCompanyId: null },
+        ]);
+      });
+      const dto = {
+        companyId: filialId,
+        sellerId: mockSellerId,
+        seriesId: mockSeriesId,
+        clientId: 'client-uuid',
+        subCompanyId: null,
+      };
+
+      it('usa a condição da principal, onde o orçamento é gravado', async () => {
+        prisma.paymentCondition.findFirst.mockResolvedValue(
+          mockPaymentCondition,
+        );
+
+        await service.create(dto, undefined, mockCompanyId);
+
+        expect(prisma.paymentCondition.findFirst).toHaveBeenCalledWith({
+          where: { companyId: mockCompanyId, isActive: true },
+        });
+        expect(prisma.quotation.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              companyId: mockCompanyId,
+              subCompanyId: filialId,
+            }),
+          }),
+        );
+      });
+
+      it('sem condição, recusa antes de gravar e de gastar o número', async () => {
+        prisma.paymentCondition.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.create(dto, undefined, mockCompanyId),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+        expect(prisma.quotation.create).not.toHaveBeenCalled();
+      });
     });
 
     it('grava a venda rápida sem cliente', async () => {
@@ -440,6 +504,24 @@ describe('QuotationCrudService', () => {
           ),
         ).rejects.toThrow('não troca de série');
         expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+      });
+
+      it('a venda pendente de pagamento não troca de série', async () => {
+        prisma.quotation.findUnique.mockResolvedValue({
+          ...quotationNaSerieAntiga,
+          status: QuotationStatus.PENDING_PAYMENT,
+        });
+
+        await expect(
+          service.update(
+            mockQuotationId,
+            { seriesId: newSeriesId },
+            undefined,
+            mockCompanyId,
+          ),
+        ).rejects.toThrow(PENDING_PAYMENT_LOCKED);
+        expect(prisma.saleSeries.update).not.toHaveBeenCalled();
+        expect(prisma.quotationPayment.updateMany).not.toHaveBeenCalled();
       });
 
       it('renumera pelo contador da série nova', async () => {
