@@ -45,6 +45,7 @@ import {
 } from '../utils/project-date.util';
 import { aliquotaInterestadual as aliquotaInterestadualIcms } from '../utils/icms-interestadual.util';
 import { resolverMva } from '../utils/icms-st.util';
+import { codigosCstDeOutroRegime } from '../utils/icms-cst.util';
 import {
   isOptanteSimples,
   isRegimeNormal,
@@ -1511,11 +1512,15 @@ export class NfeService {
     const baseData = await this.prepareStandalone(companyId, clientId);
 
     const emissaoOverride = this.getEmissaoFromDraft(draftData);
-    const itemsOverride = await this.itensParaReemitir(
+    const itemsOverride = await this.itensComCstDoRegime(
       companyId,
       originalNfe,
-      draftData,
-      draftData?.items || xmlData?.items || [],
+      await this.itensParaReemitir(
+        companyId,
+        originalNfe,
+        draftData,
+        draftData?.items || xmlData?.items || [],
+      ),
     );
 
     const mappedItems = itemsOverride.map((item: any) => ({
@@ -2292,6 +2297,72 @@ export class NfeService {
    * quando a linha da O.S. tem desconto. Desconto digitado numa linha sem
    * desconto fica, assim como descrição e dados fiscais da tentativa.
    */
+  /**
+   * Relê do cadastro o CST de ICMS dos itens cujo código guardado não serve ao
+   * regime do emissor.
+   *
+   * O CST do item vence o do cadastro no cálculo — é o que permite mudar a
+   * tributação de uma operação específica. Mas a tentativa rejeitada guardou o
+   * código que ERA o do cadastro, e "Corrigir e reemitir" existe justamente
+   * para depois de arrumar o cadastro: sem reler, a nota volta a sair com o
+   * CSOSN que o cálculo acabou de recusar, e quem corrigiu os produtos conclui
+   * que a correção não funcionou.
+   *
+   * Troca só o código do outro regime (CSOSN em emissor do Regime Normal, CST
+   * em optante do Simples), que nunca é escolha deliberada: o cálculo o
+   * recusa, e a SEFAZ também. Um CST válido digitado na nota continua valendo.
+   */
+  private async itensComCstDoRegime(
+    companyId: string,
+    nfe: { invoicyConfigId?: string | null },
+    itens: any[],
+  ): Promise<any[]> {
+    const productIds = [
+      ...new Set(itens.map((item) => item?.productId).filter(Boolean)),
+    ] as string[];
+    if (!productIds.length) return itens;
+
+    // O emissor da tentativa, não o padrão de hoje: a nota pode ter saído por
+    // outro, com regime diferente.
+    const emissor = await this.prisma.invoicyConfig.findFirst({
+      where: nfe.invoicyConfigId
+        ? { id: nfe.invoicyConfigId, companyId }
+        : { companyId, isDefault: true },
+      select: { emitCrt: true },
+    });
+
+    const doOutroRegime = new Set(codigosCstDeOutroRegime(emissor?.emitCrt));
+    const precisaReler = itens.some((item) =>
+      doOutroRegime.has(String(item?.cstIcms ?? '').trim()),
+    );
+    if (!precisaReler) return itens;
+
+    const fiscais = await this.prisma.productFiscalData.findMany({
+      where: { productId: { in: productIds }, product: { companyId } },
+      select: { productId: true, icmsCst: true },
+    });
+    const porProduto = new Map(fiscais.map((f) => [f.productId, f]));
+
+    return itens.map((item) => {
+      const guardado = String(item?.cstIcms ?? '').trim();
+      if (!doOutroRegime.has(guardado)) return item;
+
+      const doCadastro = (
+        porProduto.get(item?.productId)?.icmsCst || ''
+      ).trim();
+      // Cadastro ainda não corrigido: mantém o código e deixa o cálculo barrar
+      // com a mensagem que manda arrumar o produto. Apagar aqui trocaria essa
+      // orientação por um erro de campo vazio.
+      if (!doCadastro || doOutroRegime.has(doCadastro)) return item;
+
+      this.logger.log(
+        `Reemissão: item ${item?.productId} tinha CST ${guardado}, do outro ` +
+          `regime; relido do cadastro como ${doCadastro}.`,
+      );
+      return { ...item, cstIcms: doCadastro };
+    });
+  }
+
   private async itensParaReemitir(
     companyId: string,
     nfe: { id: string; orderId?: string | null },

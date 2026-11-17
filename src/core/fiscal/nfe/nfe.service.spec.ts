@@ -1405,6 +1405,90 @@ describe('NfeService', () => {
       });
     });
 
+    /**
+     * O caso da empresa que migra de regime: a tentativa guardou o CSOSN que
+     * era o do cadastro, e "Corrigir e reemitir" existe para depois de
+     * arrumar o cadastro. Sem reler, a nota volta a sair com o código que o
+     * cálculo acabou de recusar.
+     */
+    describe('CST do outro regime guardado na tentativa', () => {
+      const tentativaComCsosn = () =>
+        prisma.nfe.findFirst.mockResolvedValue({
+          ...rejeitadaCom({
+            versaoItens: 2,
+            items: [
+              {
+                productId: 'product-1',
+                itemNumber: 1,
+                quantity: 2,
+                unitValue: 100,
+                discount: 0,
+                cstIcms: '102',
+                cstPis: '99',
+                cstCofins: '99',
+              },
+            ],
+          }),
+          motivoRejeicao:
+            'Item 1: O código 102 é CSOSN, do Simples Nacional, e não vale no Regime Normal.',
+          invoicyConfigId: 'config-id',
+        });
+
+      it('relê o CST do cadastro quando o emissor é do Regime Normal', async () => {
+        tentativaComCsosn();
+        prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 3 });
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          { productId: 'product-1', icmsCst: '00' },
+        ]);
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items[0].cstIcms).toBe('00');
+        // Só do próprio tenant: o productId vem do rascunho.
+        expect(prisma.productFiscalData.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              productId: { in: ['product-1'] },
+              product: { companyId: mockCompanyId },
+            },
+          }),
+        );
+      });
+
+      /** Cadastro ainda errado: mantém o código e deixa o cálculo orientar. */
+      it('mantém o código quando o cadastro também não foi corrigido', async () => {
+        tentativaComCsosn();
+        prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 3 });
+        prisma.productFiscalData.findMany.mockResolvedValue([
+          { productId: 'product-1', icmsCst: '102' },
+        ]);
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items[0].cstIcms).toBe('102');
+      });
+
+      /** No Simples o CSOSN é o código certo: nada a reler. */
+      it('não toca no CSOSN quando o emissor é optante do Simples', async () => {
+        tentativaComCsosn();
+        prisma.invoicyConfig.findFirst.mockResolvedValue({ emitCrt: 1 });
+
+        const result = await service.prepareReissue(
+          mockCompanyId,
+          'nfe-rejeitada',
+        );
+
+        expect(result.items[0].cstIcms).toBe('102');
+        expect(prisma.productFiscalData.findMany).not.toHaveBeenCalled();
+      });
+    });
+
     it('preserva as informações complementares digitadas antes da rejeição', async () => {
       prisma.nfe.findFirst.mockResolvedValue(
         rejeitadaCom({ additionalInfo: 'Pedido 4821 - entregar na portaria' }),
