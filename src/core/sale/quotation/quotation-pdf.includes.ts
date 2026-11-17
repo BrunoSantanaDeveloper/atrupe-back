@@ -76,6 +76,8 @@ export const PDF_SERIES_SELECT = {
   code: true,
   title: true,
   proposalValidity: true,
+  textBeforeItems: true,
+  textAfterItems: true,
 } as const;
 
 export const PDF_PRODUCT_ITEM_INCLUDE = {

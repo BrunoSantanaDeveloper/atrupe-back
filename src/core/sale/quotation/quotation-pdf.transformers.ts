@@ -77,6 +77,8 @@ type QuotationPdfRaw = {
     code: string;
     title: string;
     proposalValidity: number | null;
+    textBeforeItems?: string | null;
+    textAfterItems?: string | null;
   } | null;
   order?: {
     id: string;
@@ -88,7 +90,23 @@ type QuotationPdfRaw = {
   quotationPayment?: any;
 };
 
-export function transformPdfCompany(company: QuotationPdfRaw['company']) {
+/** Texto da série quando ela tem um; senão, o da empresa. */
+function proposalText(
+  seriesText: string | null | undefined,
+  companyText: string | null,
+) {
+  return seriesText?.trim() ? seriesText : companyText;
+}
+
+/**
+ * Os textos antes e depois dos itens saem em `company` porque é onde o PDF
+ * sempre os leu. Como no legado, cada série de venda pode ter os seus; a série
+ * sem texto usa o da empresa (Configuração da empresa › Personalização).
+ */
+export function transformPdfCompany(
+  company: QuotationPdfRaw['company'],
+  series?: QuotationPdfRaw['series'],
+) {
   return {
     name: company.name,
     cnpj: company.cnpj,
@@ -108,8 +126,14 @@ export function transformPdfCompany(company: QuotationPdfRaw['company']) {
         }
       : null,
     logo: company.logoUrl,
-    textBeforeItems: company.textBeforeItems,
-    textAfterItems: company.textAfterItems,
+    textBeforeItems: proposalText(
+      series?.textBeforeItems,
+      company.textBeforeItems,
+    ),
+    textAfterItems: proposalText(
+      series?.textAfterItems,
+      company.textAfterItems,
+    ),
     socialNetworks: {
       instagram: company.instagram,
       facebook: company.facebook,
@@ -397,7 +421,7 @@ export function transformQuotationToPdfData(
   loggedEmployeeSignatureUrl: string | null = null,
 ) {
   return {
-    company: transformPdfCompany(quotation.company),
+    company: transformPdfCompany(quotation.company, quotation.series),
     client: transformPdfClient(quotation.client),
     contact: transformPdfContact(quotation.contact),
     quotation: transformPdfQuotationInfo(quotation, loggedEmployeeSignatureUrl),

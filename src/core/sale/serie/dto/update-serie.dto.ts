@@ -4,6 +4,7 @@ import {
   ProductionStatusKind,
   SendToProductionKind,
 } from '@prisma/client';
+import { Transform } from 'class-transformer';
 import {
   IsString,
   IsInt,
@@ -14,6 +15,7 @@ import {
   IsUUID,
   Min,
 } from 'class-validator';
+import { blankProposalTextToNull } from './proposal-text';
 
 export class UpdateSaleSeriesDto {
   @ApiProperty({
@@ -89,6 +91,30 @@ export class UpdateSaleSeriesDto {
   @IsEnum(ProductionStatusKind)
   @IsOptional()
   productionStatus?: ProductionStatusKind;
+
+  @ApiProperty({
+    description:
+      'Texto da proposta comercial antes dos itens. Em branco, vale o texto da empresa.',
+    example: 'Segue abaixo conforme sua solicitação:',
+    required: false,
+    nullable: true,
+  })
+  @Transform(blankProposalTextToNull)
+  @IsString()
+  @IsOptional()
+  textBeforeItems?: string | null;
+
+  @ApiProperty({
+    description:
+      'Texto da proposta comercial depois dos itens. Em branco, vale o texto da empresa.',
+    example: '1) Crédito e condição de pagamento sujeito à aprovação;',
+    required: false,
+    nullable: true,
+  })
+  @Transform(blankProposalTextToNull)
+  @IsString()
+  @IsOptional()
+  textAfterItems?: string | null;
 
   @ApiProperty({
     description: 'Indica se a série está ativa.',

@@ -4,7 +4,9 @@ import {
   ProductionStatusKind,
   SendToProductionKind,
 } from '@prisma/client';
+import { Transform } from 'class-transformer';
 import { IsString, IsInt, IsOptional, IsEnum } from 'class-validator';
+import { blankProposalTextToNull } from './proposal-text';
 
 export class CreateSaleSeriesDto {
   @ApiProperty({
@@ -68,6 +70,30 @@ export class CreateSaleSeriesDto {
   @IsEnum(ProductionStatusKind)
   @IsOptional()
   productionStatus?: ProductionStatusKind;
+
+  @ApiProperty({
+    description:
+      'Texto da proposta comercial antes dos itens. Em branco, vale o texto da empresa.',
+    example: 'Segue abaixo conforme sua solicitação:',
+    required: false,
+    nullable: true,
+  })
+  @Transform(blankProposalTextToNull)
+  @IsString()
+  @IsOptional()
+  textBeforeItems?: string | null;
+
+  @ApiProperty({
+    description:
+      'Texto da proposta comercial depois dos itens. Em branco, vale o texto da empresa.',
+    example: '1) Crédito e condição de pagamento sujeito à aprovação;',
+    required: false,
+    nullable: true,
+  })
+  @Transform(blankProposalTextToNull)
+  @IsString()
+  @IsOptional()
+  textAfterItems?: string | null;
 
   isActive?: boolean;
 

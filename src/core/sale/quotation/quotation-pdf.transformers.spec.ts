@@ -84,6 +84,72 @@ describe('QuotationPdfTransformers', () => {
 
       expect(result.address).toBeNull();
     });
+
+    describe('textos da proposta por série de venda', () => {
+      const empresa = {
+        name: 'Creativa',
+        cnpj: null,
+        email: null,
+        phone: null,
+        mobile: null,
+        siteUrl: null,
+        logoUrl: null,
+        textBeforeItems: 'Segue abaixo conforme sua solicitação:',
+        textAfterItems: '1) Crédito sujeito à aprovação;',
+        instagram: null,
+        facebook: null,
+        linkedin: null,
+        address: [],
+      };
+      const serie = (
+        textBeforeItems: string | null,
+        textAfterItems: string | null,
+      ) => ({
+        code: 'L1',
+        title: 'Orçamento',
+        proposalValidity: 10,
+        textBeforeItems,
+        textAfterItems,
+      });
+
+      it('usa os textos da série quando ela tem os seus', () => {
+        const result = transformPdfCompany(
+          empresa,
+          serie('Proposta de locação:', 'Locação mínima de 30 dias.'),
+        );
+
+        expect(result.textBeforeItems).toBe('Proposta de locação:');
+        expect(result.textAfterItems).toBe('Locação mínima de 30 dias.');
+      });
+
+      it('série sem texto usa o da empresa', () => {
+        for (const vazio of [null, '', '  \n ']) {
+          const result = transformPdfCompany(empresa, serie(vazio, vazio));
+
+          expect(result.textBeforeItems).toBe(empresa.textBeforeItems);
+          expect(result.textAfterItems).toBe(empresa.textAfterItems);
+        }
+      });
+
+      it('cada texto cai para o da empresa por conta própria', () => {
+        const result = transformPdfCompany(
+          empresa,
+          serie(null, 'Locação mínima de 30 dias.'),
+        );
+
+        expect(result.textBeforeItems).toBe(empresa.textBeforeItems);
+        expect(result.textAfterItems).toBe('Locação mínima de 30 dias.');
+      });
+
+      it('orçamento sem série usa os textos da empresa', () => {
+        expect(transformPdfCompany(empresa, null).textBeforeItems).toBe(
+          empresa.textBeforeItems,
+        );
+        expect(transformPdfCompany(empresa).textAfterItems).toBe(
+          empresa.textAfterItems,
+        );
+      });
+    });
   });
 
   describe('transformPdfClient', () => {
@@ -625,6 +691,55 @@ describe('QuotationPdfTransformers', () => {
       expect(result.quotationItems).toHaveLength(0);
       expect(result.delivery).toBeNull();
       expect(result.payment).toBeNull();
+    });
+
+    it('o PDF sai com o texto da série do orçamento', () => {
+      const quotation = {
+        id: 'test-id',
+        companyId: 'company-id',
+        clientId: null,
+        quotationNumber: 7,
+        description: null,
+        status: 'DRAFT',
+        totalValue: 0,
+        createdAt: new Date(),
+        dueDate: null,
+        approvedAt: null,
+        finishedAt: null,
+        company: {
+          name: 'Company',
+          cnpj: null,
+          email: null,
+          phone: null,
+          mobile: null,
+          siteUrl: null,
+          logoUrl: null,
+          textBeforeItems: 'Texto da empresa antes',
+          textAfterItems: 'Texto da empresa depois',
+          instagram: null,
+          facebook: null,
+          linkedin: null,
+          address: [],
+        },
+        client: null,
+        seller: { name: 'Seller' },
+        series: {
+          code: 'L1',
+          title: 'Orçamento',
+          proposalValidity: 10,
+          textBeforeItems: 'Texto da série antes',
+          textAfterItems: null,
+        },
+        order: null,
+        quotationProduct: [],
+        deliveryInfo: null,
+        quotationPayment: null,
+      };
+
+      const result = transformQuotationToPdfData(quotation);
+
+      expect(result.company.textBeforeItems).toBe('Texto da série antes');
+      expect(result.company.textAfterItems).toBe('Texto da empresa depois');
     });
   });
 });
