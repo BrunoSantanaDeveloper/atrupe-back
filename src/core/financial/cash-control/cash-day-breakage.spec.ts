@@ -47,7 +47,7 @@ describe('CashDayService.detail — quebra ligada ao fechamento', () => {
         movement({
           id: 'transfer',
           type: 'TRANSFER_INCOME',
-          amount: 845,
+          amount: 84500,
           description: 'Fechamento FC nº 7 · Dinheiro',
           awaitingApproval: true,
           linkedId: 'fechamento-7',
@@ -56,12 +56,12 @@ describe('CashDayService.detail — quebra ligada ao fechamento', () => {
           id: 'quebra',
           type: 'OUTCOME',
           kind: 'SHORTAGE',
-          amount: 5,
+          amount: 500,
           description: 'Diferença da contagem · FC nº 7',
           responsibleName: 'Paulo',
           linkedId: 'fechamento-7',
         }),
-        movement({ id: 'outro', amount: 10, awaitingApproval: true }),
+        movement({ id: 'outro', amount: 1000, awaitingApproval: true }),
       ],
     };
     const prisma = {

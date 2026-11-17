@@ -54,8 +54,10 @@ type Candidate = {
   description: string;
 };
 
+// Os lançamentos e as parcelas já estão em centavos, como a linha do OFX
+// (17/11/2026: antes multiplicava por 100 e nada casava com a baixa antiga)
 const signed = (type: TransactionType, amount: number) =>
-  (INCOMING.includes(type) ? 1 : -1) * Math.round(amount * 100);
+  (INCOMING.includes(type) ? 1 : -1) * Math.round(amount);
 
 /**
  * A conciliação com o extrato (CX-6): o OFX importado não duplica (FITID);
@@ -184,14 +186,14 @@ export class ConciliationService {
         kind: 'receivable' as const,
         id: row.id,
         day: dayOf(row.provisionDate ?? row.dueDate),
-        amount: Math.round((row.paidAmount ?? row.amount) * 100),
+        amount: Math.round(row.paidAmount ?? row.amount),
         description: `Previsto · ${row.receivable?.description ?? ''}`,
       })),
       ...payables.map((row) => ({
         kind: 'payable' as const,
         id: row.id,
         day: dayOf(row.provisionDate ?? row.dueDate),
-        amount: -Math.round((row.paidAmount ?? row.amount) * 100),
+        amount: -Math.round(row.paidAmount ?? row.amount),
         description: `Previsto · ${row.payable?.description ?? ''}`,
       })),
     ].filter((row) => !used.has(row.id));

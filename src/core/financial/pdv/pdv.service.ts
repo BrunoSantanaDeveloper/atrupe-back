@@ -1422,7 +1422,8 @@ export class PdvService {
       credit?.applies &&
       credit.enforcing &&
       credit.limit !== null &&
-      credit.used + toReais(sale.total) > credit.limit
+      // Tudo em centavos: o usado, o limite e o total da venda
+      credit.used + sale.total > credit.limit
     ) {
       bad('O faturamento passa do limite de crédito do cliente');
     }

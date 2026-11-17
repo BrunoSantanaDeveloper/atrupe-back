@@ -12,7 +12,8 @@ describe('AccountService.update — saldo inicial', () => {
     kind: 'CASH',
     cashControl: true,
     openingDate: new Date('2026-10-01T00:00:00.000Z'),
-    openingBalance: 150.5,
+    // O banco guarda centavos, como a API (17/11/2026)
+    openingBalance: 15050,
   };
 
   function build(withHistory: boolean) {
@@ -87,7 +88,7 @@ describe('AccountService.update — saldo inicial', () => {
       openingBalance: 20000,
       openingDate: '2026-10-01',
     } as any);
-    expect(update.mock.calls[0][0].data.openingBalance).toBe(200);
+    expect(update.mock.calls[0][0].data.openingBalance).toBe(20000);
   });
 });
 

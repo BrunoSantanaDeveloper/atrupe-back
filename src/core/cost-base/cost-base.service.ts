@@ -560,13 +560,14 @@ export class CostBaseService {
       ]);
     const sold = soldVolumesOf(sales.uses, machines, groups);
 
-    // O realizado, em centavos: o contas a pagar guarda reais
+    // O realizado, em centavos, como o contas a pagar guarda (17/11/2026:
+    // antes multiplicava por 100, e a despesa saía 100 vezes maior)
     const actualOf = new Map(outflows);
     for (const row of payables) {
       actualOf.set(
         row.subCategoryId!,
         (actualOf.get(row.subCategoryId!) ?? 0) +
-          Math.round((row._sum.totalAmount ?? 0) * 100),
+          Math.round(row._sum.totalAmount ?? 0),
       );
     }
 
@@ -974,7 +975,7 @@ export class CostBaseService {
       if (reversed.has(row.id)) continue;
       byAccount.set(
         row.subCategoryId!,
-        (byAccount.get(row.subCategoryId!) ?? 0) + Math.round(row.amount * 100),
+        (byAccount.get(row.subCategoryId!) ?? 0) + Math.round(row.amount),
       );
     }
     return byAccount;
@@ -984,7 +985,7 @@ export class CostBaseService {
    * O recebido no período: as parcelas do contas a receber pagas, pela
    * data do pagamento; a provisionada (cartão a compensar) vale pela data da
    * provisão, como no fluxo de caixa, e a compensada não conta duas vezes.
-   * O valor pago (sem ele, o da parcela), em reais no banco; aqui, centavos.
+   * O valor pago (sem ele, o da parcela), em centavos, como no banco.
    */
   private async receivedOf(companyId: string, start: Date, end: Date) {
     const rows = await this.prisma.receivableInstallment.findMany({
@@ -999,7 +1000,7 @@ export class CostBaseService {
       select: { amount: true, paidAmount: true },
     });
     return rows.reduce(
-      (sum, row) => sum + Math.round((row.paidAmount ?? row.amount) * 100),
+      (sum, row) => sum + Math.round(row.paidAmount ?? row.amount),
       0,
     );
   }

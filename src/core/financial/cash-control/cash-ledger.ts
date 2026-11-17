@@ -7,9 +7,16 @@ import {
 
 /**
  * O livro-caixa (CX-2, CX-3): a escala do dinheiro, o caixa em que o
- * lançamento entra e o lançamento em si. As tabelas do caixa guardam reais
- * (Float), como o resto do financeiro; a API nova do caixa do dia fala em
- * centavos (contrato), e a conversão fica só aqui.
+ * lançamento entra e o lançamento em si. O financeiro inteiro guarda
+ * CENTAVOS num campo Float: títulos, parcelas, baixas, folha, orçamento e,
+ * desde 17/11/2026, também o caixa. A API do caixa do dia fala em centavos.
+ *
+ * Até 17/11 este arquivo partia de "as tabelas guardam reais": gravava o
+ * caixa em reais e multiplicava por 100 tudo o que lia. A baixa de R$
+ * 3.600,00 da folha (360000) aparecia como R$ 360.000,00 no Controle de
+ * caixa, e o que o caixa gravava saía dividido por 100 nas telas antigas.
+ * O `toCents` e o `toReais` ficaram só como arredondamento, para não mexer
+ * em quem os chama.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -40,12 +47,12 @@ export async function actorOfUser(
   return { id: user.userId, name };
 }
 
-/** Reais (banco) → centavos (API). */
-export const toCents = (reais: number | null | undefined) =>
-  reais === null || reais === undefined ? null : Math.round(reais * 100);
+/** O valor do banco para a API: os dois em centavos; só arredonda. */
+export const toCents = (stored: number | null | undefined) =>
+  stored === null || stored === undefined ? null : Math.round(stored);
 
-/** Centavos (API) → reais (banco). */
-export const toReais = (cents: number) => Math.round(cents) / 100;
+/** O valor da API para o banco: os dois em centavos; só arredonda. */
+export const toReais = (cents: number) => Math.round(cents);
 
 export const INCOMING: TransactionType[] = ['INCOME', 'TRANSFER_INCOME'];
 

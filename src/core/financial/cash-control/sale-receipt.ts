@@ -279,7 +279,7 @@ export async function recordSaleReceipt(
   });
   const remaining = Math.max(
     0,
-    input.total - Math.round((received._sum.amount ?? 0) * 100),
+    input.total - Math.round(received._sum.amount ?? 0),
   );
   const pending = existing.find((row) => row.status === 'PENDING');
   if (remaining > 0) {
