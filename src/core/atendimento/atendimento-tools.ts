@@ -221,7 +221,69 @@ export class AtendimentoTools {
         },
         run: (call) => this.validateCode(call),
       },
+      {
+        name: 'link_da_mensalidade',
+        description:
+          'O link de pagamento da mensalidade em aberto de uma empresa cliente do Atrupe, para quem pedir, sem confirmação de acesso (decisão de 17/11/2026: pagar não compromete a conta). Use quando a pessoa pede o boleto, o Pix ou o link da mensalidade e não foi identificada pelo telefone: peça o CNPJ da empresa. Devolve só o nome da empresa, o vencimento, o valor e o link; nada de plano, situação ou outros dados.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            cnpj: {
+              type: 'string',
+              description: 'O CNPJ da empresa, com ou sem pontuação',
+            },
+          },
+          required: ['cnpj'],
+        },
+        run: (call) => this.paymentLink(call),
+      },
     ];
+  }
+
+  /**
+   * O link da mensalidade em aberto, pelo CNPJ, para quem pedir. Só o que a
+   * página de pagamento já mostra: empresa, vencimento, valor e o link.
+   */
+  async paymentLink({ input }: ToolCall) {
+    const cnpj = String(input?.cnpj ?? '').replace(/\D/g, '');
+    if (cnpj.length !== 14) {
+      return {
+        ok: false,
+        code: 'cnpj_invalido',
+        message: 'Peça o CNPJ completo da empresa, com os 14 números.',
+      };
+    }
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT c."id" FROM "companies" c
+      WHERE c."cnpj" IS NOT NULL
+        AND regexp_replace(c."cnpj", '\\D', '', 'g') = ${cnpj}
+      ORDER BY c."isActive" DESC
+      LIMIT 2`;
+    if (!rows.length) {
+      return {
+        ok: false,
+        code: 'cnpj_nao_encontrado',
+        message:
+          'Nenhuma empresa do Atrupe tem este CNPJ. Confira o número com a pessoa ou passe para a equipe.',
+      };
+    }
+    const company = await this.prisma.company.findUnique({
+      where: { id: rows[0].id },
+      select: { id: true, name: true },
+    });
+    if (!company) return { ok: false, code: 'cnpj_nao_encontrado' };
+    const charge = (await this.sessionOf(company.id)).billing.chargeInFocus;
+    return {
+      ok: true,
+      empresa: company.name,
+      mensalidade_em_aberto: charge
+        ? {
+            vencimento: charge.dueDate,
+            valor_reais: charge.value,
+            link_pagamento: charge.invoiceUrl,
+          }
+        : null,
+    };
   }
 
   async accountSituation(

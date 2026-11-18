@@ -2,7 +2,7 @@
   "app": "whatsapp-support",
   "version": "1.0.0",
   "installed_at": "2026-11-07T19:26:22.045Z",
-  "updated_at": "2026-11-16T20:27:56.483Z",
+  "updated_at": "2026-11-18T15:31:33.889Z",
   "versions": {
     "checked_on": "2026-11-07",
     "chatwoot": "4.19.1",
@@ -27,7 +27,7 @@
     "bot/src/ai/project.mjs": "86e2de0aa87dda19e33a4b358b5bf25df3e85cf3dc1b740bcdc3b47bbf15f626",
     "bot/src/bot.mjs": "7ce6a5a371d1720f062e31fb62442bbb90d65a4f0d028164eb6e277ec580186a",
     "bot/src/chatwoot.mjs": "56e93a34d80182dca7a1341ba4e471876436e64b26e3131447893dfeacc40be2",
-    "bot/src/conversation.mjs": "ab5e381be39c1849dbb2bbf916c7a589c6d0180f7254fe359eb04161701c0d7b",
+    "bot/src/conversation.mjs": "046b2c0df1462ac5826dd691293d99e245c381bccc332b4ebfed93110324f5a9",
     "bot/src/documents.mjs": "cac11781b1c736b54dbe28cfdb113c34a3c0685d18f5f5ff07a855c4e5065f2c",
     "bot/src/http.mjs": "888914b09f6aa54ee5d3698a478cc835ccf01a6a337978a8181643b63718ac0c",
     "bot/src/log.mjs": "80c1e1753b81d153067a53b7b6bff30a1c102d1031231e5fef8cf9abc4d75c0f",

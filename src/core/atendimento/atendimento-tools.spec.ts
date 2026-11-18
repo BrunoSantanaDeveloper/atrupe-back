@@ -83,6 +83,10 @@ function makeTools({
       findMany: jest.fn(async ({ where }) =>
         where.id ? companiesById : companiesByUser,
       ),
+      findUnique: jest.fn(
+        async ({ where }) =>
+          companiesById.find((company) => company.id === where.id) ?? null,
+      ),
     },
     subscription: {
       findFirst: jest.fn(async () =>
@@ -521,6 +525,7 @@ describe('AtendimentoTools — confirmação por código de quem escreve de outr
       'situacao_da_conta',
       'confirmar_acesso',
       'validar_codigo',
+      'link_da_mensalidade',
     ]);
   });
 
@@ -665,5 +670,43 @@ describe('AtendimentoTools — confirmação por código de quem escreve de outr
       ok: false,
       code: 'sem_codigo_valido',
     });
+  });
+});
+
+describe('AtendimentoTools — link da mensalidade para quem pedir', () => {
+  it('pede o CNPJ completo', async () => {
+    const { tools, prisma } = makeTools();
+    expect(await tools.paymentLink(call({ cnpj: '12.345' }))).toMatchObject({
+      ok: false,
+      code: 'cnpj_invalido',
+    });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('CNPJ fora do cadastro', async () => {
+    const { tools } = makeTools();
+    expect(
+      await tools.paymentLink(call({ cnpj: '12.345.678/0001-90' })),
+    ).toMatchObject({ ok: false, code: 'cnpj_nao_encontrado' });
+  });
+
+  it('devolve só a empresa e a mensalidade em aberto, sem plano nem situação', async () => {
+    const { tools, queries } = makeTools({
+      companiesByPhone: [{ id: 'c1' }],
+      companiesById: [{ id: 'c1', name: 'Gráfica Sol', legalName: null }],
+    });
+    const result = await tools.paymentLink(
+      call({ cnpj: '12.345.678/0001-90' }, ''),
+    );
+    expect(result).toEqual({
+      ok: true,
+      empresa: 'Gráfica Sol',
+      mensalidade_em_aberto: {
+        vencimento: '2026-11-04',
+        valor_reais: 189.9,
+        link_pagamento: 'https://www.asaas.com/i/abc',
+      },
+    });
+    expect(queries.some((sql) => sql.includes('"cnpj"'))).toBe(true);
   });
 });

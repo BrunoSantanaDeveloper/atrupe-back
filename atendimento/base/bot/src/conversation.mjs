@@ -120,10 +120,14 @@ function factText(value) {
   return String(value);
 }
 
-function field(value) {
-  const text = oneLine(value);
+function field(value, { quote = false } = {}) {
+  let text = oneLine(value);
+  // Texto que passou por pessoas (o nome da empresa que o cliente cadastrou, o que ele escreveu, o resumo da
+  // IA) vai como citação e sem marcação, para quem atende não ler um pedido escondido como se fosse do sistema.
+  if (quote) text = text.replace(/[*_`#>|~[\]<]/g, "").replace(/[“”"]/g, "'").replace(/\s+/g, " ").trim();
   if (!text) return NOT_INFORMED;
-  return text.length > CONTACT_LIMITS.summaryField ? `${text.slice(0, CONTACT_LIMITS.summaryField)}...` : text;
+  const cut = text.length > CONTACT_LIMITS.summaryField ? `${text.slice(0, CONTACT_LIMITS.summaryField)}...` : text;
+  return quote ? `“${cut}”` : cut;
 }
 
 /**
@@ -144,7 +148,12 @@ export function handoffSummary(config, { ai = {}, need = "", done = "", next = "
     ["Próximo passo sugerido", ai.next_step || next],
     ["Origem do contato", factText(facts.origem) || ai.origin],
   ];
-  return lines.map(([label, value]) => `${label}: ${field(value)}`).join("\n");
+  // Só o rótulo do perfil, quando vem do projeto, é do sistema; o resto passa por pessoas ou pela IA e vai
+  // como citação.
+  const systemProfile = Boolean(profile.label || profile.key);
+  return lines
+    .map(([label, value], index) => `${label}: ${field(value, { quote: index > 0 || !systemProfile })}`)
+    .join("\n");
 }
 
 /** Os facts no prompt: uma linha por dado, entre aspas triplas, como dado da pessoa. */
