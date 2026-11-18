@@ -8,7 +8,9 @@ import {
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { ACCOUNT_TABS } from '../account-subscription';
 
+const ACCOUNT_TAB_VALUES = [...ACCOUNT_TABS];
 const PAID_PLAN_TYPES = ['START', 'LITE', 'PRO', 'ELITE', 'FULL'] as const;
 const LISTED_BILLING_MODES = [
   'ASAAS_SUBSCRIPTION',
@@ -35,13 +37,15 @@ export class ListActiveClientsDto {
   @Min(1)
   limit?: number = 10;
 
+  // A aba "Aguardando pagamento" entrou nos totais e ficou fora daqui: a
+  // contagem mostrava a conta e a lista voltava 400, vazia.
   @ApiPropertyOptional({
-    description: 'Filtrar por status',
-    enum: ['ativas', 'bloqueadas', 'inativas', 'canceladas'],
+    description: 'Filtrar por status (a aba de Gerenciar contas)',
+    enum: ACCOUNT_TAB_VALUES,
   })
   @IsOptional()
   @IsString()
-  @IsIn(['ativas', 'bloqueadas', 'inativas', 'canceladas'])
+  @IsIn(ACCOUNT_TAB_VALUES)
   status?: string;
 
   @ApiPropertyOptional({

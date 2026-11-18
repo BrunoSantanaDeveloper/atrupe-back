@@ -1,6 +1,19 @@
 import { Prisma } from '@prisma/client';
 
 /**
+ * As abas de Gerenciar contas, na ordem dos totais. A lista é uma só para os
+ * totais e para a validação da listagem: quando eram duas, a aba Aguardando
+ * pagamento contava a conta e a lista dela voltava vazia.
+ */
+export const ACCOUNT_TABS = [
+  'ativas',
+  'bloqueadas',
+  'aguardando',
+  'inativas',
+  'canceladas',
+] as const;
+
+/**
  * As assinaturas que a gestão de contas do superadmin enxerga: as de plano
  * pago, fora as contratações que não chegaram ao fim — a reserva `temp_` (em
  * curso ou largada no meio) e a desfeita (`ABANDONED`).

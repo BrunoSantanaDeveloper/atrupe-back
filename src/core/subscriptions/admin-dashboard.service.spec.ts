@@ -142,6 +142,8 @@ describe('AdminDashboardService', () => {
           { id: 'sub-3', companyId: 'c3' },
         ])
         .mockResolvedValueOnce([]); // Companies with active sub (for discarded check)
+      // Nenhuma delas contratou e espera o pagamento.
+      mockPrismaService.company.findMany.mockResolvedValue([]);
 
       const result = await service.getTrialTotals();
 
@@ -149,6 +151,34 @@ describe('AdminDashboardService', () => {
       expect(result.data.INACTIVE).toBe(1);
       expect(result.data.DISCARDED).toBe(1);
       expect(result.data.TOTAL).toBe(3);
+    });
+
+    it('conta trial que contratou e não pagou sai dos testes: está em Aguardando pagamento', async () => {
+      const future = new Date();
+      future.setDate(future.getDate() + 5);
+
+      mockPrismaService.subscription.findMany
+        .mockResolvedValueOnce([
+          { id: 'sub-1', companyId: 'c1', nextDueDate: future },
+          { id: 'sub-2', companyId: 'c2', nextDueDate: future },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      mockPrismaService.company.findMany.mockResolvedValue([{ id: 'c2' }]);
+
+      const result = await service.getTrialTotals();
+
+      expect(result.data.ACTIVE).toBe(1);
+      expect(result.data.TOTAL).toBe(1);
+      expect(mockPrismaService.company.findMany).toHaveBeenCalledWith({
+        where: {
+          AND: [
+            { id: { in: ['c1', 'c2'] } },
+            expect.objectContaining({ blockLevel: 'NONE' }),
+          ],
+        },
+        select: { id: true },
+      });
     });
   });
 
@@ -861,11 +891,37 @@ describe('AdminDashboardService', () => {
         .mockResolvedValueOnce([]); // No active subs for inactive check
 
       mockPrismaService.employee.findFirst.mockResolvedValue(null);
+      mockPrismaService.company.findMany.mockResolvedValue([]);
 
       const result = await service.listTrialCompanies(1, 10);
 
       expect(result.total).toBe(1);
       expect(result.data).toHaveLength(1);
+    });
+
+    it('conta trial que contratou e não pagou não aparece entre os testes', async () => {
+      const future = new Date();
+      future.setDate(future.getDate() + 5);
+
+      mockPrismaService.subscription.findMany.mockResolvedValue([
+        {
+          id: 'sub-1',
+          companyId: 'c1',
+          status: 'ACTIVE' as const,
+          nextDueDate: future,
+          createdAt: new Date(),
+          Company: { id: 'c1', name: 'Cencom', address: [] },
+          plan: { name: 'TRIAL', planType: 'TRIAL' },
+          customer: {},
+        },
+      ]);
+      mockPrismaService.employee.findFirst.mockResolvedValue(null);
+      mockPrismaService.company.findMany.mockResolvedValue([{ id: 'c1' }]);
+
+      const result = await service.listTrialCompanies(1, 10, 'ativas');
+
+      expect(result.total).toBe(0);
+      expect(result.data).toHaveLength(0);
     });
 
     it('should filter by status "ativas" excluding expired trials', async () => {
@@ -887,6 +943,7 @@ describe('AdminDashboardService', () => {
 
       mockPrismaService.subscription.findMany.mockResolvedValue(allTrialData);
       mockPrismaService.employee.findFirst.mockResolvedValue(null);
+      mockPrismaService.company.findMany.mockResolvedValue([]);
 
       const result = await service.listTrialCompanies(1, 10, 'ativas');
 

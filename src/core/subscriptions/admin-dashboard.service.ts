@@ -8,19 +8,11 @@ import {
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import {
   ACCOUNT_SUBSCRIPTION_WHERE,
+  ACCOUNT_TABS,
   CONTRACTED_MODULE_WHERE,
   currentAccountSubscription,
 } from './account-subscription';
 import { BillingMode, billingModeOf, billingModeWhere } from './billing-mode';
-
-/** As abas de Gerenciar contas, na ordem dos totais. */
-const ACCOUNT_TABS = [
-  'ativas',
-  'bloqueadas',
-  'aguardando',
-  'inativas',
-  'canceladas',
-];
 
 /**
  * Contratação à espera do pagamento (regra de 20/10): registrada, ainda
@@ -38,7 +30,7 @@ const AWAITING_PAYMENT_WHERE = {
 export interface AccountListQuery {
   page?: number;
   limit?: number;
-  /** A aba: ativas, bloqueadas, inativas ou canceladas. */
+  /** A aba: ativas, bloqueadas, aguardando, inativas ou canceladas. */
   status?: string;
   search?: string;
   sort?: 'name' | 'updated_at' | 'created_at';
@@ -268,8 +260,14 @@ export class AdminDashboardService {
     let inativas = 0; // Trial ativas que já venceram
     let descartadas = 0; // Trial inativas sem outra subscription ativa
 
+    const awaiting = await this.companiesAwaitingPayment([
+      ...activeTrialSubscriptions.map((s) => s.companyId),
+      ...inactiveTrialSubscriptions.map((s) => s.companyId),
+    ]);
+
     // Processar subscriptions ACTIVE
     for (const sub of activeTrialSubscriptions) {
+      if (awaiting.has(sub.companyId)) continue;
       const daysAfterDueDate = Math.floor(
         (now.getTime() - sub.nextDueDate.getTime()) / (1000 * 60 * 60 * 24),
       );
@@ -303,6 +301,7 @@ export class AdminDashboardService {
     );
 
     for (const sub of inactiveTrialSubscriptions) {
+      if (awaiting.has(sub.companyId)) continue;
       if (!companiesWithActiveSet.has(sub.companyId)) {
         descartadas++;
       }
@@ -644,6 +643,27 @@ export class AdminDashboardService {
       })),
       changes,
     };
+  }
+
+  /**
+   * Das empresas dadas, as que contrataram um plano e ainda não pagaram — a
+   * aba Aguardando pagamento de Gerenciar contas. Elas saem das listas de
+   * teste, onde o teste em curso as mostrava como conta trial ativa.
+   */
+  private async companiesAwaitingPayment(
+    companyIds: string[],
+  ): Promise<Set<string>> {
+    if (companyIds.length === 0) return new Set();
+    const companies = await this.prisma.company.findMany({
+      where: {
+        AND: [
+          { id: { in: [...new Set(companyIds)] } },
+          this.accountTabWhere('aguardando'),
+        ],
+      },
+      select: { id: true },
+    });
+    return new Set(companies.map((company) => company.id));
   }
 
   /**
@@ -1087,8 +1107,15 @@ export class AdminDashboardService {
     const trialActiveSet = new Set(
       trialCompaniesWithActive.map((s) => s.companyId),
     );
+    const awaiting = await this.companiesAwaitingPayment(
+      allTrialSubscriptions.map((s) => s.companyId),
+    );
 
     for (const sub of allTrialSubscriptions) {
+      // Contratou e ainda não pagou: está em Gerenciar contas › Aguardando
+      // pagamento, não entre os testes.
+      if (awaiting.has(sub.companyId)) continue;
+
       const daysAfterDueDate = Math.floor(
         (now.getTime() - sub.nextDueDate.getTime()) / (1000 * 60 * 60 * 24),
       );
