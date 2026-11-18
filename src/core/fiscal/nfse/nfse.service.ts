@@ -2138,6 +2138,29 @@ export class NfseService {
     return this.preview(companyId, fullDto);
   }
 
+  /**
+   * Nota que impede a ordem de receber outra NFS-e.
+   *
+   * `numero > 0` entra junto com os status ativos porque a prefeitura só
+   * numera o que autorizou: nota numerada é documento fiscal existente mesmo
+   * que o status local diga outra coisa, e sem isso um status errado
+   * desarmava a trava e a O.S. recebia uma segunda nota.
+   *
+   * CANCELLED fica de fora. Nota numerada e depois cancelada é exatamente o
+   * que a mensagem da trava manda fazer ("cancele-a antes de emitir outra"),
+   * e mantê-la bloqueando prendia a ordem para sempre: o cliente cancelava, a
+   * tela continuava mostrando a ordem como "Não emitida" e a emissão seguia
+   * recusada pelo número da nota que já não vale mais.
+   */
+  private nfseQueBloqueiaOrdem() {
+    return {
+      OR: [
+        { status: { in: this.activeNfseStatuses } },
+        { numero: { gt: 0 }, status: { not: NfseStatus.CANCELLED } },
+      ],
+    };
+  }
+
   private orderFiscalInclude() {
     return {
       nfes: {
@@ -2153,16 +2176,7 @@ export class NfseService {
         take: 1,
       },
       nfses: {
-        // `numero > 0` entra junto com os status ativos: a prefeitura so'
-        // numera o que autorizou, entao uma nota numerada e' documento fiscal
-        // existente mesmo que o status local diga outra coisa. Sem isso, um
-        // status errado desarmava a trava e a O.S. recebia uma segunda nota.
-        where: {
-          OR: [
-            { status: { in: this.activeNfseStatuses } },
-            { numero: { gt: 0 } },
-          ],
-        },
+        where: this.nfseQueBloqueiaOrdem(),
         select: { id: true, status: true, numero: true },
         take: 1,
       },
@@ -2170,14 +2184,7 @@ export class NfseService {
         // Ordem coberta por uma NFS-e consolidada: a nota mora no vinculo, nao
         // em `order.nfses`, que so' enxerga a ordem principal. Sem isto a
         // guarda liberava uma segunda nota para servico ja' faturado.
-        where: {
-          nfse: {
-            OR: [
-              { status: { in: this.activeNfseStatuses } },
-              { numero: { gt: 0 } },
-            ],
-          },
-        },
+        where: { nfse: this.nfseQueBloqueiaOrdem() },
         select: { nfse: { select: { id: true, status: true, numero: true } } },
         take: 1,
       },
@@ -2351,9 +2358,15 @@ export class NfseService {
       }
 
       // A nota pode estar ligada direto (`orderId`) ou pelo vinculo da
-      // consolidacao; as duas contam como documento ja' existente.
+      // consolidacao; as duas contam como documento ja' existente. A cancelada
+      // nao conta: cancelar e' o que a mensagem da trava manda fazer antes de
+      // emitir de novo (ver nfseQueBloqueiaOrdem). O filtro ja' a deixa de
+      // fora; descarta-la aqui tambem mantem a regra inteira neste ponto, para
+      // quem chegar com a nota sem filtrar.
       const nfseExistente =
-        order.nfses?.[0] ?? order.nfseOrders?.[0]?.nfse ?? null;
+        [order.nfses?.[0], order.nfseOrders?.[0]?.nfse].find(
+          (nfse) => nfse && nfse.status !== NfseStatus.CANCELLED,
+        ) ?? null;
       if (!nfseExistente) continue;
 
       // Antes dos demais ramos: numero atribuido quer dizer nota registrada

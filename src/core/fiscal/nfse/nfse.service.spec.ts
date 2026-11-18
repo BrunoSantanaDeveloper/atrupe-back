@@ -1515,6 +1515,68 @@ describe('NfseService', () => {
     });
 
     /**
+     * Caso Armazem 76, O.S. V1-290: a nota nº 35 foi emitida, cancelada tres
+     * minutos depois e a ordem ficou presa — a trava olhava so' o numero, e
+     * cancelar e' exatamente o que a mensagem dela manda fazer. A tela ainda
+     * mostrava a ordem como "Nao emitida", entao as duas coisas se
+     * contradiziam.
+     */
+    it('nota cancelada nao impede a ordem de emitir de novo', async () => {
+      prisma.quotation.findFirst.mockResolvedValueOnce({
+        id: 'quotation-1',
+        companyId: mockCompanyId,
+        order: {
+          ...mockOrder,
+          nfses: [
+            {
+              id: 'nfse-cancelada',
+              status: NfseStatus.CANCELLED,
+              numero: 35,
+            },
+          ],
+        },
+        client: mockOrder.client,
+        quotationProduct: [
+          {
+            id: 'qp-1',
+            productId: 'service-1',
+            quantity: 1,
+            finalValue: 500,
+            totalValue: 500,
+            product: mockOrder.items[0].product,
+          },
+        ],
+      });
+
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Reemissao apos cancelamento',
+      });
+
+      expect(invoicyApiService.emitNfse).toHaveBeenCalled();
+    });
+
+    // A protecao de verdade e' o filtro: a cancelada nem chega a ser lida.
+    it('o filtro da ordem nao traz nota cancelada', async () => {
+      await service.emitFromOrder(mockCompanyId, {
+        orderId: mockOrderId,
+        codigoServico: '1.05',
+        discriminacao: 'Teste',
+      });
+
+      const { include } = prisma.quotation.findFirst.mock.calls.at(-1)[0];
+      for (const where of [
+        include.order.include.nfses.where,
+        include.order.include.nfseOrders.where.nfse,
+      ]) {
+        const porNumero = where.OR.find((clausula) => clausula.numero);
+        expect(porNumero.status).toEqual({ not: NfseStatus.CANCELLED });
+        expect(where.OR[0].status.in).not.toContain(NfseStatus.CANCELLED);
+      }
+    });
+
+    /**
      * Ordem coberta por uma NFS-e consolidada: a nota mora no vinculo, nao em
      * `order.nfses`, que so' enxerga a ordem principal. Sem ler o vinculo a
      * guarda liberava uma segunda nota para servico ja' faturado — foi o que
