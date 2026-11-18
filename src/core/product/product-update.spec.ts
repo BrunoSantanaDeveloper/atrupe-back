@@ -78,3 +78,102 @@ describe('ProductService.update parcial', () => {
     expect(data).not.toHaveProperty('allowEditValues');
   });
 });
+
+// A estrutura do produto (18/11/2026): o terceirizado é o espelho dela
+describe('ProductService.update: a estrutura do produto', () => {
+  let prisma: any;
+  let service: ProductService;
+  const stored = (over: Record<string, unknown> = {}) => ({
+    id: 'pr-1',
+    companyId: 'c-1',
+    code: 'BAN',
+    items: [],
+    structure: 'STANDARD',
+    isOutsourced: false,
+    outsourcedCost: null,
+    _count: { suppliers: 0 },
+    ...over,
+  });
+
+  beforeEach(() => {
+    prisma = {
+      product: {
+        findUnique: jest.fn().mockResolvedValue(stored()),
+        update: jest.fn().mockResolvedValue({ id: 'pr-1' }),
+      },
+      productItem: { deleteMany: jest.fn() },
+      quotationProductItem: { deleteMany: jest.fn() },
+      category: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      companySector: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      supplier: { count: jest.fn().mockResolvedValue(1) },
+    };
+    service = new ProductService(prisma, {} as any);
+  });
+  const data = () => prisma.product.update.mock.calls[0][0].data;
+
+  it('sair do terceirizado guarda o fornecedor e o custo', async () => {
+    prisma.product.findUnique.mockResolvedValue(
+      stored({
+        structure: 'OUTSOURCED',
+        isOutsourced: true,
+        outsourcedCost: 0.02,
+        _count: { suppliers: 1 },
+      }),
+    );
+    await service.update('pr-1', { structure: 'SHEET' } as any);
+    expect(data()).toMatchObject({ structure: 'SHEET', isOutsourced: false });
+    expect(data()).not.toHaveProperty('suppliers');
+    expect(data()).not.toHaveProperty('outsourcedCost');
+  });
+
+  it('voltar ao terceirizado reaproveita o que ficou guardado', async () => {
+    prisma.product.findUnique.mockResolvedValue(
+      stored({
+        structure: 'SHEET',
+        outsourcedCost: 0.02,
+        _count: { suppliers: 1 },
+      }),
+    );
+    await service.update('pr-1', { structure: 'OUTSOURCED' } as any);
+    expect(data()).toMatchObject({
+      structure: 'OUTSOURCED',
+      isOutsourced: true,
+    });
+  });
+
+  it('terceirizado sem fornecedor guardado nem enviado é recusado', async () => {
+    await expect(
+      service.update('pr-1', { structure: 'OUTSOURCED' } as any),
+    ).rejects.toThrow('Informe o fornecedor e o custo do terceirizado');
+  });
+
+  it('estrutura e terceirizado em conflito são recusados', async () => {
+    await expect(
+      service.update('pr-1', { structure: 'SHEET', isOutsourced: true } as any),
+    ).rejects.toThrow('não combinam');
+  });
+
+  it('o corpo antigo só com isOutsourced leva a estrutura junto', async () => {
+    await service.update('pr-1', {
+      isOutsourced: true,
+      outsourcedCost: 0.02,
+      supplierIds: ['s-1'],
+    } as any);
+    expect(data()).toMatchObject({
+      structure: 'OUTSOURCED',
+      isOutsourced: true,
+    });
+  });
+
+  it('desligar o terceirizado pelo corpo antigo mantém a estrutura de folha', async () => {
+    prisma.product.findUnique.mockResolvedValue(stored({ structure: 'SHEET' }));
+    await service.update('pr-1', { isOutsourced: false } as any);
+    expect(data()).toMatchObject({ structure: 'SHEET', isOutsourced: false });
+  });
+});

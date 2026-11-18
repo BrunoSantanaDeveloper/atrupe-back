@@ -16,6 +16,8 @@ describe('ProductService: cadastros da empresa', () => {
         count: jest.fn(async ({ where }) => where.id.in.length),
         findMany: jest.fn().mockResolvedValue([]),
       },
+      // A situação da composição padrão no cadastro (18/11/2026)
+      productAssembly: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     service = new ProductService(prisma, {} as any);
   });

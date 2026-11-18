@@ -13,7 +13,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UnitKind } from '@prisma/client';
+import { ProductStructure, UnitKind } from '@prisma/client';
 
 export class SectorDto {
   @ApiProperty({
@@ -160,8 +160,17 @@ export class CreateProductItemDto {
 }
 
 export class CreateProductDto {
+  // A estrutura do produto (18/11/2026): define os blocos do cadastro.
+  // OUTSOURCED liga o terceirizado; as outras o desligam sem apagar o
+  // fornecedor e o custo
+  @IsOptional()
+  @IsEnum(ProductStructure)
+  @ApiPropertyOptional({ enum: ProductStructure, example: 'STANDARD' })
+  structure?: ProductStructure;
+
   // Produto terceirizado (T-5, 24/10/2026): comprado de fornecedor e
-  // revendido; a venda aprovada gera a conta a pagar ao fornecedor
+  // revendido; a venda aprovada gera a conta a pagar ao fornecedor. Desde
+  // 18/11/2026 acompanha a estrutura (OUTSOURCED)
   @IsOptional()
   @IsBoolean()
   @ApiProperty({ required: false, example: false })

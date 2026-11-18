@@ -1824,8 +1824,12 @@ model Product {
   /// que o cliente já tinha com o mesmo código.
   legacyId             String?
   /// Produto terceirizado (T-5, 24/10/2026): comprado de fornecedor e
-  /// revendido; cada venda aprovada gera a conta a pagar ao fornecedor
+  /// revendido; cada venda aprovada gera a conta a pagar ao fornecedor.
+  /// Desde 18/11/2026 é o espelho de structure = OUTSOURCED
   isOutsourced         Boolean             @default(false)
+  /// A estrutura do produto (18/11/2026): define quais blocos o cadastro
+  /// abre. Trocar não apaga os dados do bloco que some
+  structure            ProductStructure    @default(STANDARD)
   /// Custo do fornecedor por unidade de venda, na mesma base do unitCost do
   /// item (centavos por mm², mm, ml, un…)
   outsourcedCost       Float?
@@ -3226,6 +3230,20 @@ enum BankAccountCashControlType {
 enum PaymentConditionCostType {
   PERCENT
   VALUE
+}
+
+/// A estrutura do produto (18/11/2026): o que o cadastro abre
+enum ProductStructure {
+  /// Unidade (m², metro, unidade, hora…), preço e medidas
+  STANDARD
+  /// Impresso em folha (gráfica rápida): papel, sangria, folhas de acerto
+  SHEET
+  /// Offset: o da folha, mais tiragem, cores e chapas
+  OFFSET
+  /// Locação: período, valor do período, agenda e dados do ponto
+  RENTAL
+  /// Terceirizado: fornecedor e acréscimo sobre o custo
+  OUTSOURCED
 }
 
 enum BiilingKind {

@@ -8,7 +8,12 @@ import { PrismaService } from 'nestjs-prisma';
 import { ProductFilterDTO } from './dto/filter.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
-import { Prisma } from '@prisma/client';
+import { Prisma, ProductStructure } from '@prisma/client';
+
+export const STRUCTURE_MISMATCH =
+  'A estrutura e o terceirizado não combinam: o produto terceirizado tem a estrutura Terceirizado';
+export const OUTSOURCED_BLOCK_REQUIRED =
+  'Informe o fornecedor e o custo do terceirizado';
 import { JsonArray } from '@prisma/client/runtime/library';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
@@ -110,6 +115,71 @@ export class ProductService {
     };
   }
 
+  /**
+   * A estrutura do produto (18/11/2026) e o terceirizado, que passa a ser o
+   * espelho dela (OUTSOURCED). A estrutura manda:
+   * - OUTSOURCED com fornecedor ou custo no corpo confere como o terceirizado
+   *   sempre conferiu; sem eles, reaproveita os guardados;
+   * - as outras desligam o terceirizado sem apagar fornecedor e custo (a
+   *   troca de estrutura guarda os dados do bloco que some);
+   * - o corpo antigo, só com isOutsourced, leva a estrutura junto.
+   */
+  private async structureData(
+    companyId: string | null | undefined,
+    dto: {
+      structure?: ProductStructure;
+      isOutsourced?: boolean;
+      outsourcedCost?: number | null;
+      supplierIds?: string[];
+    },
+    mode: 'create' | 'update',
+    current?: {
+      structure: ProductStructure;
+      outsourcedCost: number | null;
+      suppliers: number;
+    },
+  ) {
+    const { structure } = dto;
+    if (
+      structure !== undefined &&
+      dto.isOutsourced !== undefined &&
+      dto.isOutsourced !== (structure === 'OUTSOURCED')
+    ) {
+      throw new BadRequestException(STRUCTURE_MISMATCH);
+    }
+    if (structure === undefined) {
+      const outsourced = await this.outsourcedData(companyId, dto, mode);
+      if (dto.isOutsourced === undefined) return outsourced;
+      const kept =
+        current && current.structure !== 'OUTSOURCED'
+          ? current.structure
+          : 'STANDARD';
+      return {
+        ...outsourced,
+        structure: dto.isOutsourced ? 'OUTSOURCED' : kept,
+      } as const;
+    }
+    if (structure !== 'OUTSOURCED') {
+      return { structure, isOutsourced: false };
+    }
+    const sendsBlock =
+      dto.supplierIds !== undefined || dto.outsourcedCost !== undefined;
+    if (sendsBlock || !current) {
+      return {
+        ...(await this.outsourcedData(
+          companyId,
+          { ...dto, isOutsourced: true },
+          mode,
+        )),
+        structure,
+      };
+    }
+    if (!current.suppliers || !(Number(current.outsourcedCost) > 0)) {
+      throw new BadRequestException(OUTSOURCED_BLOCK_REQUIRED);
+    }
+    return { structure, isOutsourced: true };
+  }
+
   async create(createProductDto: CreateProductDto) {
     await this.assertRefsOfCompany(createProductDto.companyId, {
       categoryId: createProductDto.categoryId,
@@ -152,7 +222,7 @@ export class ProductService {
 
       const productionStages = createProductDto.productionStages || [];
 
-      const outsourced = await this.outsourcedData(
+      const outsourced = await this.structureData(
         createProductDto.companyId,
         createProductDto,
         'create',
@@ -246,6 +316,7 @@ export class ProductService {
                 code: true,
                 isActive: true,
                 isOutsourced: true,
+                structure: true,
                 category: {
                   select: {
                     id: true,
@@ -371,6 +442,7 @@ export class ProductService {
           fiscalData: fiscalData || null,
           hasComposition: !!composition?._count.blocks,
           isOutsourced: product.isOutsourced,
+          structure: product.structure,
           compositionStatus: composition?._count.blocks
             ? composition.status
             : null,
@@ -506,9 +578,18 @@ export class ProductService {
       ...newProductionStages,
     ];
 
+    // A situação da composição padrão (18/11/2026): com ela aprovada, a
+    // contagem de folhas vem da composição e o cadastro esconde o cartão
+    // "Impressão" do produto
+    const composition = await this.prisma.productAssembly.findFirst({
+      where: { productId: id, variationKey: '' },
+      select: { status: true, _count: { select: { blocks: true } } },
+    });
+
     return {
       ...product,
       productionStages: productionStagesWithDetails,
+      compositionStatus: composition?._count.blocks ? composition.status : null,
     };
   }
 
@@ -535,7 +616,7 @@ export class ProductService {
       );
       const product = await this.prisma.product.findUnique({
         where: { id },
-        include: { items: true },
+        include: { items: true, _count: { select: { suppliers: true } } },
       });
 
       if (!product) {
@@ -557,10 +638,15 @@ export class ProductService {
         }
       }
 
-      const outsourced = await this.outsourcedData(
+      const outsourced = await this.structureData(
         product.companyId,
         updateProductDto,
         'update',
+        {
+          structure: product.structure,
+          outsourcedCost: product.outsourcedCost,
+          suppliers: product._count?.suppliers ?? 0,
+        },
       );
       const items = updateProductDto.items?.map((item) => ({
         id: item.id,
