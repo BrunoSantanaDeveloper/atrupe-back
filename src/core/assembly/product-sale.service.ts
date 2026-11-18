@@ -4,7 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
-import { sheetCountOf } from '../material/sheet-count';
+import { CompositionSheet } from '../material/print-count';
+import { PIECE_DOES_NOT_FIT, sheetCountOf } from '../material/sheet-count';
 import { PricingParametersService } from '../pricing/pricing-parameters.service';
 import {
   AssemblyGraph,
@@ -58,6 +59,26 @@ const numberText = (value: number) =>
   value.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 
 const stageOf = (block: EngineBlock) => block.localName || block.name;
+
+/**
+ * O aproveitamento da folha nas linhas de papel da composição calculada
+ * (18/11/2026): no PRO, a contagem de folhas do item vem daqui, com a
+ * margem e o espaço da linha, e não da sangria do produto. Sem custo.
+ */
+const compositionSheetsOf = (
+  computed: ReturnType<typeof computeAssembly>,
+): CompositionSheet[] =>
+  computed.blocks
+    .flatMap((block) => [...block.partLines, ...block.lines])
+    .filter((line) => !!line.selected?.sheet && !!line.sheetYield)
+    .map((line) => ({
+      label: line.name,
+      sheetName: line.sheetYield!.sheetName,
+      perSheet: line.sheetYield!.perSheet,
+      sheets: line.sheetYield!.sheets,
+      leftover: line.sheetYield!.leftover,
+    }));
+
 const rulesOf = (block: EngineBlock) => block.localRules ?? block.originalRules;
 const hasTimeLine = (block: EngineBlock) =>
   block.lines.some((line) => TIME_FORMULAS.includes(line.formula));
@@ -376,6 +397,8 @@ export class ProductSaleService {
       where: { id: product.id },
       select: { technicalDescription: true },
     });
+    // Com linha de papel, a contagem é a da composição (18/11/2026)
+    const [sheet] = compositionSheetsOf(computed);
 
     return {
       name: product.name,
@@ -383,12 +406,19 @@ export class ProductSaleService {
       measure,
       variation: variation?.name ?? null,
       // A variação com papel: peças por folha e folhas desta venda, sem custo
-      sheetCount: this.sheetCount(
-        product,
-        variation,
-        dto.measure ?? null,
-        measure.quantity,
-      ),
+      sheetCount: sheet
+        ? {
+            paperName: sheet.sheetName,
+            piecesPerSheet: sheet.perSheet,
+            sheets: sheet.sheets,
+            warning: sheet.perSheet > 0 ? null : PIECE_DOES_NOT_FIT,
+          }
+        : this.sheetCount(
+            product,
+            variation,
+            dto.measure ?? null,
+            measure.quantity,
+          ),
       blocks: computed.blocks.map((block) => {
         const row = rows.get(block.id);
         const extra = stageFieldTexts(block, fields).join(' · ');
@@ -607,6 +637,8 @@ export class ProductSaleService {
         lists: choices.lists ?? [],
         notes: choices.notes ?? [],
         summary,
+        // A contagem de folhas do item (orçamento, O.S. e PDF), sem custo
+        sheets: compositionSheetsOf(computed),
       },
       snapshot: {
         computedAt: new Date().toISOString(),

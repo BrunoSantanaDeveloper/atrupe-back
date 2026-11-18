@@ -1,5 +1,10 @@
 import { Prisma } from '@prisma/client';
-import { SheetCount, SheetCountPaper, sheetCountOf } from './sheet-count';
+import {
+  PIECE_DOES_NOT_FIT,
+  SheetCount,
+  SheetCountPaper,
+  sheetCountOf,
+} from './sheet-count';
 
 /**
  * A contagem de folhas da gráfica rápida no LITE (12/11/2026), sem custo:
@@ -28,7 +33,27 @@ export const PRINT_PRODUCT_SELECT = {
   ...PRINT_PRODUCT_RELATIONS,
 } satisfies Prisma.ProductSelect;
 
-export type BleedSource = 'ITEM' | 'PRODUCT' | 'SECTOR' | 'DEFAULT';
+/** COMPOSITION: o item vendido pela composição do PRO (18/11/2026) */
+export type BleedSource =
+  | 'ITEM'
+  | 'PRODUCT'
+  | 'SECTOR'
+  | 'DEFAULT'
+  | 'COMPOSITION';
+
+/**
+ * O aproveitamento da folha que a composição do PRO calculou na venda
+ * (18/11/2026): a linha de papel, com a margem e o espaço dela. Fica no
+ * `composition` do item, sem custo.
+ */
+export type CompositionSheet = {
+  /** A linha de papel da composição */
+  label: string;
+  sheetName: string;
+  perSheet: number;
+  sheets: number;
+  leftover: number;
+};
 
 /** O que o item do orçamento guarda (`quotation_products.printSpec`). */
 export type PrintSpec = {
@@ -131,10 +156,45 @@ export type PrintCountItem = {
   variation?: { paper?: SheetCountPaper | null } | null;
   product?: Partial<PrintProduct> | null;
   printSpec?: unknown;
+  /** As escolhas da composição (PRO); presente no item vendido por ela */
+  composition?: unknown;
 };
+
+/** A contagem que a composição calculou, no formato da do LITE. */
+export function compositionPrintCounts(
+  sheets: CompositionSheet[],
+): PrintCount[] {
+  return sheets.map((sheet) => {
+    const fits = sheet.perSheet > 0;
+    return {
+      paperName: sheet.sheetName,
+      piecesPerSheet: sheet.perSheet,
+      sheets: sheet.sheets,
+      warning: fits ? null : PIECE_DOES_NOT_FIT,
+      label: sheet.label,
+      impressions: Math.max(0, sheet.sheets * sheet.perSheet - sheet.leftover),
+      bleedMm: 0,
+      bleedSource: 'COMPOSITION' as const,
+      setupSheets: 0,
+      totalSheets: fits ? sheet.sheets : null,
+    };
+  });
+}
 
 /** As contagens do item gravado: a linha dá a medida e as peças. */
 export function itemPrintCounts(item: PrintCountItem): PrintCount[] {
+  // Vendido pela composição (PRO): vale o aproveitamento da linha de papel
+  // dela, não a sangria e as folhas de acerto do produto, que divergiriam
+  // sem ninguém ver (18/11/2026). O item gravado antes disso não tem a
+  // contagem e fica sem ela até ser salvo de novo
+  const composition = item.composition as {
+    sheets?: CompositionSheet[];
+  } | null;
+  if (composition && typeof composition === 'object') {
+    return compositionPrintCounts(
+      Array.isArray(composition.sheets) ? composition.sheets : [],
+    );
+  }
   const line = item.items?.[0];
   const product = item.product;
   return printCounts({

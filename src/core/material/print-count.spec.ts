@@ -149,3 +149,73 @@ describe('itemPrintCounts: o item gravado', () => {
     expect(count).toMatchObject({ piecesPerSheet: 21, bleedMm: 2 });
   });
 });
+
+// PRO com composição (18/11/2026): vale a linha de papel da composição, não
+// a sangria e as folhas de acerto do produto
+describe('itemPrintCounts: o item vendido pela composição', () => {
+  it('conta pelo aproveitamento da linha de papel da composição', () => {
+    const counts = itemPrintCounts({
+      quantity: 1,
+      items: [{ width: 50, height: 90, quantity: 1000 }],
+      variation: { paper: A3 },
+      product: product(),
+      composition: {
+        summary: [],
+        sheets: [
+          {
+            label: 'Papel do miolo',
+            sheetName: 'Couché 150 SRA3',
+            perSheet: 18,
+            sheets: 56,
+            leftover: 8,
+          },
+        ],
+      },
+    });
+    expect(counts).toEqual([
+      expect.objectContaining({
+        label: 'Papel do miolo',
+        paperName: 'Couché 150 SRA3',
+        piecesPerSheet: 18,
+        sheets: 56,
+        impressions: 1000,
+        setupSheets: 0,
+        totalSheets: 56,
+        bleedSource: 'COMPOSITION',
+        warning: null,
+      }),
+    ]);
+  });
+
+  it('a composição sem linha de papel não cai na contagem do produto', () => {
+    expect(
+      itemPrintCounts({
+        quantity: 1,
+        items: [{ width: 50, height: 90, quantity: 1000 }],
+        variation: { paper: A3 },
+        product: product(),
+        composition: { summary: [] },
+      }),
+    ).toEqual([]);
+  });
+
+  it('a peça que não cabe na folha avisa', () => {
+    const [count] = itemPrintCounts({
+      composition: {
+        sheets: [
+          {
+            label: 'Papel',
+            sheetName: 'A4',
+            perSheet: 0,
+            sheets: 0,
+            leftover: 0,
+          },
+        ],
+      },
+    });
+    expect(count).toMatchObject({
+      warning: expect.any(String),
+      totalSheets: null,
+    });
+  });
+});
