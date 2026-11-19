@@ -3,6 +3,7 @@ import {
   onlyDigits,
   prepareReferences,
   prepareStep,
+  runStep,
   unitBreakdown,
 } from './migrate-legacy-tenant';
 import { EXTRACTORS } from './legacy-extractors';
@@ -19,8 +20,10 @@ import {
   PRODUCT_CODE_SQL,
   PRODUCT_EXTRACTOR,
   QUOTATION_EXTRACTOR,
+  RG_MAX_LENGTH,
   SUPPLIER_EXTRACTOR,
   normalizeLegacyDate,
+  rgEObservacoes,
   toSimNao,
 } from './legacy-extractors';
 
@@ -175,6 +178,107 @@ describe('CLIENT_EXTRACTOR.map', () => {
     expect(row.uf).toBe('SC');
     expect(row.complemento).toBe('');
   });
+
+  it('RG maior que o campo vai para as observações, e o cliente entra', () => {
+    // CENCOM, cliente 1076: endereço digitado no campo RG (25 caracteres).
+    // Recusado pelo tamanho, o cliente ficava fora e levava as vendas junto.
+    const row = CLIENT_EXTRACTOR.map({
+      ...legacyRow,
+      rg: 'Av. 12 Rua 34 n 56 c. 789',
+      observacoes: 'Paga no dia 10',
+    });
+
+    expect(row.rg).toBe('');
+    expect(row.observacoes).toBe(
+      'Paga no dia 10\nRG no legado: Av. 12 Rua 34 n 56 c. 789',
+    );
+  });
+
+  it('RG que cabe no campo continua no RG', () => {
+    const row = CLIENT_EXTRACTOR.map({ ...legacyRow, rg: '12.345.678-9' });
+
+    expect(row.rg).toBe('12.345.678-9');
+    expect(row.observacoes).toBe('');
+  });
+});
+
+describe('rgEObservacoes', () => {
+  it('o limite é o tamanho do campo no cadastro', () => {
+    const vinte = '1'.repeat(RG_MAX_LENGTH);
+    expect(rgEObservacoes(vinte, null)).toEqual({ rg: vinte, observacoes: '' });
+    expect(rgEObservacoes(`${vinte}1`, null)).toEqual({
+      rg: '',
+      observacoes: `RG no legado: ${vinte}1`,
+    });
+  });
+
+  it('vale para o fornecedor, que tem o mesmo campo', () => {
+    const row = SUPPLIER_EXTRACTOR.map({
+      codigoLegado: 57,
+      rg: 'x'.repeat(RG_MAX_LENGTH + 5),
+      observacoes: null,
+    });
+    expect(row.rg).toBe('');
+    expect(row.observacoes).toMatch(/^RG no legado: x+$/);
+  });
+});
+
+describe('runStep na simulação', () => {
+  const extractor: any = {
+    entity: 'paymentCondition',
+    label: 'Teste',
+    sql: () => 'SELECT 1',
+    map: (row: any) => row,
+  };
+  const legacy: any = {
+    query: jest.fn().mockResolvedValue([[{ codigoLegado: '1' }]]),
+  };
+  const simulated = (over: any = {}) => ({
+    client: new Set<string>(),
+    supplier: new Set<string>(),
+    employee: new Set<string>(),
+    product: new Set<string>(),
+    paymentCondition: new Set<string>(),
+    reference: new Set<string>(),
+    ...over,
+  });
+  const rodar = (issue: any, keys: any) =>
+    runStep(
+      {
+        getSchema: () => [],
+        validateRow: jest.fn().mockResolvedValue([issue]),
+      } as any,
+      legacy,
+      'acn_000001',
+      extractor,
+      'empresa-1',
+      'admin-1',
+      true,
+      keys,
+      false,
+    );
+
+  it.each([
+    ['FornecedorCodigoLegado', 'supplier'],
+    ['ColaboradorCodigoLegado', 'employee'],
+  ])(
+    '%s que a etapa anterior cria não é erro',
+    async (field: string, chave: string) => {
+      // CENCOM: 9 despesas de fornecedores que a etapa de fornecedores cria
+      // apareciam como erro na simulação; a carga real não recusaria.
+      const issue = { field, value: '57', error: 'não encontrado' };
+
+      const resolvido = await rodar(
+        issue,
+        simulated({ [chave]: new Set(['57']) }),
+      );
+      expect(resolvido.failed).toBe(0);
+      expect(resolvido.pending).toBe(1);
+
+      const ausente = await rodar(issue, simulated());
+      expect(ausente.failed).toBe(1);
+    },
+  );
 });
 
 describe('SQL dos extratores', () => {

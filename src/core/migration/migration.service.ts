@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from 'nestjs-prisma';
@@ -81,11 +82,60 @@ export interface LegacyBaseSearch {
   consultadas?: LegacyBaseGlimpse[];
 }
 
+/** Motivo gravado numa execução cujo processo morreu com o contêiner. */
+export const EXECUCAO_INTERROMPIDA =
+  'Interrompida: a API foi reiniciada (deploy) durante a execução e o ' +
+  'processo da migração morreu junto. Inicie a execução de novo.';
+
 @Injectable()
-export class MigrationService {
+export class MigrationService implements OnModuleInit {
   private readonly logger = new Logger(MigrationService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Encerra as execuções órfãs de um contêiner anterior.
+   *
+   * O processo da migração vive dentro do contêiner da API; um deploy no meio
+   * da carga mata o processo sem ninguém atualizar o registro. Sem isto a
+   * execução fica "em andamento" para sempre e bloqueia as próximas.
+   */
+  async onModuleInit() {
+    try {
+      await this.abandonarOrfas();
+    } catch (error: any) {
+      // O boot não pode depender disto: na próxima tentativa de início
+      // `start` repete a verificação.
+      this.logger.warn(
+        `Não foi possível conferir migrações órfãs: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Toda execução em andamento nasceu num processo da API; a que começou
+   * antes deste processo subir pertence a um contêiner que já morreu.
+   */
+  private async abandonarOrfas(): Promise<number> {
+    const inicioDesteProcesso = new Date(Date.now() - process.uptime() * 1000);
+    const { count } = await this.prisma.migrationRun.updateMany({
+      where: {
+        status: { in: ['QUEUED', 'RUNNING'] },
+        createdAt: { lt: inicioDesteProcesso },
+      },
+      data: {
+        status: 'FAILED',
+        finishedAt: new Date(),
+        failureReason: EXECUCAO_INTERROMPIDA,
+      },
+    });
+    if (count > 0) {
+      this.logger.warn(
+        `${count} migração(ões) órfã(s) de um contêiner anterior marcada(s) como falha`,
+      );
+    }
+    return count;
+  }
 
   protected legacyPool(): mysql.Pool {
     if (!process.env.LEGACY_DB_HOST) {
@@ -317,7 +367,9 @@ export class MigrationService {
     if (!company) throw new NotFoundException('Empresa não encontrada');
 
     // Uma migração por vez. Duas cargas simultâneas disputariam o mesmo banco
-    // e o relatório de nenhuma delas seria confiável.
+    // e o relatório de nenhuma delas seria confiável. Órfã de outro contêiner
+    // não conta: o processo dela não existe mais.
+    await this.abandonarOrfas();
     const emAndamento = await this.prisma.migrationRun.findFirst({
       where: { status: { in: ['QUEUED', 'RUNNING'] } },
       select: { id: true, company: { select: { name: true } } },

@@ -54,6 +54,7 @@ export { assertSameCompany, onlyDigits } from './legacy-destination-guard';
  */
 export interface SimulatedKeys {
   client: Set<string>;
+  supplier: Set<string>;
   employee: Set<string>;
   product: Set<string>;
   paymentCondition: Set<string>;
@@ -68,7 +69,9 @@ export interface SimulatedKeys {
  */
 const RESOLVED_BY_LOAD_ORDER: Record<string, keyof SimulatedKeys> = {
   ClienteCodigoLegado: 'client',
+  FornecedorCodigoLegado: 'supplier',
   VendedorCodigoLegado: 'employee',
+  ColaboradorCodigoLegado: 'employee',
   ProdutoCodigo: 'product',
   CondicaoPagamentoCodigoLegado: 'paymentCondition',
 };
@@ -373,7 +376,7 @@ export interface StepResult {
   errors: { row: number; codigoLegado: string; error: string }[];
 }
 
-async function runStep(
+export async function runStep(
   service: ImportService,
   legacy: mysql.Connection,
   base: string,
@@ -407,6 +410,8 @@ async function runStep(
   // Registra o que esta etapa disponibiliza para as seguintes.
   if (extractor.entity === 'client') {
     rows.forEach((r) => simulated.client.add(r.codigoLegado));
+  } else if (extractor.entity === 'supplier') {
+    rows.forEach((r) => simulated.supplier.add(r.codigoLegado));
   } else if (extractor.entity === 'employee') {
     rows.forEach((r) => simulated.employee.add(r.codigoLegado));
   } else if (extractor.entity === 'product') {
@@ -676,6 +681,7 @@ export async function migrateLegacyTenant(
     const results: StepResult[] = [];
     const simulated: SimulatedKeys = {
       client: new Set(),
+      supplier: new Set(),
       employee: new Set(),
       product: new Set(),
       paymentCondition: new Set(),
@@ -801,8 +807,9 @@ async function main() {
 
   const prisma = new PrismaClient();
 
-  // Quem escreve o acompanhamento é este processo, não a API: assim o registro
-  // chega ao fim mesmo que a API reinicie durante a carga.
+  // Quem escreve o acompanhamento é este processo, não a API. Ele roda dentro
+  // do contêiner da API: um deploy no meio da carga mata os dois, e quem
+  // encerra o registro órfão é a API nova ao subir (MigrationService).
   const registrar = async (data: any) => {
     if (!runId) return;
     try {

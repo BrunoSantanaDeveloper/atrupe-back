@@ -52,6 +52,27 @@ export function text(value: any): string {
   return String(value).trim();
 }
 
+/** Tamanho do RG no cadastro de cliente e de fornecedor do Atrupe. */
+export const RG_MAX_LENGTH = 20;
+
+/**
+ * RG e observações do cadastro.
+ *
+ * No legado o campo RG é texto livre e às vezes guarda outra coisa (endereço,
+ * anotação). Acima do tamanho do campo não é um RG: ele vai para as
+ * observações, rotulado, e o cadastro entra em vez de ser recusado inteiro.
+ */
+export function rgEObservacoes(
+  rg: any,
+  observacoes: any,
+): { rg: string; observacoes: string } {
+  const valor = text(rg);
+  const obs = text(observacoes);
+  if (valor.length <= RG_MAX_LENGTH) return { rg: valor, observacoes: obs };
+  const nota = `RG no legado: ${valor}`;
+  return { rg: '', observacoes: obs ? `${obs}\n${nota}` : nota };
+}
+
 export interface LegacyExtractor {
   /** Nome da entidade no importador (define qual schema valida a linha). */
   entity: string;
@@ -168,13 +189,12 @@ export const CLIENT_EXTRACTOR: LegacyExtractor = {
     tipo: Number(row.tipoLegado) === 2 ? 'EMPRESA' : 'PESSOA',
     cpf: text(row.cpf),
     cnpj: text(row.cnpj),
-    rg: text(row.rg),
+    ...rgEObservacoes(row.rg, row.observacoes),
     email: text(row.email),
     telefone: text(row.telefone),
     celular: text(row.celular),
     dataNascimento: normalizeLegacyDate(row.dataNascimento),
     filial: toSimNao(row.filial),
-    observacoes: text(row.observacoes),
     cep: text(row.cep),
     rua: text(row.rua),
     numero: text(row.numero),
@@ -256,13 +276,12 @@ export const SUPPLIER_EXTRACTOR: LegacyExtractor = {
     tipo: Number(row.tipoLegado) === 1 ? 'PESSOA' : 'EMPRESA',
     cpf: text(row.cpf),
     cnpj: text(row.cnpj),
-    rg: text(row.rg),
+    ...rgEObservacoes(row.rg, row.observacoes),
     email: text(row.email),
     telefone: text(row.telefone),
     celular: text(row.celular),
     categoria: text(row.categoria),
     filial: toSimNao(row.filial),
-    observacoes: text(row.observacoes),
     cep: text(row.cep),
     rua: text(row.rua),
     numero: text(row.numero),

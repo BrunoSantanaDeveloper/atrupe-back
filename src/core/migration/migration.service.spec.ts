@@ -1,4 +1,4 @@
-import { MigrationService } from './migration.service';
+import { EXECUCAO_INTERROMPIDA, MigrationService } from './migration.service';
 
 describe('MigrationService', () => {
   let service: MigrationService;
@@ -41,6 +41,7 @@ describe('MigrationService', () => {
           return Promise.resolve({ id: 'run-1', ...data });
         }),
         update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: jest.fn().mockImplementation(() =>
           Promise.resolve(
             cargasReais.map(({ base, company }) => ({
@@ -91,6 +92,46 @@ describe('MigrationService', () => {
       /já existe uma migração em andamento/i,
     );
     expect(criados).toHaveLength(0);
+  });
+
+  describe('execução órfã de um contêiner anterior', () => {
+    // CENCOM, 18/11: um deploy trocou o contêiner 9 minutos depois do início
+    // da simulação. O processo morreu junto, o registro ficou "em andamento"
+    // e passou a recusar qualquer migração nova.
+    const encerramento = () =>
+      prisma.migrationRun.updateMany.mock.calls.at(-1)[0];
+
+    it('é encerrada como falha antes de conferir a fila', async () => {
+      const antes = Date.now();
+      await start();
+
+      const { where, data } = encerramento();
+      expect(where.status).toEqual({ in: ['QUEUED', 'RUNNING'] });
+      expect(data).toMatchObject({
+        status: 'FAILED',
+        failureReason: EXECUCAO_INTERROMPIDA,
+      });
+      // Só a que começou antes deste processo subir: a que ele mesmo
+      // disparou está viva.
+      expect(where.createdAt.lt.getTime()).toBeLessThanOrEqual(antes);
+      expect(
+        prisma.migrationRun.updateMany.mock.invocationCallOrder[0],
+      ).toBeLessThan(prisma.migrationRun.findFirst.mock.invocationCallOrder[0]);
+    });
+
+    it('é encerrada quando a API sobe', async () => {
+      await service.onModuleInit();
+
+      expect(encerramento().data.status).toBe('FAILED');
+    });
+
+    it('falha ao conferir não derruba a subida da API', async () => {
+      prisma.migrationRun.updateMany.mockRejectedValueOnce(
+        new Error('banco fora'),
+      );
+
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+    });
   });
 
   it('recusa nome de base fora do formato', async () => {
