@@ -14,10 +14,17 @@ export function chatwootPlatform({ url, token, fetchImpl = fetch }) {
     createAccount: ({ name, locale = "pt_BR", features }) => call("POST", "accounts", { name, locale, ...(features ? { features } : {}) }),
     account: (id) => call("GET", `accounts/${Number(id)}`),
     updateAccount: (id, fields) => call("PATCH", `accounts/${Number(id)}`, fields),
-    /** O Chatwoot devolve a pessoa que já existe com o mesmo e-mail (User.from_email). */
+    /**
+     * CUIDADO: com o e-mail de uma pessoa que já existe, o Chatwoot 4.19.1 devolve essa pessoa (User.from_email)
+     * e dá ao Platform App poder sobre ela para sempre (login, e-mail, senha), mesmo o super administrador; não há
+     * rota que tire esse poder sem apagar a pessoa. ensureStaffUser cria com um e-mail provisório e troca depois.
+     */
     createUser: ({ name, email, password, display_name }) => call("POST", "users", { name, email, password, ...(display_name ? { display_name } : {}) }),
     user: (id) => call("GET", `users/${Number(id)}`),
+    /** Trocar para um e-mail que já é de outra pessoa dá 422, sem tocar na outra pessoa. */
     updateUser: (id, fields) => call("PATCH", `users/${Number(id)}`, fields),
+    /** Apaga a pessoa inteira (DeleteObjectJob): só para o usuário provisório que o próprio kit acabou de criar. */
+    deleteUser: (id) => call("DELETE", `users/${Number(id)}`),
     accountUsers: (accountId) => call("GET", `accounts/${Number(accountId)}/account_users`),
     addAccountUser: (accountId, { user_id, role }) => call("POST", `accounts/${Number(accountId)}/account_users`, { user_id, role }),
     /**

@@ -278,6 +278,12 @@ export function RoboAtendimento({ escopo = "cliente" }: { escopo?: Scope }) {
                   error={problemas["handoff.max_bot_turns"]}
                   onChange={(text) => update({ handoff: { ...settings.handoff, max_bot_turns: Number.parseInt(text, 10) || 0 } })}
                 />
+                <Toggle
+                  label="Sugerir respostas depois que a equipe assume"
+                  hint="Com o robô respondendo sozinho: quando alguém da equipe assume a conversa, o robô para de responder e passa a sugerir a resposta numa nota interna. Nada vai para o cliente sem a pessoa enviar."
+                  checked={settings.suggest_after_takeover === true}
+                  onChange={(suggest_after_takeover) => update({ suggest_after_takeover })}
+                />
               </>
             ) : null}
             {can("mensagens") ? (

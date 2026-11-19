@@ -127,6 +127,11 @@ function rejectedByChatwoot(error) {
   throw new ProvisionError("meta_rejected", "O Chatwoot recusou os dados do número.", "Confira o token permanente e os IDs no WhatsApp Manager da Meta, e se este número já está ligado a outro cliente.");
 }
 
+/** E-mail que nenhuma pessoa tem: .invalid é reservado (RFC 2606), e nada é enviado a ele. */
+function provisionalEmail() {
+  return `novo-${randomBytes(9).toString("hex")}@atendimento.invalid`;
+}
+
 function strongPassword() {
   // Senha que ninguém digita: a entrada é sempre pelo login único. Letras, dígitos e símbolos que o Chatwoot exige.
   return `${randomBytes(24).toString("base64url")}Aa1!`;
@@ -200,12 +205,37 @@ export async function ensureStaffUser({ chatwootUrl, platformToken, state, perso
   let userId = next.staff[person.key];
   const joining = !userId;
   let full = null;
-  if (joining) {
-    // O Chatwoot acha a pessoa existente pelo e-mail. Se for de quem administra outra conta, como o super
-    // administrador criado na instalação, ela viraria atendente aqui e o login único cairia na outra conta.
-    const user = await platform.createUser({ name: person.name, email: person.email, password: strongPassword() });
+  if (joining && person.chatwootUserId) {
+    // A mesma pessoa já atende outro cliente: o projeto passa o usuário que o kit criou para ela lá. O Chatwoot
+    // só mostra usuário sob o Platform App, e o e-mail tem de ser o dela.
+    full = await platform.user(person.chatwootUserId);
+    if (String(full?.email ?? "").toLowerCase() !== String(person.email ?? "").toLowerCase()) {
+      throw new ProvisionError("staff_user_mismatch", "O usuário do Chatwoot informado não é desta pessoa.", "Passe em chatwootUserId o usuário que o kit criou para ela em outro cliente, ou deixe vazio.");
+    }
+    userId = full.id;
+  } else if (joining) {
+    // Nunca chamar createUser com o e-mail da pessoa: se ele já existir no Chatwoot (o super administrador da
+    // instalação, por exemplo), o Chatwoot devolve essa pessoa e dá ao Platform App poder para sempre sobre ela,
+    // sem rota que desfaça. Cria com um e-mail provisório, que ninguém usa, e troca para o da pessoa: um e-mail
+    // que já tem dono dá 422 na troca, sem tocar no dono, e o provisório é apagado.
+    const user = await platform.createUser({ name: person.name, email: provisionalEmail(), password: strongPassword() });
+    try {
+      full = await platform.updateUser(user.id, { name: person.name, email: person.email });
+    } catch (error) {
+      await platform.deleteUser(user.id).catch(() => {});
+      if (error?.status === 422) {
+        throw new ProvisionError(
+          "staff_email_in_use",
+          "Este e-mail já é de outro usuário do Chatwoot, como o super administrador da instalação ou alguém de outro cliente.",
+          "Use outro e-mail para esta pessoa. Se ela já atende outro cliente, passe em chatwootUserId o usuário que o kit criou para ela lá.",
+        );
+      }
+      throw error;
+    }
     userId = user.id;
-    full = await platform.user(userId);
+  }
+  if (joining) {
+    full = full ?? (await platform.user(userId));
     const adminElsewhere = (full?.accounts ?? []).some((item) => Number(item.id) !== Number(next.account_id) && item.role === "administrator");
     if (adminElsewhere) {
       throw new ProvisionError("staff_email_is_admin", "Este e-mail é de quem administra outra conta do Chatwoot, como o super administrador.", "Dê ao super administrador um e-mail que ninguém da equipe usa, ou use outro e-mail para esta pessoa.");

@@ -197,7 +197,10 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
     }
     // O modo vem do último perfil conhecido da conversa; processConversation confere com o perfil atual.
     const mode = conversationConfig(config, profiles.get(key)?.info ?? NO_PROFILE).mode;
-    const act = status === "pending" || (status === "open" && mode === "sugestao" && config.suggest_on_open);
+    // Conversa aberta: a equipe atende. O robô só escreve nota interna, no modo sugestão ou, no automático, com
+    // suggest_after_takeover (D32); nunca manda nada ao cliente (invariante 15).
+    const drafting = (mode === "sugestao" && config.suggest_on_open) || (mode === "auto" && config.suggest_after_takeover);
+    const act = status === "pending" || (status === "open" && drafting);
     return { key, record: text.trim() ? { id: payload.id, role: "cliente", text } : null, act };
   }
 
@@ -280,6 +283,8 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
     const cw = chatwootFactory({ baseUrl: env.chatwootUrl, token: config.chatwoot.bot_token, fetchImpl });
     // A configuração desta conversa: a da conta com o bloco do perfil de quem escreve por cima (D30).
     let cfg = config;
+    // D32: a conversa que a equipe assumiu, no modo automático, só recebe sugestão de resposta.
+    let afterTakeover = false;
     const log = (fields) =>
       logger.info({ account: accountId, conversation: conversationId, mode: cfg.mode, ...(cfg.profile?.key ? { profile: cfg.profile.key } : {}), ...fields });
     let pending = last.payload.conversation.status === "pending";
@@ -316,9 +321,15 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
         // O perfil de quem escreve, a cada leva de mensagens (cache curto). Conversa de grupo não tem perfil.
         cfg = conversationConfig(config, await profileFor(key, { accountId, conversationId, inboxId, contact }));
         const draftingOnOpen = status === "open" && cfg.mode === "sugestao" && cfg.suggest_on_open;
-        if (!pending && !draftingOnOpen) {
+        // D32: no automático, a conversa que a equipe assumiu recebe só sugestões, como no modo sugestão.
+        const draftingAfterTakeover = status === "open" && !pending && cfg.mode === "auto" && cfg.suggest_after_takeover;
+        if (!pending && !draftingOnOpen && !draftingAfterTakeover) {
           log({ event: "skipped", status });
           return;
+        }
+        if (draftingAfterTakeover) {
+          cfg = { ...cfg, mode: "sugestao" };
+          afterTakeover = true;
         }
 
         if (cfg.mode === "desligado") {
@@ -437,6 +448,11 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
         return;
       }
 
+      // Depois que a equipe assumiu, sem resposta para sugerir o robô não escreve nada: passar para a equipe já aconteceu.
+      if (afterTakeover) {
+        log({ event: "handled", action: "no_suggestion", code: action.category, lookups: action.lookups, provider: cfg.ai.provider, ms: now() - started });
+        return;
+      }
       if (pending || group || cfg.mode === "sugestao") {
         await handoffFlow({
           cw,
@@ -456,6 +472,8 @@ export function createBot({ env, fetchImpl = fetch, now = () => Date.now(), logg
       logger.error({ event: "failed", account: accountId, conversation: conversationId, code: error?.code ?? "unexpected", ms: now() - started });
       // Num grupo em que ninguém chamou o robô, nem a falha vira mensagem (invariante 13).
       if (group && !called) return;
+      // Uma sugestão que falhou não vira nota: a equipe já está na conversa.
+      if (afterTakeover) return;
       try {
         const code = error?.code ?? "erro inesperado";
         const text = cfg.mode === "sugestao" ? "" : cfg.messages.erro;

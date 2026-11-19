@@ -124,6 +124,12 @@ export interface SupportStore {
    */
   listPanelPeople(tenantId: string): Promise<string[]>;
   /**
+   * No modelo por-cliente, quando a mesma pessoa atende mais de um cliente: o usuário do Chatwoot que o kit já
+   * criou para ela em outro cliente (state.staff[personKey] do outro), ou null. Sem isso, o e-mail dela, que já
+   * existe no Chatwoot, é recusado com staff_email_in_use, e nunca adotado (references/contratos.md).
+   */
+  staffUserElsewhere(personKey: string, tenantId: string): Promise<number | null>;
+  /**
    * As mesmas pessoas de listPanelPeople, com nome e e-mail, para escolher quem entra num grupo da equipe.
    * Quem ainda não entrou no painel entra na equipe do Chatwoot quando é posto num grupo.
    */
@@ -175,6 +181,8 @@ export const store: SupportStore = {
   saveState: adapt("grave o estado do atendimento do cliente, cifrado"),
   tenantByAccount: adapt("encontre o cliente pela conta do Chatwoot (account_id do estado)"),
   listPanelPeople: adapt("liste as chaves de quem pode atender neste cliente hoje"),
+  // ADAPTE no por-cliente, se uma pessoa pode atender mais de um cliente; no modelo plataforma, fica assim.
+  staffUserElsewhere: async () => null,
   teamPeople: adapt("liste quem pode atender neste cliente hoje, com chave, nome e e-mail"),
   alertWhatsapp: adapt("avise quem conecta o número e, quando fixBy for tecnico, quem cuida do servidor"),
   contactProfile: adapt("ache a pessoa pelo telefone e devolva { profile, label, facts }, ou null; sem perfis no projeto, devolva null"),
@@ -294,7 +302,7 @@ export async function enterPanel(request: Request): Promise<EnterResult> {
     chatwootUrl: env.chatwootUrl(),
     platformToken: env.platformToken(),
     state,
-    person: { key: person.key, email: person.email, name: person.name },
+    person: { key: person.key, email: person.email, name: person.name, chatwootUserId: await store.staffUserElsewhere(person.key, tenantId) },
   });
   await store.saveState(tenantId, next);
   return { ok: true, url: await ssoUrl({ chatwootUrl: env.chatwootUrl(), platformToken: env.platformToken(), userId }) };
@@ -416,7 +424,7 @@ export async function saveTeamGroupFor(request: Request, body: { chave?: string;
   for (const key of members) {
     if (state.staff?.[key]) continue;
     const item = people.get(key)!;
-    state = (await ensureStaffUser({ chatwootUrl: env.chatwootUrl(), platformToken: env.platformToken(), state, person: { key, email: item.email, name: item.name } })).state;
+    state = (await ensureStaffUser({ chatwootUrl: env.chatwootUrl(), platformToken: env.platformToken(), state, person: { key, email: item.email, name: item.name, chatwootUserId: await store.staffUserElsewhere(key, tenantId) } })).state;
   }
   await store.saveState(tenantId, state);
   const chave = body.chave?.trim() || `g-${crypto.randomUUID().slice(0, 8)}`;

@@ -87,6 +87,7 @@ export function normalizeConfig(raw) {
     },
     tools: Array.isArray(raw.tools) ? raw.tools.filter((tool) => tool && /^[a-z0-9_]{1,64}$/.test(tool.name)) : [],
     suggest_on_open: raw.suggest_on_open !== false,
+    suggest_after_takeover: raw.suggest_after_takeover === true,
     history_from_project: raw.history_from_project !== false,
     share_contact_name: raw.privacy?.share_contact_name !== false,
   };
