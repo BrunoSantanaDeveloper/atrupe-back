@@ -35,6 +35,7 @@ import { MailModule } from './mail/mail.module';
 import { PlanModule } from './plan/plan.module';
 import { ContractModule } from './contract/contract.module';
 import { AcademyModule } from './academy/academy.module';
+import { ReleaseNotesModule } from './release-notes/release-notes.module';
 import { CustomersModule } from './customers/customers.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { ActivityMonitorModule } from './activity-monitor/activity-monitor.module';
@@ -90,6 +91,7 @@ import { AccountResetModule } from './account-reset/account-reset.module';
     PlanModule,
     ContractModule,
     AcademyModule,
+    ReleaseNotesModule,
     CustomersModule,
     SubscriptionsModule,
     CouponsModule,

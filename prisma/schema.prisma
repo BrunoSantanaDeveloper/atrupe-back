@@ -578,10 +578,51 @@ model User {
   migrationRuns        MigrationRun[]         @relation("MigrationRunStartedBy")
   aiConversations      AiConversation[]
   aiActions            AiAction[]
+  releaseNoteReads     ReleaseNoteRead[]
   customer             Customer?              @relation(fields: [customerId], references: [id])
 
   @@index([email])
   @@map("users")
+}
+
+/// As novidades do sistema (19/11/2026): cada atualização que o Super Admin
+/// publica. O sino do topo, o aviso do painel e a página Novidades leem daqui
+model ReleaseNote {
+  id            String            @id @default(uuid())
+  title         String
+  /// O resumo do sino e do aviso
+  summary       String
+  /// Rótulo da versão, opcional ("Novembro de 2026")
+  version       String?
+  /// As mudanças: [{ kind: NEW | IMPROVEMENT | FIX, text }]
+  items         Json              @default("[]")
+  /// Os planos que recebem; vazio = todos
+  plans         PlanType[]        @default([])
+  /// Abre o aviso "O que mudou" no painel na primeira vez
+  highlight     Boolean           @default(true)
+  /// Nulo = rascunho; o cliente só vê a publicada
+  publishedAt   DateTime?
+  createdByName String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  reads         ReleaseNoteRead[]
+
+  @@index([publishedAt])
+  @@map("release_notes")
+}
+
+/// O que cada usuário já viu: o sino (seenAt) e o aviso do painel (announcedAt)
+model ReleaseNoteRead {
+  releaseNoteId String
+  userId        String
+  seenAt        DateTime?
+  announcedAt   DateTime?
+  releaseNote   ReleaseNote @relation(fields: [releaseNoteId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([releaseNoteId, userId])
+  @@index([userId])
+  @@map("release_note_reads")
 }
 
 model MailVerification {
