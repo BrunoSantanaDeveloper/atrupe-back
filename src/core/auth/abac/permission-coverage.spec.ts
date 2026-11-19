@@ -118,6 +118,8 @@ const CONTROLLERS_SEM_PERMISSAO: Record<string, string> = {
   PlanConfigController: 'superadmin',
   PlanController:
     'superadmin; as rotas públicas mostram os planos na contratação',
+  ReleaseNotesController:
+    'novidades do sistema: o usuário lê as do plano dele e marca as que viu; escrever e publicar é do superadmin',
   SellersController: APOIO,
   SubscriptionsController:
     'assinatura da própria conta; as rotas de administração são do superadmin',
