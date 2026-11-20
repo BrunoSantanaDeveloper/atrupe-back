@@ -254,20 +254,22 @@ export class ProductSaleService {
         name: stageOf(block),
         sector: block.sector,
       })),
-      // Os campos lidos por alguma linha, uma vez só (IP-6); inteiro por
-      // padrão, com fração quando o campo aceita (IP-19)
-      extras: (engine.fields ?? [])
-        .filter((field) => reads(field.name))
-        .map((field) => ({
-          fieldId: field.id,
-          name: field.name,
-          kind: field.allowsFraction ? 'DECIMAL' : 'INTEGER',
-          defaultValue: field.defaultValue,
-        })) as {
+      // Todos os campos do produto, uma vez só (IP-6); `used` diz se alguma
+      // linha lê o campo: o que nenhuma etapa usa vai à tela desabilitado
+      // (20/11/2026). Inteiro por padrão, com fração quando o campo aceita
+      // (IP-19)
+      extras: (engine.fields ?? []).map((field) => ({
+        fieldId: field.id,
+        name: field.name,
+        kind: field.allowsFraction ? 'DECIMAL' : 'INTEGER',
+        defaultValue: field.defaultValue,
+        used: reads(field.name),
+      })) as {
         fieldId: string;
         name: string;
         kind: string;
         defaultValue: number;
+        used: boolean;
       }[],
       times: [] as { blockId: string; name: string; defaultMinutes: number }[],
       choices: [] as unknown[],
@@ -308,6 +310,7 @@ export class ProductSaleService {
           name: rules.extraFieldName || stage,
           kind: rules.extraField,
           defaultValue: rules.extraFieldDefault,
+          used: true,
         });
       }
 

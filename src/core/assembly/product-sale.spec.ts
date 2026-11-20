@@ -208,6 +208,47 @@ describe('ProductSaleService', () => {
     expect(JSON.stringify(form)).not.toMatch(/"(cost|unitCost|unitSale)"/);
   });
 
+  it('o formulário traz todos os campos do produto; o que nenhuma linha lê vem com used false (20/11/2026)', async () => {
+    const withFields: any = assembly();
+    withFields.blocks[0].lines[0] = line('Material', {
+      formula: 'PER_EXTRA',
+      fieldName: 'Número de letras',
+    });
+    withFields.fields = [
+      {
+        id: 'f-1',
+        name: 'Número de letras',
+        defaultValue: 0,
+        allowsFraction: false,
+      },
+      {
+        id: 'f-2',
+        name: 'Quantidade de leds',
+        defaultValue: 2,
+        allowsFraction: true,
+      },
+    ];
+    assemblies.assemblyRow.mockResolvedValueOnce(withFields);
+
+    const form = (await service.saleForm('c-1', 'pr-1'))!;
+    expect(form.extras).toEqual([
+      {
+        fieldId: 'f-1',
+        name: 'Número de letras',
+        kind: 'INTEGER',
+        defaultValue: 0,
+        used: true,
+      },
+      {
+        fieldId: 'f-2',
+        name: 'Quantidade de leds',
+        kind: 'DECIMAL',
+        defaultValue: 2,
+        used: false,
+      },
+    ]);
+  });
+
   it('o relatório tira a opcional desmarcada e a linha vazia, sem custo', async () => {
     const report = await service.saleComposition('c-1', 'pr-1', {
       optionals: [{ blockId: 'b-1', lineId: 'Cordão', included: false }],
