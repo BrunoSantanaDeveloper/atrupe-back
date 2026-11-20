@@ -9,6 +9,7 @@ import {
   newLineData,
   newOptionData,
   removeOptionData,
+  systemNameCheck,
   toEngineLine,
 } from './composition-lines';
 import { CreateLineDto } from './dto/composition.dto';
@@ -388,6 +389,16 @@ describe('linhas da composição: campos e motor', () => {
     const fields = [{ id: 'f-1', name: 'Distância entre ilhoses' }];
     expect(findByName(fields, ' DISTANCIA entre ilhoses ')).toBe(fields[0]);
     expect(findByName(fields, 'Distância')).toBeUndefined();
+  });
+
+  it('o campo não leva o nome de uma medida do sistema (20/11/2026)', () => {
+    expect(message(() => systemNameCheck(' perimetro '))).toBe(
+      '"Perímetro" já é uma medida do sistema. Use outro nome, como "perimetro linear"',
+    );
+    expect(() => systemNameCheck('ÁREA')).toThrow(BadRequestException);
+    expect(() => systemNameCheck('Perímetro linear')).not.toThrow();
+    // O campo antigo com esse nome continua editável
+    expect(() => systemNameCheck('Perimetro', 'perímetro')).not.toThrow();
   });
 
   it('campo inteiro recusa decimal (IP-19)', () => {

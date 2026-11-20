@@ -45,6 +45,7 @@ import {
   LINE_NOT_FOUND,
   LineRow,
   findByName,
+  systemNameCheck,
   integerCheck,
   lineUpdateData,
   newLineData,
@@ -1023,6 +1024,7 @@ export class ProductAssemblyService {
     const { assembly } = await this.writable(ctx);
     const name = dto.name.trim();
     if (!name) bad('Informe o nome do campo');
+    systemNameCheck(name);
     if (findByName(assemblyFields(assembly), name)) {
       bad('Já existe um campo com esse nome neste produto');
     }
@@ -1056,6 +1058,7 @@ export class ProductAssemblyService {
     if (dto.name !== undefined) {
       name = dto.name.trim();
       if (!name) bad('Informe o nome do campo');
+      systemNameCheck(name, field.name);
       const other = findByName(fields, name);
       if (other && other.id !== field.id) {
         bad('Já existe um campo com esse nome neste produto');

@@ -7,7 +7,7 @@ import {
   CreateOptionDto,
   UpdateLineDto,
 } from './dto/composition.dto';
-import { normalizeName } from './engine/formula';
+import { MEASURE_NAMES, normalizeName } from './engine/formula';
 import { EngineLine, FormulaKey } from './engine/types';
 
 /*
@@ -271,6 +271,26 @@ type NamedRow = { id: string; name: string };
 /** O campo com esse nome, sem acento e sem maiúscula. */
 export const findByName = <T extends NamedRow>(rows: T[], name: string) =>
   rows.find((row) => normalizeName(row.name) === normalizeName(name));
+
+/**
+ * O campo não pode ter o nome de uma medida do sistema (largura, perímetro…):
+ * a fórmula e o tipo de cálculo leriam a medida, não o campo (20/11/2026; o
+ * "perimetro" passava porque só se comparava com os campos do produto).
+ */
+export const systemNameCheck = (name: string, current?: string) => {
+  // O campo antigo que já tinha esse nome continua editável
+  if (current !== undefined && normalizeName(current) === normalizeName(name)) {
+    return;
+  }
+  const system = MEASURE_NAMES.find(
+    (item) => normalizeName(item) === normalizeName(name),
+  );
+  if (system) {
+    bad(
+      `"${system[0].toUpperCase()}${system.slice(1)}" já é uma medida do sistema. Use outro nome, como "${name.trim()} linear"`,
+    );
+  }
+};
 
 /** Campo inteiro recusa decimal (IP-19): no padrão, na venda e na simulação. */
 export const integerCheck = (

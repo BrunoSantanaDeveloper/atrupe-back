@@ -27,6 +27,7 @@ import {
   LINE_INCLUDE,
   LINE_NOT_FOUND,
   findByName,
+  systemNameCheck,
   integerCheck,
   lineUpdateData,
   newLineData,
@@ -792,6 +793,7 @@ export class ProcessService {
     const process = await this.processForWrite(companyId, id);
     const name = dto.name.trim();
     if (!name) bad('Informe o nome do campo');
+    systemNameCheck(name);
     if (findByName(process.fields, name)) {
       bad('Já existe um campo com esse nome neste produto');
     }
@@ -831,6 +833,7 @@ export class ProcessService {
     if (dto.name !== undefined) {
       const name = dto.name.trim();
       if (!name) bad('Informe o nome do campo');
+      systemNameCheck(name, field.name);
       const other = findByName(process.fields, name);
       if (other && other.id !== field.id) {
         bad('Já existe um campo com esse nome neste produto');
