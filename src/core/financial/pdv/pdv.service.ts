@@ -186,7 +186,13 @@ export class PdvService {
 
   /* ---------------------------------------------------------- leitura */
 
-  private sessionView(session: SessionRow, accounts: Map<string, string>) {
+  private sessionView(
+    session: SessionRow,
+    accounts: Map<string, string>,
+    // O orçamento de cada venda recebida, para reimprimir o comprovante
+    // depois de recebida (Lista Lite 19/11, item 13)
+    saleQuotations: Map<string, string> = new Map(),
+  ) {
     return {
       id: session.id,
       number: session.number,
@@ -216,6 +222,9 @@ export class PdvService {
           : undefined,
         bankAccountId: movement.bankAccountId ?? undefined,
         discount: movement.discount || undefined,
+        quotationId: movement.pendingSaleId
+          ? (saleQuotations.get(movement.pendingSaleId) ?? undefined)
+          : undefined,
         parts: partsOf(movement.parts).map((part) => ({
           method: part.method,
           paymentConditionId: part.paymentConditionId,
@@ -261,6 +270,8 @@ export class PdvService {
       quotationId: sale.quotationId,
       reference: saleReference(sale.quotation),
       client: client?.name ?? '',
+      // Para o "Faturar para o cliente" já vir com ele (Lista Lite 19/11, 11)
+      clientId: sale.quotation.clientId ?? null,
       seller: sale.quotation.seller?.name ?? '',
       kind: sale.kind,
       total: sale.total,
@@ -334,8 +345,23 @@ export class PdvService {
       orderBy: { openedAt: 'asc' },
     });
     const accounts = await this.accountNames(user.companyId);
+    const saleIds = (session?.movements ?? [])
+      .map((movement) => movement.pendingSaleId)
+      .filter((id): id is string => !!id);
+    const saleQuotations = new Map(
+      saleIds.length
+        ? (
+            await this.prisma.pendingSale.findMany({
+              where: { id: { in: saleIds }, companyId: user.companyId },
+              select: { id: true, quotationId: true },
+            })
+          ).map((row) => [row.id, row.quotationId] as [string, string])
+        : [],
+    );
     return {
-      session: session ? this.sessionView(session, accounts) : null,
+      session: session
+        ? this.sessionView(session, accounts, saleQuotations)
+        : null,
       sales: sales.map((sale) => this.saleView(sale, claimers)),
       openCashFronts: open.length,
       // O aviso antes do bloqueio do dia seguinte (FC-14)
@@ -1384,11 +1410,10 @@ export class PdvService {
     if (!dto.paymentConditionId || !dto.dueDate) {
       bad('Informe a forma de pagamento e o vencimento');
     }
-    if (sale.paid > 0) {
-      bad(
-        'A venda já tem sinal recebido. Estorne o sinal antes de faturar para o cliente',
-      );
-    }
+    // Lista Lite 19/11, item 14: a entrada recebida no caixa (o sinal) fica
+    // como paga, e só o restante vai a prazo para o cliente e para o limite
+    const remainder = sale.total - sale.paid;
+    if (remainder <= 0) bad('A venda já está paga: entregue no caixa');
     const session = await this.mySession(user.companyId, user.userId);
     if (!session) bad('Abra o caixa antes de faturar');
     this.assertCurrent(session);
@@ -1418,14 +1443,41 @@ export class PdvService {
     ) {
       bad(`${condition.name} não está liberada para este cliente`);
     }
+    // O que falta desta venda já pode estar no saldo do cliente (a parcela
+    // pendente do recebimento parcial, no nome dele): não conta duas vezes
+    const ownPending =
+      sale.paid > 0 && sale.quotation.clientId === client.id
+        ? Math.round(
+            (
+              await this.prisma.receivableInstallment.aggregate({
+                _sum: { amount: true },
+                where: {
+                  status: { in: ['PENDING', 'OVERDUE'] },
+                  receivable: {
+                    quotationId: sale.quotationId,
+                    clientId: client.id,
+                    financialType: 'MAIN',
+                    status: { not: 'CANCELED' },
+                  },
+                },
+              })
+            )._sum.amount ?? 0,
+          )
+        : 0;
     if (
       credit?.applies &&
       credit.enforcing &&
       credit.limit !== null &&
-      // Tudo em centavos: o usado, o limite e o total da venda
-      credit.used + sale.total > credit.limit
+      // Tudo em centavos: o usado, o limite e o que vai a prazo
+      credit.used - ownPending + remainder > credit.limit
     ) {
-      bad('O faturamento passa do limite de crédito do cliente');
+      // O caminho (item 14): a entrada mínima que faz o restante caber
+      const entry = credit.used - ownPending + remainder - credit.limit;
+      bad(
+        entry >= remainder
+          ? `O cliente não tem limite de crédito disponível: receba ${money(remainder)} à vista no caixa ou peça ao financeiro uma revisão do limite`
+          : `O faturamento passa do limite de crédito do cliente. Receba no caixa uma entrada de pelo menos ${money(entry)} e fature o restante`,
+      );
     }
     const qty = dto.installmentQty;
     const first = new Date(`${dto.dueDate.slice(0, 10)}T12:00:00`);
@@ -1454,35 +1506,73 @@ export class PdvService {
         sale.companyId,
         tx,
       );
-      const base = Math.floor(sale.total / qty);
-      await tx.receivable.create({
-        data: {
-          companyId: sale.companyId,
-          clientId: client.id,
-          quotationId: sale.quotationId,
-          description: `Venda ${reference}`,
-          reference,
-          referenceDate: new Date(),
-          notes: dto.notes?.trim() || null,
-          totalAmount: toReais(sale.total),
-          totalValue: toReais(sale.total),
-          installmentQty: qty,
-          ...categories,
-          installments: {
-            create: Array.from({ length: qty }, (_, index) => ({
-              installmentNumber: index + 1,
-              dueDate: addMonths(first, index),
-              // O resto dos centavos na última parcela
-              amount: toReais(
-                index === qty - 1 ? sale.total - base * (qty - 1) : base,
-              ),
-              paymentConditionId: condition.id,
-              bankAccountId,
-              status: 'PENDING' as const,
-            })),
+      const base = Math.floor(remainder / qty);
+      const installments = (from: number) =>
+        Array.from({ length: qty }, (_, index) => ({
+          installmentNumber: from + index + 1,
+          dueDate: addMonths(first, index),
+          // O resto dos centavos na última parcela
+          amount: toReais(
+            index === qty - 1 ? remainder - base * (qty - 1) : base,
+          ),
+          paymentConditionId: condition.id,
+          bankAccountId,
+          status: 'PENDING' as const,
+        }));
+      // Com entrada recebida, o título da venda já existe (o recebimento
+      // parcial): a parcela do que falta dá lugar às parcelas do cliente
+      const main =
+        sale.paid > 0
+          ? await tx.receivable.findFirst({
+              where: {
+                quotationId: sale.quotationId,
+                financialType: 'MAIN',
+                status: { not: 'CANCELED' },
+              },
+              select: { id: true },
+            })
+          : null;
+      if (main) {
+        await tx.receivableInstallment.deleteMany({
+          where: { receivableId: main.id, status: 'PENDING' },
+        });
+        const last = await tx.receivableInstallment.aggregate({
+          where: { receivableId: main.id },
+          _max: { installmentNumber: true },
+          _count: true,
+        });
+        await tx.receivableInstallment.createMany({
+          data: installments(last._max.installmentNumber ?? 0).map((row) => ({
+            ...row,
+            receivableId: main.id,
+          })),
+        });
+        await tx.receivable.update({
+          where: { id: main.id },
+          data: {
+            clientId: client.id,
+            notes: dto.notes?.trim() || null,
+            installmentQty: last._count + qty,
+            status: 'PENDING',
           },
-        },
-      });
+        });
+      } else
+        await tx.receivable.create({
+          data: {
+            companyId: sale.companyId,
+            clientId: client.id,
+            quotationId: sale.quotationId,
+            description: `Venda ${reference}`,
+            reference,
+            referenceDate: new Date(),
+            notes: dto.notes?.trim() || null,
+            totalAmount: toReais(sale.total),
+            totalValue: toReais(sale.total),
+            installmentQty: qty,
+            ...categories,
+            installments: { create: installments(0) },
+          },
+        });
       await tx.pendingSale.update({
         where: { id: sale.id },
         data: {

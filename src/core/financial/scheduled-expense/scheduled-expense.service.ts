@@ -615,6 +615,45 @@ export class ScheduledExpenseService {
         this.prisma.supplier.count({ where: whereSupplier }),
       ]);
 
+      // Lista Lite 19/11, item 4: o total das despesas fixas do filtro inteiro
+      // (não só da página), para o cliente ver quanto tem programado sem somar
+      // as linhas: o programado (valor padrão), o lançado no mês e o pago
+      const allExpenses = await this.prisma.scheduledExpense.findMany({
+        where: {
+          ...whereScheduledExpense,
+          supplier: filters.search
+            ? { name: { contains: filters.search, mode: 'insensitive' } }
+            : undefined,
+        },
+        select: {
+          amount: true,
+          payables: {
+            where: wherePayables,
+            select: {
+              totalAmount: true,
+              installments: { select: { status: true } },
+            },
+          },
+        },
+      });
+      const summary = allExpenses.reduce(
+        (acc, expense) => {
+          acc.count += 1;
+          acc.scheduled += expense.amount ?? 0;
+          for (const payable of expense.payables) {
+            acc.launched += payable.totalAmount ?? 0;
+            if (
+              payable.installments.length &&
+              payable.installments.every((i) => i.status === 'PAID')
+            ) {
+              acc.paid += payable.totalAmount ?? 0;
+            }
+          }
+          return acc;
+        },
+        { count: 0, scheduled: 0, launched: 0, paid: 0 },
+      );
+
       // Calcular totais por fornecedor
       const data = suppliers.map((supplier) => {
         const activeExpenses = supplier.scheduledExpense.filter(
@@ -679,6 +718,7 @@ export class ScheduledExpenseService {
       return {
         total,
         totalPages: Math.ceil(total / limit),
+        summary,
         data,
       };
     } catch (error) {

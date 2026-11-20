@@ -329,7 +329,12 @@ describe('CreditCheckService', () => {
       expect(credit.issues[0]).toMatchObject({
         excess: 80000,
         suggestedDownPayment: 30000,
+        fullPayment: true,
       });
+      // Lista Lite 19/11, item 3: não é entrada, é pagamento integral
+      expect(credit.issues[0].message.replace(/\u00a0/g, ' ')).toContain(
+        'será necessário o pagamento integral de R$ 300,00 à vista',
+      );
     });
 
     it('com a entrada da diferença no ato, aprova com pendência da entrada', async () => {

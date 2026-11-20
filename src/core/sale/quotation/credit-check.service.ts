@@ -36,14 +36,27 @@ export const creditExceededMessage = (values: {
   used: number;
   excess: number;
   suggestedDownPayment: number;
-}) =>
-  [
-    `Esta venda passa ${brl(values.excess)} do limite de crédito do cliente (limite de ${brl(values.limit)}${
-      values.used > 0 ? `, com ${brl(values.used)} já em aberto` : ''
-    }).`,
+  /** A entrada é toda a parte a prazo: não é entrada, é pagamento integral */
+  fullPayment?: boolean;
+}) => {
+  const over = `Esta venda passa ${brl(values.excess)} do limite de crédito do cliente (limite de ${brl(values.limit)}${
+    values.used > 0 ? `, com ${brl(values.used)} já em aberto` : ''
+  }).`;
+  // Lista Lite 19/11, item 3: quando a "entrada" seria a venda inteira, o
+  // texto diz pagamento integral à vista, e que ele precisa ser recebido
+  if (values.fullPayment) {
+    return [
+      over,
+      `Para concluir esta venda, será necessário o pagamento integral de ${brl(values.suggestedDownPayment)} à vista, recebido antes da liberação.`,
+      'Você pode encaminhar a venda para a confirmação do pagamento ou pedir ao financeiro uma revisão do limite de crédito.',
+    ].join(' ');
+  }
+  return [
+    over,
     `Sugestão: uma entrada de ${brl(values.suggestedDownPayment)}, que precisa ser paga para liberar a venda.`,
     'Para mudar o limite, fale com o financeiro.',
   ].join(' ');
+};
 /** O mesmo caminho, sem os números, para quem não vê valores. */
 export const CREDIT_EXCEEDED_NO_VALUES =
   'Esta venda passa do limite de crédito do cliente. Uma entrada, paga antes, libera a venda. Para mudar o limite, fale com o financeiro.';
@@ -111,6 +124,8 @@ export type CreditIssue =
       excess: number;
       /** A entrada que resolve: a diferença, até o que a venda tem a prazo */
       suggestedDownPayment: number;
+      /** A entrada cobre toda a parte a prazo: é pagamento integral */
+      fullPayment: boolean;
     };
 
 /**
@@ -399,6 +414,7 @@ export class CreditCheckService {
         // prazo cabe no limite. Se o cliente já passou do limite sem esta
         // venda, a sugestão é a parte a prazo inteira
         const suggestedDownPayment = Math.min(excess, requested);
+        const fullPayment = suggestedDownPayment >= requested;
         issues.push({
           code: 'CREDIT_LIMIT_EXCEEDED',
           message: creditExceededMessage({
@@ -406,9 +422,11 @@ export class CreditCheckService {
             used: credit.used,
             excess,
             suggestedDownPayment,
+            fullPayment,
           }),
           excess,
           suggestedDownPayment,
+          fullPayment,
         });
       }
     }
@@ -472,6 +490,7 @@ export class CreditCheckService {
                 requested: credit.requested,
                 excess: issue.excess,
                 suggestedDownPayment: issue.suggestedDownPayment,
+                fullPayment: issue.fullPayment,
               }
             : { code: issue.code },
       ),
