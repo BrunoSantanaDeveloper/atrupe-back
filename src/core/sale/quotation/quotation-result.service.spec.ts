@@ -18,7 +18,10 @@ describe('QuotationResultService', () => {
         findUnique: jest.fn().mockResolvedValue({
           companyId: 'c-1',
           totalValue: 100000,
-          seller: { sellerProfile: { commission: 5 } },
+          status: 'APPROVED',
+          createdAt: computedAt,
+          approvedAt: null,
+          seller: { name: 'Natihely', sellerProfile: { commission: 5 } },
           quotationPayment: { finalValue: 100000 },
           quotationProduct: [
             {
@@ -44,6 +47,7 @@ describe('QuotationResultService', () => {
                           quantity: 3,
                           unitCost: 1250,
                           cost: 3750,
+                          sale: 7500,
                         },
                         {
                           kind: 'MATERIAL',
@@ -116,8 +120,21 @@ describe('QuotationResultService', () => {
       ['Ilhós', 160],
     ]);
     expect(lona.lines[1].resolved).toEqual([
-      expect.objectContaining({ kind: 'OUTSOURCED', cost: 12000 }),
+      expect.objectContaining({
+        kind: 'OUTSOURCED',
+        cost: 12000,
+        sale: 20000,
+      }),
     ]);
+    // A venda de cada recurso, para repartir o preço do item (20/11/2026);
+    // a lista informada não guarda venda
+    expect(lona.lines[0].resolved.map((r) => r.sale)).toEqual([7500, null]);
+    expect(res).toMatchObject({
+      seller: 'Natihely',
+      status: 'APPROVED',
+      createdAt: computedAt.toISOString(),
+      approvedAt: null,
+    });
     // Sem retrato nem linha, o custo do item não é conhecido
     expect(cartao).toMatchObject({ cost: 0, costKnown: false });
   });

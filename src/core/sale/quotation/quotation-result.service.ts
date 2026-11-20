@@ -11,6 +11,10 @@ type ResultResource = {
   quantity: number;
   unitCost: number | null;
   cost: number;
+  // A venda sugerida do recurso no retrato; nulo onde o retrato não guarda
+  // (a lista informada pelo vendedor). A tela reparte o preço do item por
+  // ela, como a Estimativa de Custos do legado (20/11/2026)
+  sale: number | null;
   actualQuantity: number | null;
   actualCost: number | null;
 };
@@ -56,6 +60,7 @@ const resourcesOf = (resolved: unknown): ResultResource[] => {
         quantity: num(item.quantity),
         unitCost: numOrNull(item.unitCost),
         cost: num(item.cost),
+        sale: numOrNull(item.sale),
         actualQuantity: null,
         actualCost: null,
       }));
@@ -68,6 +73,7 @@ const resourcesOf = (resolved: unknown): ResultResource[] => {
         quantity: num(entry.quantity),
         unitCost: numOrNull(entry.unitCost),
         cost: num(entry.cost),
+        sale: numOrNull(entry.sale),
         actualQuantity: numOrNull(entry.actualQuantity),
         actualCost: numOrNull(entry.actualCost),
       },
@@ -101,10 +107,16 @@ export class QuotationResultService {
         companyId: true,
         totalValue: true,
         quotationNumber: true,
+        status: true,
+        createdAt: true,
+        approvedAt: true,
         series: { select: { code: true } },
         client: { select: { name: true } },
         seller: {
-          select: { sellerProfile: { select: { commission: true } } },
+          select: {
+            name: true,
+            sellerProfile: { select: { commission: true } },
+          },
         },
         quotationPayment: { select: { finalValue: true } },
         quotationProduct: {
@@ -169,6 +181,7 @@ export class QuotationResultService {
                   quantity: 1,
                   unitCost: line.cost,
                   cost: line.cost,
+                  sale: line.price,
                   actualQuantity: null,
                   actualCost: null,
                 },
@@ -211,6 +224,11 @@ export class QuotationResultService {
         .filter((part) => part !== null && part !== undefined && part !== '')
         .join('-'),
       client: quotation.client?.name ?? null,
+      // O cabeçalho da Estimativa de Custos do legado (20/11/2026)
+      seller: quotation.seller?.name ?? null,
+      status: quotation.status,
+      createdAt: quotation.createdAt.toISOString(),
+      approvedAt: quotation.approvedAt?.toISOString() ?? null,
       revenue,
       productionCost,
       commission: { percent: commissionPercent, value: commission },
