@@ -1,3 +1,7 @@
+import {
+  missingRecipientFields,
+  missingRecipientMessage,
+} from '../utils/recipient-check';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 import {
   Injectable,
@@ -2338,6 +2342,23 @@ export class NfseService {
     );
     const cnpj = (dto.tomador?.cnpj || '').replace(/\D/g, '');
     const cpf = (dto.tomador?.cpf || '').replace(/\D/g, '');
+
+    // Os dados do tomador que a NFS-e exige (Lista Lite 19/11, item 9),
+    // listados de uma vez; o município sai do CEP mais adiante
+    const missing = missingRecipientFields('NFSE', {
+      document: cnpj || cpf,
+      name: dto.tomador?.razaoSocial,
+      zipcode: dto.tomador?.cep || (tomadorMunicipio ? 'ok' : ''),
+      foreign: !!dto.tomador?.idEstrangeiro,
+    });
+    if (missing.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'RECIPIENT_INCOMPLETE',
+        message: missingRecipientMessage('NFSE', missing),
+        missing,
+      });
+    }
 
     if (valorServicos <= 0) {
       throw new BadRequestException(

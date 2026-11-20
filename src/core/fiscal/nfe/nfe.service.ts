@@ -1,3 +1,7 @@
+import {
+  missingRecipientFields,
+  missingRecipientMessage,
+} from '../utils/recipient-check';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 import {
   Injectable,
@@ -1981,6 +1985,30 @@ export class NfeService {
     companyId: string,
     dto: EmitNfeDto,
   ): Promise<NfeEmissionContext> {
+    // Os dados do destinatário que a NF-e exige (Lista Lite 19/11, item 9):
+    // a nota não sai faltando, e a recusa lista tudo de uma vez, antes de
+    // reservar número
+    const missing = missingRecipientFields('NFE', {
+      document: dto.destCnpjCpf,
+      name: dto.destNome,
+      zipcode: dto.destCep,
+      state: dto.destUf,
+      city: dto.destMunicipio,
+      neighborhood: dto.destBairro,
+      street: dto.destEndereco,
+      number: dto.destNumero,
+      indicadorIE: dto.destIndIEDest,
+      stateRegistration: dto.destIe,
+      foreign: !!(dto.destPais && dto.destPais !== '1058'),
+    });
+    if (missing.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'RECIPIENT_INCOMPLETE',
+        message: missingRecipientMessage('NFE', missing),
+        missing,
+      });
+    }
     // A ordem e o orçamento do corpo precisam ser da empresa. Antes, a nota
     // ficava ligada à venda de outra empresa: os dados dela voltavam na
     // consulta da nota, e ela ficava impedida de emitir para a própria O.S.

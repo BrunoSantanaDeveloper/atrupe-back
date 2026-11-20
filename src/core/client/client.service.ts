@@ -1,3 +1,4 @@
+import { missingRecipientFields } from '../fiscal/utils/recipient-check';
 import {
   BadRequestException,
   Injectable,
@@ -1472,6 +1473,7 @@ export class ClientService {
   ): Promise<{
     status: 'APPROVED' | 'PARTIAL' | 'INCOMPLETE';
     missingFields: string[];
+    missingByDoc: { NFE: string[]; NFSE: string[] };
   }> {
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, companyId },
@@ -1482,36 +1484,28 @@ export class ClientService {
       throw new NotFoundException('Cliente não encontrado');
     }
 
-    const missingFields: string[] = [];
-
-    // Document check (CPF or CNPJ required)
-    const hasDocument = !!(client.cpf || client.cnpj);
-    if (!hasDocument) {
-      missingFields.push('CPF ou CNPJ');
-    }
-
-    // Name check
-    if (!client.name && !client.corporateName) {
-      missingFields.push('Nome ou Razão Social');
-    }
-
-    // Address check
+    // A mesma regra da emissão (Lista Lite 19/11, item 9): o que falta para
+    // a NF-e e para a NFS-e, para a tela avisar antes de emitir
     const addr = client.address?.[0];
-    if (!addr) {
-      missingFields.push('Endereço completo');
-    } else {
-      if (!addr.street) missingFields.push('Logradouro');
-      if (!addr.number) missingFields.push('Número');
-      if (!addr.neighborhood) missingFields.push('Bairro');
-      if (!addr.city) missingFields.push('Cidade');
-      if (!addr.state) missingFields.push('UF');
-      if (!addr.zipcode) missingFields.push('CEP');
-    }
-
-    // IE check for PJ contribuinte (indicadorIE = 1 requires stateRegistration)
-    if (client.indicadorIE === 1 && !client.stateRegistration) {
-      missingFields.push('Inscrição Estadual (IE)');
-    }
+    const recipient = {
+      document: client.cnpj || client.cpf,
+      name: client.corporateName || client.name,
+      zipcode: addr?.zipcode,
+      state: addr?.state,
+      city: addr?.city,
+      neighborhood: addr?.neighborhood,
+      street: addr?.street,
+      number: addr?.number,
+      indicadorIE: client.indicadorIE,
+      stateRegistration: client.stateRegistration,
+      foreign: !!addr?.country && addr.country !== 'Brasil',
+    };
+    const missingByDoc = {
+      NFE: missingRecipientFields('NFE', recipient),
+      NFSE: missingRecipientFields('NFSE', recipient),
+    };
+    const missingFields = missingByDoc.NFE;
+    const hasDocument = !!(client.cpf || client.cnpj);
 
     // Determine status
     let status: 'APPROVED' | 'PARTIAL' | 'INCOMPLETE';
@@ -1523,7 +1517,7 @@ export class ClientService {
       status = 'PARTIAL';
     }
 
-    return { status, missingFields };
+    return { status, missingFields, missingByDoc };
   }
 
   /**
