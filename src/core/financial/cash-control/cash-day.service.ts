@@ -394,6 +394,8 @@ export class CashDayService {
       companyId,
       ...(filter.status ? { status: filter.status } : {}),
       ...(filter.bankAccountId ? { bankAccountId: filter.bankAccountId } : {}),
+      // O fechamento de um dia escolhido no calendário (Lista Lite 19/11, 15)
+      ...(filter.date ? { openingDate: dayRange(filter.date) } : {}),
     };
     const [total, rows, accounts] = await Promise.all([
       this.prisma.cashRegister.count({ where }),

@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Prisma, TransactionType } from '@prisma/client';
 import {
   parseProjectDayBoundary,
@@ -129,6 +129,33 @@ export async function postingRegisterRow(
         operationDate: date,
       }
     : null;
+}
+
+/**
+ * A baixa manual do a receber e do a pagar (Lista Lite 19/11, item 16,
+ * decisão do Maicol em 20/11/2026): na conta com controle de caixa, só com um
+ * caixa aberto (o do dia, ou retroativo no aberto). Muda a CX-0 só para a
+ * baixa feita à mão: a conciliação e as integrações seguem com `baixaTarget`,
+ * que lança direto na conta quando não há caixa.
+ */
+export async function manualBaixaTarget(
+  tx: Tx,
+  bankAccountId: string,
+  date: Date,
+) {
+  const account = await tx.bankAccount.findUnique({
+    where: { id: bankAccountId },
+    select: { name: true, cashControl: true, kind: true },
+  });
+  const controlled = !!account?.cashControl && account.kind !== 'CARD';
+  if (!controlled) return baixaTarget(tx, bankAccountId, date);
+  const row = await postingRegisterRow(tx, bankAccountId, date);
+  if (!row) {
+    throw new BadRequestException(
+      `Abra o caixa de ${account.name} antes de dar baixa`,
+    );
+  }
+  return row;
 }
 
 /**

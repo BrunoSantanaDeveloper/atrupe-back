@@ -162,6 +162,11 @@ const createMockPrismaService = () => ({
   bankAccount: {
     findFirst: jest.fn().mockResolvedValue(null),
   },
+  // Operacional › Terceirizados de O.S., da base (Lista Lite 19/11, 17)
+  nature: { findFirst: jest.fn().mockResolvedValue({ id: 'nat-operacional' }) },
+  subCategory: {
+    findFirst: jest.fn().mockResolvedValue({ id: 'cat-terceirizados' }),
+  },
   $transaction: jest.fn(),
 });
 
@@ -1079,6 +1084,9 @@ describe('QuotationWorkflowService', () => {
           supplierId: 'fornecedor-1',
           quotationId: mockQuotationId,
           financialType: 'OUTSOURCED',
+          // Sem elas a conta não era baixada sem editar (Lista Lite 19/11)
+          natureId: 'nat-operacional',
+          subCategoryId: 'cat-terceirizados',
         }),
       });
       expect(installmentCreate).toHaveBeenCalledWith({

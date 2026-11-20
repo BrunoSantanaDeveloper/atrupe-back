@@ -35,7 +35,10 @@ import {
   FinancialRefs,
 } from '../utils/financial-refs';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
-import { baixaTarget, reverseTransaction } from '../cash-control/cash-ledger';
+import {
+  manualBaixaTarget,
+  reverseTransaction,
+} from '../cash-control/cash-ledger';
 import { ModuleRef } from '@nestjs/core';
 import {
   PAYMENT_HOLD_RELEASER,
@@ -245,7 +248,7 @@ export class ReceivableService {
             // Busca o caixa aberto
             // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
             // aberto quando o dia do fato fechou (CX-3)
-            const openCashRegister = await baixaTarget(
+            const openCashRegister = await manualBaixaTarget(
               tx,
               createdInstallment.bankAccountId,
               paidDate,
@@ -1089,7 +1092,7 @@ export class ReceivableService {
               // Busca o caixa aberto
               // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
               // aberto quando o dia do fato fechou (CX-3)
-              const openCashRegister = await baixaTarget(
+              const openCashRegister = await manualBaixaTarget(
                 tx,
                 bankAccountId,
                 new Date(paidDate),
@@ -1177,7 +1180,7 @@ export class ReceivableService {
               // Busca o caixa aberto
               // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
               // aberto quando o dia do fato fechou (CX-3)
-              const openCashRegister = await baixaTarget(
+              const openCashRegister = await manualBaixaTarget(
                 tx,
                 bankAccountId,
                 new Date(paidDate),
@@ -1326,7 +1329,7 @@ export class ReceivableService {
       // Busca o caixa aberto
       // O caixa em que a baixa entra: o do dia, o aberto, ou retroativo no
       // aberto quando o dia do fato fechou (CX-3)
-      const openCashRegister = await baixaTarget(
+      const openCashRegister = await manualBaixaTarget(
         tx,
         bankAccountId,
         endOfDay(new Date(paidDateFormatted)),

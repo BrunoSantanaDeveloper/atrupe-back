@@ -1142,6 +1142,59 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
    * única em 30 dias, como a da entrega. Com as contas já criadas, fica
    * como está.
    */
+  /**
+   * A natureza e a categoria do custo do terceirizado (Lista Lite 19/11,
+   * item 17): sem elas a conta a pagar não podia ser baixada sem editar. Da
+   * base de naturezas: Operacional (despesa) › Terceirizados de O.S.; pelo
+   * nome, e pelo código da base se a empresa renomeou.
+   */
+  private async outsourcedCategories(companyId: string) {
+    const nature =
+      (await this.prisma.nature.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          level1: '02',
+          subCategory: {
+            some: {
+              isActive: true,
+              description: {
+                equals: 'Terceirizados de O.S.',
+                mode: 'insensitive',
+              },
+            },
+          },
+        },
+        select: { id: true },
+      })) ??
+      (await this.prisma.nature.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          level1: '02',
+          level2: '02',
+          code: '01',
+        },
+        select: { id: true },
+      }));
+    if (!nature) return { natureId: null, subCategoryId: null };
+    const subCategory =
+      (await this.prisma.subCategory.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          natureId: nature.id,
+          description: { equals: 'Terceirizados de O.S.', mode: 'insensitive' },
+        },
+        select: { id: true },
+      })) ??
+      (await this.prisma.subCategory.findFirst({
+        where: { companyId, isActive: true, natureId: nature.id, code: '03' },
+        select: { id: true },
+      }));
+    return { natureId: nature.id, subCategoryId: subCategory?.id ?? null };
+  }
+
   private async ensureOutsourcedPayables(quotationId: string): Promise<void> {
     const existing = await this.prisma.payable.count({
       where: { quotationId, financialType: OUTSOURCED },
@@ -1166,6 +1219,7 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
       orderBy: { createdAt: 'asc' },
       select: { id: true },
     });
+    const categories = await this.outsourcedCategories(quotation.companyId);
     await this.prisma.$transaction(async (prisma) => {
       for (const entry of entries) {
         const payable = await prisma.payable.create({
@@ -1181,6 +1235,7 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
             companyId: quotation.companyId,
             quotationId,
             financialType: OUTSOURCED,
+            ...categories,
           },
         });
         await prisma.payableInstallment.create({
