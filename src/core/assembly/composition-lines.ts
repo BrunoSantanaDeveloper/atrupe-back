@@ -116,6 +116,7 @@ export const newLineData = (dto: CreateLineDto, ctx: LineContext) => {
       fieldName: dto.fieldName?.trim() || null,
       formulaId: !list && formula === 'CUSTOM' ? dto.formulaId! : null,
       people: peopleOf(dto.kind, dto.people),
+      timePrecision: dto.timePrecision ?? null,
       selectedOptionId: list ? null : options[0].id,
     },
     options,
@@ -158,6 +159,7 @@ export const lineUpdateData = (
     'sheetMargin',
     'sheetGap',
     'chargeWholeSheets',
+    'timePrecision',
   ] as const) {
     if (dto[key] !== undefined) data[key] = dto[key];
   }
@@ -346,6 +348,7 @@ export const toEngineLine = (
   ...(row.people != null ? { people: row.people } : {}),
   ...(row.sheetMargin != null ? { sheetMargin: row.sheetMargin } : {}),
   ...(row.sheetGap != null ? { sheetGap: row.sheetGap } : {}),
+  ...(row.timePrecision ? { timePrecision: row.timePrecision } : {}),
   ...(row.chargeWholeSheets != null
     ? { chargeWholeSheets: row.chargeWholeSheets }
     : {}),

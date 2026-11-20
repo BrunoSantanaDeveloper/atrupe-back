@@ -50,6 +50,7 @@ const processLine = {
   sheetMargin: null,
   sheetGap: null,
   chargeWholeSheets: null,
+  timePrecision: null,
   selectedOptionId: 'o-1',
   position: 0,
   createdAt: new Date(),

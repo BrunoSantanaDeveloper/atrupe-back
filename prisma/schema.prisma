@@ -2228,6 +2228,9 @@ model AssemblyLine {
   sheetMargin       Float?
   sheetGap          Float?
   chargeWholeSheets Boolean?
+  /// Precisão do tempo na configuração da linha (20/11/2026): "h", "hm" ou
+  /// "hms"; nulo é hh:mm:ss. Só a tela usa: o motor conta em minutos
+  timePrecision     String?
   selectedOptionId  String?
   position          Int                  @default(0)
   createdAt         DateTime             @default(now())

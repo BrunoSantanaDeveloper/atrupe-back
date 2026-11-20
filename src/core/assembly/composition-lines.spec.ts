@@ -91,6 +91,7 @@ const row = (extra: Partial<LineRow> = {}): LineRow => ({
   sheetMargin: null,
   sheetGap: null,
   chargeWholeSheets: null,
+  timePrecision: null,
   selectedOptionId: 'o-1',
   position: 0,
   createdAt: new Date(),
@@ -238,6 +239,14 @@ describe('linhas da composição: o ajuste (IP-22, IP-26)', () => {
       lineUpdateData(current, { selectedId: 'o-2', perUnit: 2 }, ctx)
         .onlyChoice,
     ).toBe(false);
+  });
+
+  it('a precisão do tempo nasce vazia (hh:mm:ss) e muda no ajuste (20/11/2026)', () => {
+    expect(line({}).line.timePrecision).toBeNull();
+    expect(line({ timePrecision: 'hm' }).line.timePrecision).toBe('hm');
+    expect(
+      lineUpdateData(row(), { timePrecision: 'h' }, ctx).data,
+    ).toMatchObject({ timePrecision: 'h' });
   });
 
   it('a opção escolhida precisa ser da linha', () => {

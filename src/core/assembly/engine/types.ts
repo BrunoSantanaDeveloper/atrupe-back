@@ -121,6 +121,8 @@ export type EngineLine = {
   sheetMargin?: number;
   sheetGap?: number;
   chargeWholeSheets?: boolean;
+  /** Precisão do tempo na tela (20/11/2026); o motor não usa */
+  timePrecision?: string;
 };
 
 export type EngineBlock = {

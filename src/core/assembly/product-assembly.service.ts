@@ -1384,6 +1384,7 @@ export class ProductAssemblyService {
             people: row.people,
             sheetMargin: row.sheetMargin,
             sheetGap: row.sheetGap,
+            timePrecision: row.timePrecision,
             chargeWholeSheets: row.chargeWholeSheets,
             // A escolha da linha que acompanha o processo é uma opção dele
             selectedOptionId: remap(optionIds, row.selectedOptionId),
@@ -1595,6 +1596,7 @@ export class ProductAssemblyService {
       people: origin.people,
       sheetMargin: origin.sheetMargin,
       sheetGap: origin.sheetGap,
+      timePrecision: origin.timePrecision,
       chargeWholeSheets: origin.chargeWholeSheets,
       selectedOptionId: chosen ? (optionMap.get(chosen) ?? null) : null,
     };

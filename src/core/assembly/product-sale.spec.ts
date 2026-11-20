@@ -47,6 +47,7 @@ const line = (id: string, extra: Record<string, unknown> = {}) => ({
   sheetMargin: null,
   sheetGap: null,
   chargeWholeSheets: null,
+  timePrecision: null,
   selectedOptionId: null,
   position: 0,
   createdAt: new Date(),

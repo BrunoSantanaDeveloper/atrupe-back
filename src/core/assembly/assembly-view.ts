@@ -84,6 +84,7 @@ export const lineView = (
   people: line.people ?? null,
   sheetMargin: line.sheetMargin ?? null,
   sheetGap: line.sheetGap ?? null,
+  timePrecision: line.timePrecision ?? null,
   chargeWholeSheets: line.chargeWholeSheets ?? null,
   overridden: !!line.overridden,
   addedHere: !!line.addedHere,

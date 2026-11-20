@@ -18,6 +18,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import { AssemblyLineKind, AssemblyLineMode } from '@prisma/client';
 import { FORMULA_KEYS, FormulaKey } from '../engine/types';
 
+export const TIME_PRECISIONS = ['h', 'hm', 'hms'];
+
 /** Opções por linha e linhas por etapa, no máximo. */
 export const MAX_OPTIONS = 50;
 
@@ -103,6 +105,12 @@ export class CreateLineDto {
   @Min(1)
   @ApiProperty({ required: false, nullable: true })
   people?: number | null;
+
+  // Precisão do tempo na configuração da linha (20/11/2026); nulo é hh:mm:ss
+  @IsOptional()
+  @IsIn(TIME_PRECISIONS)
+  @ApiProperty({ required: false, nullable: true, enum: TIME_PRECISIONS })
+  timePrecision?: string | null;
 }
 
 export class OptionValuesDto {
@@ -223,6 +231,12 @@ export class UpdateLineDto {
   @Type(() => OptionValuesDto)
   @ApiProperty({ required: false, type: [OptionValuesDto] })
   optionValues?: OptionValuesDto[];
+
+  // Precisão do tempo na configuração da linha (20/11/2026); nulo é hh:mm:ss
+  @IsOptional()
+  @IsIn(TIME_PRECISIONS)
+  @ApiProperty({ required: false, nullable: true, enum: TIME_PRECISIONS })
+  timePrecision?: string | null;
 }
 
 export class CreateOptionDto {
