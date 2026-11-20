@@ -360,6 +360,8 @@ export class PdvService {
           : undefined,
         bankAccountId: movement.bankAccountId ?? undefined,
         discount: movement.discount || undefined,
+        // A venda do recebimento: para a NFC-e (20/11/2026)
+        saleId: movement.pendingSaleId ?? undefined,
         quotationId: movement.pendingSaleId
           ? (saleQuotations.get(movement.pendingSaleId) ?? undefined)
           : undefined,
