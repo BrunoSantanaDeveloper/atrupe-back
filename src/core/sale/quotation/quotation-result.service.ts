@@ -81,6 +81,48 @@ const resourcesOf = (resolved: unknown): ResultResource[] => {
   });
 };
 
+type BillingInstallment = {
+  value: number;
+  paymentConditionId: string;
+  paymentCondition: {
+    costType: 'PERCENT' | 'VALUE';
+    installments: { installment: number; operatorFeeRate: number }[];
+  } | null;
+};
+
+/**
+ * A cobrança: a taxa da operadora (operatorFeeRate, o custo da empresa) das
+ * parcelas do orçamento, pela mesma regra do repasse (lib/paymentFee do
+ * front). Em %, a linha N da condição é a taxa da venda em N parcelas, sobre
+ * o valor pago naquela forma; sem a linha N, vale a última. Em R$ (boleto),
+ * centavos por parcela. A entrada é uma forma à parte, com as suas parcelas.
+ */
+export const billingCostOf = (installments: BillingInstallment[]) => {
+  const groups = new Map<string, BillingInstallment[]>();
+  for (const item of installments) {
+    groups.set(item.paymentConditionId, [
+      ...(groups.get(item.paymentConditionId) ?? []),
+      item,
+    ]);
+  }
+  let total = 0;
+  for (const parts of groups.values()) {
+    const condition = parts[0].paymentCondition;
+    const rows = [...(condition?.installments ?? [])].sort(
+      (a, b) => a.installment - b.installment,
+    );
+    if (!condition || !rows.length) continue;
+    if (condition.costType === 'VALUE') {
+      total += (rows[0].operatorFeeRate || 0) * parts.length;
+      continue;
+    }
+    const rate = rows[Math.min(parts.length, rows.length) - 1].operatorFeeRate;
+    const paid = parts.reduce((sum, part) => sum + (part.value || 0), 0);
+    total += (paid * (rate || 0)) / 100;
+  }
+  return Math.round(total);
+};
+
 const brl = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', {
     style: 'currency',
@@ -118,7 +160,30 @@ export class QuotationResultService {
             sellerProfile: { select: { commission: true } },
           },
         },
-        quotationPayment: { select: { finalValue: true } },
+        // As despesas da venda da Estimativa de Custos (20/11/2026): o custo
+        // da entrega, a comissão do orçamento (agência) e a taxa da
+        // operadora de cada parcela (cobrança)
+        deliveryInfo: { select: { cost: true } },
+        quotationPayment: {
+          select: {
+            finalValue: true,
+            commission: { select: { totalCommission: true } },
+            quotationInstallment: {
+              select: {
+                value: true,
+                paymentConditionId: true,
+                paymentCondition: {
+                  select: {
+                    costType: true,
+                    installments: {
+                      select: { installment: true, operatorFeeRate: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         quotationProduct: {
           orderBy: { createdAt: 'asc' },
           select: {
@@ -216,7 +281,21 @@ export class QuotationResultService {
     const taxesPercent = charges.taxation / 10;
     const commission = Math.round((revenue * commissionPercent) / 100);
     const taxes = Math.round((revenue * taxesPercent) / 100);
-    const result = revenue - productionCost - commission - taxes;
+    const delivery = Math.round(quotation.deliveryInfo?.cost ?? 0);
+    const agencyCommission = Math.round(
+      quotation.quotationPayment?.commission?.totalCommission ?? 0,
+    );
+    const billing = billingCostOf(
+      quotation.quotationPayment?.quotationInstallment ?? [],
+    );
+    const result =
+      revenue -
+      productionCost -
+      commission -
+      taxes -
+      delivery -
+      billing -
+      agencyCommission;
 
     return {
       // A venda ("3352-V1") e o cliente, para o topo da tela
@@ -233,6 +312,9 @@ export class QuotationResultService {
       productionCost,
       commission: { percent: commissionPercent, value: commission },
       taxes: { percent: taxesPercent, value: taxes },
+      delivery,
+      billing,
+      agencyCommission,
       result,
       margin: marginOf(result, revenue),
       items,
@@ -295,6 +377,9 @@ export class QuotationResultService {
     row('Custo de produção', brl(data.productionCost));
     row(`Comissão (${data.commission.percent} %)`, brl(data.commission.value));
     row(`Tributos (${data.taxes.percent} %)`, brl(data.taxes.value));
+    row('Comissão da agência', brl(data.agencyCommission));
+    row('Entrega', brl(data.delivery));
+    row('Cobrança', brl(data.billing));
     row('Resultado', brl(data.result), true);
     row('Margem', `${data.margin.toLocaleString('pt-BR')} %`);
     y += 10;
