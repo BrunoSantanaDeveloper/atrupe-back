@@ -5021,6 +5021,9 @@ model CashFront {
   /// padrão da forma em Contas bancárias
   pixAccountId      String?
   cardAccountId     String?
+  /// Quem pode abrir e movimentar esta frente (Lista Lite 19/11, item 2).
+  /// Vazia: todos com a permissão da frente de caixa, como antes
+  userIds           String[]         @default([])
   isActive          Boolean          @default(true)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt

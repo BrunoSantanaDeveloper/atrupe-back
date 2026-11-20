@@ -184,6 +184,18 @@ export class PdvService {
     ];
   }
 
+  /**
+   * Quem pode abrir e movimentar a frente (Lista Lite 19/11, item 2): a lista
+   * vazia é de todos com a permissão; o administrador passa sempre.
+   */
+  private canOperate(front: { userIds?: string[] | null }, user: User) {
+    return (
+      !!user.isAdmin ||
+      !front.userIds?.length ||
+      front.userIds.includes(user.userId)
+    );
+  }
+
   /* ---------------------------------------------------------- leitura */
 
   private sessionView(
@@ -392,10 +404,32 @@ export class PdvService {
       where: { companyId: user.companyId, status: 'OPEN' },
       select: { cashFrontId: true, operatorName: true, openedAt: true },
     });
+    // Só as frentes liberadas para quem abre (item 2)
+    const allowed = fronts.filter((item) => this.canOperate(item, user));
+    if (dto.cashFrontId) {
+      const chosen = fronts.find((item) => item.id === dto.cashFrontId);
+      if (!chosen) bad('Frente de caixa não encontrada');
+      if (!this.canOperate(chosen, user)) {
+        bad('Esta frente de caixa não está liberada para você');
+      }
+    } else if (!allowed.length) {
+      bad(
+        'Nenhuma frente de caixa está liberada para você: peça a quem configura a frente de caixa',
+      );
+    }
     let front = dto.cashFrontId
-      ? fronts.find((item) => item.id === dto.cashFrontId)
-      : fronts.find((item) => !busy.some((row) => row.cashFrontId === item.id));
-    if (dto.cashFrontId && !front) bad('Frente de caixa não encontrada');
+      ? allowed.find((item) => item.id === dto.cashFrontId)
+      : allowed.find(
+          (item) => !busy.some((row) => row.cashFrontId === item.id),
+        );
+    // Com frentes restritas, não cria outra: as liberadas estão ocupadas
+    if (
+      !front &&
+      !dto.cashFrontId &&
+      fronts.some((item) => item.userIds?.length)
+    ) {
+      bad('As frentes de caixa liberadas para você já estão abertas');
+    }
     const occupied = busy.find((row) => row.cashFrontId === front?.id);
     // FC-14: a sessão de outro dia ainda aberta na frente também bloqueia
     if (occupied) {
@@ -1622,11 +1656,12 @@ export class PdvService {
         ? (accounts.get(front.cardAccountId) ?? null)
         : null,
       open: open.has(front.id),
+      userIds: front.userIds ?? [],
     };
   }
 
   /** As frentes da empresa, com a padrão primeiro. */
-  async listFronts(companyId: string) {
+  async listFronts(companyId: string, user?: User) {
     await this.fronts(companyId);
     const [fronts, accounts, open] = await Promise.all([
       this.prisma.cashFront.findMany({
@@ -1640,7 +1675,11 @@ export class PdvService {
       }),
     ]);
     const openFronts = new Set(open.map((row) => row.cashFrontId));
-    return fronts.map((front) => this.frontView(front, accounts, openFronts));
+    return fronts.map((front) => ({
+      ...this.frontView(front, accounts, openFronts),
+      // Se quem pede pode abrir esta frente (item 2)
+      mine: user ? this.canOperate(front, user) : true,
+    }));
   }
 
   /** Confere e monta o que muda no cadastro. */
@@ -1704,6 +1743,19 @@ export class PdvService {
     }
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
     if (dto.isDefault !== undefined) data.isDefault = dto.isDefault;
+    if (dto.userIds !== undefined) {
+      const ids = [...new Set(dto.userIds)];
+      if (ids.length) {
+        const found = await this.prisma.employee.findMany({
+          where: { companyId, userId: { in: ids } },
+          select: { userId: true },
+        });
+        if (new Set(found.map((row) => row.userId)).size !== ids.length) {
+          bad('Usuário não encontrado na empresa');
+        }
+      }
+      data.userIds = ids;
+    }
     return data;
   }
 

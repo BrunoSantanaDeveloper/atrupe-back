@@ -62,7 +62,7 @@ export class PdvController {
   @HasPermission('view', 'financial:pdv')
   @ApiOperation({ summary: 'As frentes de caixa da empresa' })
   fronts(@Req() req) {
-    return this.pdv.listFronts(req.user.companyId);
+    return this.pdv.listFronts(req.user.companyId, req.user);
   }
 
   @Post('front')

@@ -200,6 +200,16 @@ export class CashFrontDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Quem pode abrir e movimentar esta frente (vazio: todos com a permissão)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  userIds?: string[];
 }
 
 export class BillSaleDto {
