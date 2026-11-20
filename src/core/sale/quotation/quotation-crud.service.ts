@@ -823,6 +823,16 @@ export class QuotationCrudService {
           : null;
       }
       if (account) {
+        // Trocar a empresa emissora (Lista Lite 19/11, item 6): só enquanto o
+        // orçamento está em digitação; o PDF e os dados passam a ser os dela
+        const emitterChanged =
+          account.subCompanyId !==
+          (existingQuotation.subCompanyId ?? existingQuotation.companyId);
+        if (emitterChanged && existingQuotation.status !== 'OPEN') {
+          throw new BadRequestException(
+            'A empresa só muda enquanto o orçamento está em digitação',
+          );
+        }
         updateData.companyId = account.companyId;
         updateData.subCompanyId = account.subCompanyId;
       }

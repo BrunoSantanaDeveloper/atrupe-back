@@ -212,6 +212,11 @@ export const QUOTATION_PDF_DATA_INCLUDE = {
   company: {
     select: PDF_COMPANY_SELECT,
   },
+  // A empresa emissora escolhida no orçamento (multiempresa): o PDF sai com
+  // o nome, o CNPJ, o endereço e o logo dela (Lista Lite 19/11, item 7)
+  subCompany: {
+    select: PDF_COMPANY_SELECT,
+  },
   order: true,
   client: {
     select: PDF_CLIENT_SELECT,

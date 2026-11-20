@@ -142,6 +142,29 @@ type QuotationPdfRaw = {
       zipcode: string | null;
     }>;
   };
+  subCompany?: {
+    name: string;
+    cnpj: string | null;
+    email: string | null;
+    phone: string | null;
+    mobile: string | null;
+    siteUrl: string | null;
+    logoUrl: string | null;
+    textBeforeItems: string | null;
+    textAfterItems: string | null;
+    instagram: string | null;
+    facebook: string | null;
+    linkedin: string | null;
+    address: Array<{
+      street: string | null;
+      number: string | null;
+      complement: string | null;
+      neighborhood: string | null;
+      city: string | null;
+      state: string | null;
+      zipcode: string | null;
+    }>;
+  } | null;
   client?: {
     name: string;
     type: string;
@@ -190,6 +213,32 @@ type QuotationPdfRaw = {
   deliveryInfo?: any;
   quotationPayment?: any;
 };
+
+/**
+ * A empresa do PDF (Lista Lite 19/11, item 7): a emissora escolhida no
+ * orçamento; o que ela não tem cadastrado (logo, textos da proposta, site,
+ * redes) vem da principal, para o PDF não sair sem logo nem textos.
+ */
+export function pdfCompanyOf(
+  quotation: Pick<QuotationPdfRaw, 'company' | 'subCompany'>,
+): QuotationPdfRaw['company'] {
+  const main = quotation.company;
+  const emitter = quotation.subCompany;
+  if (!emitter) return main;
+  const keep = <T>(own: T, fallback: T) =>
+    own === null || own === undefined || own === '' ? fallback : own;
+  return {
+    ...emitter,
+    address: emitter.address?.length ? emitter.address : main.address,
+    logoUrl: keep(emitter.logoUrl, main.logoUrl),
+    textBeforeItems: keep(emitter.textBeforeItems, main.textBeforeItems),
+    textAfterItems: keep(emitter.textAfterItems, main.textAfterItems),
+    siteUrl: keep(emitter.siteUrl, main.siteUrl),
+    instagram: keep(emitter.instagram, main.instagram),
+    facebook: keep(emitter.facebook, main.facebook),
+    linkedin: keep(emitter.linkedin, main.linkedin),
+  };
+}
 
 export function transformPdfCompany(company: QuotationPdfRaw['company']) {
   return {
@@ -523,7 +572,7 @@ export function transformQuotationToPdfData(
 ) {
   return {
     detailLevel: options.detailLevel,
-    company: transformPdfCompany(quotation.company),
+    company: transformPdfCompany(pdfCompanyOf(quotation)),
     client: transformPdfClient(quotation.client),
     contact: transformPdfContact(quotation.contact),
     quotation: transformPdfQuotationInfo(quotation, loggedEmployeeSignatureUrl),
