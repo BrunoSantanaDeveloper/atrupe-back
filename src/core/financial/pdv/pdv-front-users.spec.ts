@@ -23,15 +23,13 @@ describe('PdvService.openSession: usuários da frente', () => {
     const prisma = {
       cashSession: {
         findFirst: jest.fn().mockResolvedValue(null),
-        findMany: jest
-          .fn()
-          .mockResolvedValue(
-            busy.map((row) => ({
-              ...row,
-              operatorName: 'Outro',
-              openedAt: new Date(),
-            })),
-          ),
+        findMany: jest.fn().mockResolvedValue(
+          busy.map((row) => ({
+            ...row,
+            operatorName: 'Outro',
+            openedAt: new Date(),
+          })),
+        ),
         aggregate: jest.fn().mockResolvedValue({ _max: { number: 3 } }),
         create: jest.fn(async ({ data }) => ({
           ...data,

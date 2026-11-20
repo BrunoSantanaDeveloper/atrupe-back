@@ -28,6 +28,7 @@ import {
   ReceiveSaleDto,
   SaleReasonDto,
   RejectSaleDto,
+  EmitSaleNfceDto,
 } from './dto/pdv.dto';
 
 const UUID = new ParseUUIDPipe({ version: '4' });
@@ -211,6 +212,26 @@ export class PdvController {
       dto.reason,
       await this.pdv.actorOf(req.user),
     );
+  }
+
+  // A NFC-e na frente de caixa (pedido do Maicol, 20/11/2026): se está
+  // ativa (o ícone aceso ou apagado) e a emissão da venda recebida
+  @Get('nfce')
+  @HasPermission('view', 'financial:pdv')
+  @ApiOperation({ summary: 'Se a NFC-e está ativa para a frente de caixa' })
+  async nfceStatus(@Req() req) {
+    return this.pdv.nfceStatus(req.user.companyId);
+  }
+
+  @Post('sale/:id/nfce')
+  @HasPermission('create', 'nota_fiscal:emitir')
+  @ApiOperation({ summary: 'Emite a NFC-e da venda recebida no caixa' })
+  async emitNfce(
+    @Req() req,
+    @Param('id', UUID) id: string,
+    @Body() dto: EmitSaleNfceDto,
+  ) {
+    return this.pdv.emitNfce(req.user, id, dto);
   }
 
   @Post('sale/:id/bill')

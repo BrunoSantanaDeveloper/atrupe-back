@@ -238,3 +238,12 @@ export class BillSaleDto {
   @MaxLength(1000)
   notes?: string;
 }
+
+/** A NFC-e da venda recebida (pedido do Maicol, 20/11/2026): CPF opcional */
+export class EmitSaleNfceDto {
+  @ApiPropertyOptional({ description: 'CPF do consumidor (opcional)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(14)
+  cpf?: string;
+}

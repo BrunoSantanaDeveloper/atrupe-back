@@ -32,6 +32,8 @@ import {
 import { QuickSaleService } from '../../sale/quick-sale/quick-sale.service';
 import { PlanControlService } from '../../plan/plan-control.service';
 import { CashDayService } from '../cash-control/cash-day.service';
+import { NfceService } from '../../fiscal/nfce/nfce.service';
+import { buildSaleNfce, SaleNfceError } from './pdv-nfce';
 import { QuotationFinancialService } from '../../sale/quotation/quotation-financial.service';
 import { CreditCheckService } from '../../sale/quotation/credit-check.service';
 import { saleReference } from '../../sale/quick-sale/quick-sale.rules';
@@ -133,7 +135,131 @@ export class PdvService {
     private readonly credit: CreditCheckService,
     private readonly planControl: PlanControlService,
     private readonly cashDay?: CashDayService,
+    private readonly nfce?: NfceService,
   ) {}
+
+  /* ----------------------------------------------- NFC-e (20/11/2026) */
+
+  /**
+   * Se a NFC-e está ativa para a frente de caixa: o plano com nota fiscal e
+   * o emissor pronto. Sem ela, o ícone fica apagado e diz o motivo.
+   */
+  async nfceStatus(companyId: string) {
+    const hasPlan = await this.planControl.hasFeature(companyId, 'nota_fiscal');
+    if (!hasPlan || !this.nfce) {
+      return {
+        enabled: false,
+        reason: 'A emissão de NFC-e faz parte dos planos com nota fiscal',
+      };
+    }
+    try {
+      await this.nfce.prepareStandalone(companyId);
+      return { enabled: true, reason: null };
+    } catch (error) {
+      return {
+        enabled: false,
+        reason:
+          error?.message ||
+          'A NFC-e não está configurada: ative em Configurações › Nota fiscal',
+      };
+    }
+  }
+
+  /**
+   * Emite a NFC-e da venda recebida inteira (sempre à mão, pelo CNPJ
+   * cadastrado, CPF opcional). Os itens levam o cadastro fiscal dos
+   * produtos; os pagamentos, as formas recebidas no caixa.
+   */
+  async emitNfce(user: User, id: string, dto: { cpf?: string }) {
+    if (!this.nfce) bad('A emissão de NFC-e não está disponível');
+    const sale = await this.prisma.pendingSale.findFirst({
+      where: { id, companyId: user.companyId, cancelled: false },
+      select: {
+        id: true,
+        quotationId: true,
+        total: true,
+        paid: true,
+        parts: true,
+      },
+    });
+    if (!sale) throw new NotFoundException(SALE_NOT_FOUND);
+    const existing = await this.prisma.nfce.findFirst({
+      where: {
+        companyId: user.companyId,
+        quotationId: sale.quotationId,
+        status: {
+          in: ['AUTHORIZED', 'PROCESSING', 'PENDING', 'CONTINGENCY', 'UNKNOWN'],
+        },
+      },
+      select: { id: true },
+    });
+    if (existing) bad('Esta venda já tem NFC-e');
+    const defaults = await this.nfce.prepareStandalone(user.companyId);
+    const products = await this.prisma.quotationProduct.findMany({
+      where: { quotationId: sale.quotationId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        quantity: true,
+        finalValue: true,
+        description: true,
+        productId: true,
+        product: {
+          select: { name: true, code: true, fiscalData: true },
+        },
+      },
+    });
+    const parts = partsOf(sale.parts);
+    const conditions = await this.prisma.paymentCondition.findMany({
+      where: {
+        id: {
+          in: parts
+            .map((part) => part.paymentConditionId)
+            .filter((value): value is string => !!value),
+        },
+      },
+      select: { id: true, paymentMethod: { select: { code: true } } },
+    });
+    const methodOf = new Map(
+      conditions.map((row) => [row.id, row.paymentMethod?.code ?? null]),
+    );
+    let body;
+    try {
+      body = buildSaleNfce({
+        quotationId: sale.quotationId,
+        saleTotal: sale.total,
+        items: products.map((row) => {
+          const fiscal = row.product?.fiscalData;
+          return {
+            productId: row.productId,
+            name: row.description || row.product?.name || 'Item',
+            code: row.product?.code ?? null,
+            quantity: row.quantity,
+            finalValue: Math.round(row.finalValue ?? 0),
+            fiscal: fiscal ?? null,
+          };
+        }),
+        parts: parts.map((part) => ({
+          method: part.method,
+          amount: part.amount,
+          methodCode: part.paymentConditionId
+            ? methodOf.get(part.paymentConditionId)
+            : null,
+        })),
+        cpf: dto.cpf,
+        naturezaOperacao: defaults.naturezaOperacao,
+        informacoesComplementares: defaults.informacoesComplementares,
+      });
+    } catch (error) {
+      if (error instanceof SaleNfceError) bad(error.message);
+      throw error;
+    }
+    const nfce = await this.nfce.emit(user.companyId, body);
+    return {
+      id: nfce?.id,
+      status: nfce?.status,
+      numero: nfce?.numero ?? null,
+    };
+  }
 
   actorOf(user: { userId?: string; companyId: string }) {
     return actorOfUser(this.prisma, user);
@@ -360,19 +486,55 @@ export class PdvService {
     const saleIds = (session?.movements ?? [])
       .map((movement) => movement.pendingSaleId)
       .filter((id): id is string => !!id);
+    const saleRows = saleIds.length
+      ? await this.prisma.pendingSale.findMany({
+          where: { id: { in: saleIds }, companyId: user.companyId },
+          select: { id: true, quotationId: true, total: true, paid: true },
+        })
+      : [];
     const saleQuotations = new Map(
-      saleIds.length
-        ? (
-            await this.prisma.pendingSale.findMany({
-              where: { id: { in: saleIds }, companyId: user.companyId },
-              select: { id: true, quotationId: true },
-            })
-          ).map((row) => [row.id, row.quotationId] as [string, string])
-        : [],
+      saleRows.map((row) => [row.id, row.quotationId] as [string, string]),
+    );
+    // A NFC-e de cada venda recebida (20/11/2026): a última emitida, e se a
+    // venda já foi recebida inteira (só então a nota sai)
+    const nfces = saleRows.length
+      ? await this.prisma.nfce.findMany({
+          where: {
+            companyId: user.companyId,
+            quotationId: { in: saleRows.map((row) => row.quotationId) },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, quotationId: true, status: true, numero: true },
+        })
+      : [];
+    const saleNfce = new Map(
+      saleRows.map((row) => {
+        const nfce = nfces.find((item) => item.quotationId === row.quotationId);
+        return [
+          row.id,
+          {
+            paidInFull: row.paid >= row.total,
+            nfce: nfce
+              ? { id: nfce.id, status: nfce.status, numero: nfce.numero }
+              : null,
+          },
+        ];
+      }),
     );
     return {
       session: session
-        ? this.sessionView(session, accounts, saleQuotations)
+        ? (() => {
+            const view = this.sessionView(session, accounts, saleQuotations);
+            return {
+              ...view,
+              movements: view.movements.map((movement, index) => {
+                const saleId = session.movements[index]?.pendingSaleId;
+                return saleId && saleNfce.has(saleId)
+                  ? { ...movement, ...saleNfce.get(saleId) }
+                  : movement;
+              }),
+            };
+          })()
         : null,
       sales: sales.map((sale) => this.saleView(sale, claimers)),
       openCashFronts: open.length,
