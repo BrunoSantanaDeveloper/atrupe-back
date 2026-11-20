@@ -596,14 +596,41 @@ export class ProductService {
   async update(id: string, updateProductDto: UpdateProductDto) {
     const owner = await this.prisma.product.findUnique({
       where: { id },
-      select: { companyId: true },
+      select: {
+        companyId: true,
+        categoryId: true,
+        sectorId: true,
+        productionStages: true,
+      },
     });
     // Sem o produto, o fluxo abaixo responde o 404
     if (owner) {
+      // Confere só o que muda (Lista Lite 19/11, item 5): o setor, o grupo e
+      // as etapas que o produto já tinha passam, mesmo de um cadastro antigo
+      // de setores; só o id novo precisa ser da empresa. Antes, editar e
+      // salvar sem mexer no setor dava "Setor não encontrado"
+      const savedStages = new Set(
+        (Array.isArray(owner.productionStages)
+          ? (owner.productionStages as { id?: string }[])
+          : []
+        ).map((stage) => stage?.id),
+      );
+      const stages = updateProductDto.productionStages as
+        | { id?: string }[]
+        | null
+        | undefined;
       await this.assertRefsOfCompany(owner.companyId, {
-        categoryId: updateProductDto.categoryId,
-        sectorId: updateProductDto.sectorId,
-        productionStages: updateProductDto.productionStages as any,
+        categoryId:
+          updateProductDto.categoryId === owner.categoryId
+            ? undefined
+            : updateProductDto.categoryId,
+        sectorId:
+          updateProductDto.sectorId === owner.sectorId
+            ? undefined
+            : updateProductDto.sectorId,
+        productionStages: Array.isArray(stages)
+          ? stages.filter((stage) => !savedStages.has(stage?.id))
+          : stages,
       });
     }
 

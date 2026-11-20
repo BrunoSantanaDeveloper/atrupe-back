@@ -65,4 +65,27 @@ describe('ProductService: cadastros da empresa', () => {
       where: { id: { in: ['setor-1', 'setor-de-outra'] }, companyId: 'c-1' },
     });
   });
+
+  it('o setor e as etapas que o produto já tinha não são conferidos de novo (Lista Lite 19/11, 5)', async () => {
+    prisma.product.findUnique.mockResolvedValueOnce({
+      companyId: 'c-1',
+      categoryId: 'grupo-1',
+      sectorId: 'setor-antigo',
+      productionStages: [{ id: 'etapa-antiga', isActive: true }],
+    });
+    prisma.companySector.count.mockResolvedValueOnce(1);
+
+    // Para depois da conferência: o resto da edição não interessa aqui
+    prisma.product.findUnique.mockResolvedValueOnce(null);
+    await service
+      .update('p-1', {
+        categoryId: 'grupo-1',
+        sectorId: 'setor-antigo',
+        productionStages: [{ id: 'etapa-antiga' }, { id: 'etapa-nova' }],
+      } as any)
+      .catch(() => undefined);
+    expect(prisma.companySector.count).toHaveBeenCalledWith({
+      where: { id: { in: ['etapa-nova'] }, companyId: 'c-1' },
+    });
+  });
 });
