@@ -36,7 +36,7 @@ import {
   type GapEventPayload,
   type ProjectTool,
 } from "../atendimento/base/server/bot-contract.mjs";
-import { checkWhatsappHealth, currentInbox, healthAlerts, type WhatsappAlert } from "../atendimento/base/server/health.mjs";
+import { checkWhatsappHealth, currentInboxes, healthAlerts, type WhatsappAlert } from "../atendimento/base/server/health.mjs";
 import {
   archiveTeamGroup,
   connectCloudApi,
@@ -45,6 +45,7 @@ import {
   ensureStaffUser,
   provisionAccount,
   reconnectOpenWA,
+  retireWhatsappRoute,
   removeStaffUser,
   saveTeamGroup,
   ssoUrl,
@@ -347,12 +348,14 @@ export async function syncPanelStaff(tenantId: string) {
  */
 export async function checkWhatsapp(tenantId: string) {
   const state = await store.loadState(tenantId);
-  const inbox = currentInbox(state);
-  if (!state?.account_id || !inbox) return { skipped: "no_inbox" as const, report: null, alerts: [] };
+  // Todos os canais de pé: o número oficial e o do WhatsApp Web, quando a conta tem os dois.
+  const inboxes = currentInboxes(state);
+  if (!state?.account_id || !inboxes.length) return { skipped: "no_inbox" as const, report: null, alerts: [] };
   const report = await checkWhatsappHealth({
     chatwootUrl: env.chatwootUrl(),
     state,
-    openwa: inbox.route === "nao_oficial" ? { url: env.openwaUrl(), apiKey: env.openwaApiKey() } : null,
+    inboxes,
+    openwa: inboxes.some((inbox) => inbox.route === "nao_oficial") ? { url: env.openwaUrl(), apiKey: env.openwaApiKey() } : null,
   });
   const { alerts, health } = healthAlerts({ previous: state.health, report });
   // Avisa antes de gravar: se o canal falhar, o aviso volta na próxima conferência.
@@ -556,22 +559,57 @@ export async function whatsapp(request: Request) {
   const person = await store.currentPerson(request);
   if (!canConnect(person)) return null;
   const state = (await store.loadState(tenantOf(person!))) ?? {};
-  const inbox = currentInbox(state);
-  if (!inbox) return { connected: false, route: null, status: null, qrCode: null, level: null, findings: [] };
-  if (inbox.route === "oficial") {
-    const current = (await checkWhatsappHealth({ chatwootUrl: env.chatwootUrl(), state })).inboxes[0];
-    return { connected: current.level !== "fora", route: "oficial", status: null, qrCode: null, level: current.level, findings: current.findings };
+  const inboxes = currentInboxes(state);
+  if (!inboxes.length) return { connected: false, route: null, status: null, qrCode: null, level: null, findings: [], channels: [] };
+  // Um item por canal; os campos de cima repetem o canal ligado por último, para a tela de um canal só.
+  const channels = [];
+  for (const inbox of inboxes) {
+    if (inbox.route === "oficial") {
+      const current = (await checkWhatsappHealth({ chatwootUrl: env.chatwootUrl(), state, inboxes: [inbox] })).inboxes[0];
+      channels.push({
+        inbox_id: inbox.id,
+        route: "oficial" as const,
+        phone: inbox.phone ?? null,
+        connected: current.level !== "fora",
+        status: null,
+        qrCode: null,
+        level: current.level,
+        findings: current.findings,
+      });
+    } else {
+      const status = await whatsappStatus({ openwaUrl: env.openwaUrl(), openwaApiKey: env.openwaApiKey(), sessionId: inbox.session_id! });
+      channels.push({ inbox_id: inbox.id, route: "nao_oficial" as const, phone: inbox.phone ?? null, connected: status.status === "ready", ...status });
+    }
   }
-  const status = await whatsappStatus({ openwaUrl: env.openwaUrl(), openwaApiKey: env.openwaApiKey(), sessionId: inbox.session_id! });
-  return { connected: status.status === "ready", route: "nao_oficial", ...status };
+  const { inbox_id: _inboxId, phone: _phone, ...latest } = channels[channels.length - 1];
+  return { ...latest, channels };
+}
+
+/** Deixa de usar uma rota quando o atendimento tem as duas: o número sai da tela e da conferência; o histórico fica no painel. */
+export async function retireWhatsapp(request: Request, route: string) {
+  const person = await store.currentPerson(request);
+  if (!canConnect(person)) return { status: 403, body: { code: "forbidden", message: "Você não pode mudar o número." } };
+  const tenantId = tenantOf(person!);
+  const state = (await store.loadState(tenantId)) ?? {};
+  let next;
+  try {
+    next = retireWhatsappRoute({ state, route: route as "oficial" | "nao_oficial" });
+  } catch (error) {
+    // O único número, ou uma rota sem número: a tela mostra o que fazer.
+    const { code, fix } = error as { code?: string; fix?: string };
+    return { status: 409, body: { code: code ?? "error", message: fix ?? "Não deu para tirar este número agora." } };
+  }
+  await store.saveState(tenantId, next);
+  return { status: 200, body: { ok: true } };
 }
 
 /** Ler o QR de novo: retoma a sessão que a caixa já tem, sem criar outra caixa. */
 export async function reconnectWhatsapp(request: Request) {
   const person = await store.currentPerson(request);
   if (!canConnect(person)) return { status: 403, body: { code: "forbidden", message: "Você não pode conectar o número." } };
-  const inbox = currentInbox(await store.loadState(tenantOf(person!)));
-  if (inbox?.route !== "nao_oficial" || !inbox.session_id) return { status: 409, body: { code: "no_session", message: "Não há conexão pelo WhatsApp Web para retomar." } };
+  // O canal do WhatsApp Web, também quando o oficial foi ligado depois dele.
+  const inbox = currentInboxes(await store.loadState(tenantOf(person!))).find((item) => item.route === "nao_oficial");
+  if (!inbox?.session_id) return { status: 409, body: { code: "no_session", message: "Não há conexão pelo WhatsApp Web para retomar." } };
   const result = await reconnectOpenWA({ openwaUrl: env.openwaUrl(), openwaApiKey: env.openwaApiKey(), sessionId: inbox.session_id });
   return { status: 200, body: { ok: true, status: result.status } };
 }

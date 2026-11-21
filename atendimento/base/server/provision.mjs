@@ -5,7 +5,7 @@
 import { randomBytes } from "node:crypto";
 
 import { chatwootAccount, chatwootPlatform, chatwootProfile } from "./chatwoot.mjs";
-import { classifySession, openwaFailure, worstLevel } from "./health.mjs";
+import { classifySession, currentInboxes, openwaFailure, worstLevel } from "./health.mjs";
 import { ADAPTER_ID, adapterEnabled, adapterIngressUrl, openwaClient } from "./openwa.mjs";
 
 /** Funções que o atendimento usa e que nunca se desligam numa conta. */
@@ -362,11 +362,39 @@ export async function updateCloudApi({ chatwootUrl, state, inboxId, cloud, fetch
     ...(cloud.businessAccountId ? { business_account_id: cloud.businessAccountId } : {}),
   };
   const updated = await account.updateInbox(inboxId, { channel: { provider_config: providerConfig } }).catch(rejectedByChatwoot);
+  // O mesmo número de volta à rota oficial, depois de ter saído: a caixa volta a ser o canal. Sem isso, o
+  // estado volta igual.
+  const back = (state.inboxes ?? []).some((inbox) => inbox.id === inboxId && inbox.retired_at);
+  const inboxes = (state.inboxes ?? []).map((inbox) => {
+    if (inbox.id !== inboxId || !inbox.retired_at) return inbox;
+    const { retired_at: _, ...kept } = inbox;
+    return kept;
+  });
   return {
-    state,
+    state: back ? { ...state, inboxes } : state,
     inboxId,
     metaWebhook: { callbackUrl: updated?.callback_webhook_url ?? current?.callback_webhook_url ?? null, verifyToken: providerConfig.webhook_verify_token ?? null },
   };
+}
+
+/**
+ * Deixa de usar uma rota (oficial ou nao_oficial) quando a conta tem as duas: as caixas dela saem da tela e da
+ * conferência, e a caixa e o histórico continuam no painel. Só mexe no estado. O único canal não sai: para
+ * trocar de número na mesma rota, conecte outro número, que toma o lugar do anterior.
+ */
+export function retireWhatsappRoute({ state, route, now = new Date() }) {
+  if (route !== "oficial" && route !== "nao_oficial") {
+    throw new ProvisionError("route_invalid", "A rota é oficial ou nao_oficial.", "Passe a rota do número que vai sair.");
+  }
+  const active = currentInboxes(state);
+  if (!active.some((inbox) => inbox.route === route)) {
+    throw new ProvisionError("route_not_connected", "Este atendimento não tem número ligado nessa rota.", "Confira a rota na tela Conectar WhatsApp.");
+  }
+  if (!active.some((inbox) => inbox.route !== route)) {
+    throw new ProvisionError("last_channel", "Este é o único número do atendimento.", "Conecte o outro número antes de deixar de usar este. Para trocar de número na mesma forma de conexão, use Conectar outro número.");
+  }
+  const at = now.toISOString();
+  return { ...state, inboxes: (state.inboxes ?? []).map((inbox) => (inbox.route === route && !inbox.retired_at ? { ...inbox, retired_at: at } : inbox)) };
 }
 
 /** Instala e liga o adaptador do Chatwoot no OpenWA, pelo catálogo (que traz o hash do pacote). */
@@ -527,7 +555,8 @@ export async function reconnectOpenWA({ openwaUrl, openwaApiKey, sessionId, fetc
  * próxima vez, em unread. A mudança do repasse vale a partir da próxima mensagem: o histórico não entra.
  */
 export async function syncOpenWAGroups({ chatwootUrl, state, openwaUrl, openwaApiKey, relay, fetchImpl = fetch }) {
-  const inboxes = (state?.inboxes ?? []).filter((inbox) => inbox.route === "nao_oficial" && inbox.instance_id);
+  // Só o canal de pé do WhatsApp Web: uma caixa substituída ou que saiu não tem mais sessão para ler.
+  const inboxes = currentInboxes(state).filter((inbox) => inbox.route === "nao_oficial" && inbox.instance_id);
   const result = { sessions: inboxes.length, changed: 0, renamed: 0, unread: 0 };
   if (!inboxes.length) return result;
   const openwa = openwaClient({ url: openwaUrl, apiKey: openwaApiKey, fetchImpl });

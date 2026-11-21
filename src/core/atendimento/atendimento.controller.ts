@@ -235,7 +235,9 @@ export class AtendimentoController {
   }
 
   @Get('whatsapp')
-  @ApiOperation({ summary: 'Estado do número (e o QR, na rota não oficial)' })
+  @ApiOperation({
+    summary: 'Estado de cada número (e o QR, na rota não oficial)',
+  })
   async whatsapp(@Req() req, @Res() res: Response) {
     await sendAnswer(res, this.logger, async () =>
       this.atendimento.whatsapp(await this.person(req)),
@@ -245,7 +247,7 @@ export class AtendimentoController {
   @Post('whatsapp')
   @ApiOperation({
     summary:
-      'Conecta o número (API oficial ou OpenWA) ou, com acao "reconectar", retoma a sessão que a caixa já tem',
+      'Conecta o número (API oficial ou OpenWA); com acao "reconectar" retoma a sessão que a caixa já tem e com acao "deixar" tira uma das duas rotas',
   })
   async connect(
     @Req() req,
@@ -254,9 +256,13 @@ export class AtendimentoController {
   ) {
     await sendAnswer(res, this.logger, async () => {
       const person = await this.person(req);
-      return body?.acao === 'reconectar'
-        ? this.atendimento.reconnectWhatsapp(person)
-        : this.atendimento.connectWhatsapp(person, body);
+      if (body?.acao === 'reconectar') {
+        return this.atendimento.reconnectWhatsapp(person);
+      }
+      if (body?.acao === 'deixar') {
+        return this.atendimento.retireWhatsapp(person, body.route ?? '');
+      }
+      return this.atendimento.connectWhatsapp(person, body);
     });
   }
 }

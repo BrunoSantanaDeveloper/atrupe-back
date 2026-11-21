@@ -76,6 +76,11 @@ Nos comandos abaixo, `<acesso>` é esse comando `ssh` inteiro, com o `ubuntu@52.
      ligado e com internet.
    - **API oficial**: Phone number ID, WABA ID e token permanente da Meta. A tela devolve a URL de retorno
      e o token de verificação para cadastrar no app da Meta, assinando o campo `messages`.
+   - **Os dois ao mesmo tempo:** com um número ligado, "Conectar outro número" na outra forma de conexão
+     acrescenta um canal, e o primeiro continua de pé. A tela mostra um bloco por canal, a conferência de
+     15 minutos olha os dois e o robô atende os dois. Na mesma forma de conexão, o número novo toma o lugar
+     do anterior. "Deixar de usar este número" tira um dos dois da tela e da conferência; as conversas
+     dele ficam no painel. O único número não sai.
 8. **Robô.** Em **Super Admin › Atendimento › Robô**, confira o contexto (vem da base de suporte do Start de
    29/10/2026) e o modo. O robô começa **sugerindo** respostas à equipe; passe para "responde sozinho"
    quando estiver bom.

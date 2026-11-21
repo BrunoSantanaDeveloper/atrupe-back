@@ -15,9 +15,22 @@ export function worstLevel(levels) {
   return levels.reduce((worst, level) => (LEVELS.indexOf(level) > LEVELS.indexOf(worst) ? level : worst), "ok");
 }
 
-/** O número atual do atendimento: a última caixa conectada, a mesma que a tela Conectar WhatsApp mostra. */
+/**
+ * Os canais do atendimento hoje: a caixa mais recente de cada rota (oficial e não oficial), na ordem em que
+ * foram ligadas, sem as rotas que saíram (retired_at, retireWhatsappRoute). Conectar outro número na mesma
+ * rota troca o canal dela; uma conta pode ter as duas rotas de pé ao mesmo tempo.
+ */
+export function currentInboxes(state) {
+  const active = (state?.inboxes ?? []).filter((inbox) => !inbox.retired_at);
+  const latest = new Map();
+  for (const inbox of active) latest.set(inbox.route, inbox);
+  return active.filter((inbox) => latest.get(inbox.route) === inbox);
+}
+
+/** O canal ligado por último. Com as duas rotas de pé, use currentInboxes. */
 export function currentInbox(state) {
-  return state?.inboxes?.[state.inboxes.length - 1] ?? null;
+  const inboxes = currentInboxes(state);
+  return inboxes[inboxes.length - 1] ?? null;
 }
 
 function untilText(value) {
@@ -255,12 +268,11 @@ export function classifyAdapterHealth(health) {
 }
 
 /**
- * Confere o número atual (ou as caixas de inboxes). Não lança: serviço fora do ar vira achado.
- * openwa: { url, apiKey }, só para caixa da rota não oficial.
+ * Confere os canais do atendimento (currentInboxes) ou as caixas de inboxes. Não lança: serviço fora do ar
+ * vira achado. openwa: { url, apiKey }, para as caixas da rota não oficial.
  */
 export async function checkWhatsappHealth({ chatwootUrl, state, openwa = null, inboxes = null, fetchImpl = fetch, now = new Date() }) {
-  const current = currentInbox(state);
-  const targets = inboxes ?? (current ? [current] : []);
+  const targets = inboxes ?? currentInboxes(state);
   const account = chatwootAccount({ url: chatwootUrl, token: state?.service_token, accountId: state?.account_id, fetchImpl });
   const results = [];
   for (const inbox of targets) {

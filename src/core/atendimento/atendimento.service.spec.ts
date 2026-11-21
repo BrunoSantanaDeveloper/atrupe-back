@@ -30,6 +30,14 @@ const ENV = {
   SUPPORT_SERVICE_EMAIL_DOMAIN: 'atrupe.com.br',
 };
 
+/** Como a base: a caixa mais recente de cada rota, sem as que saíram, na ordem em que foram ligadas. */
+function currentInboxes(state: any) {
+  const active = (state?.inboxes ?? []).filter((inbox) => !inbox.retired_at);
+  const latest = new Map();
+  for (const inbox of active) latest.set(inbox.route, inbox);
+  return active.filter((inbox) => latest.get(inbox.route) === inbox);
+}
+
 function makeKit() {
   const provision = {
     provisionAccount: jest.fn(async ({ state }) => ({
@@ -55,6 +63,26 @@ function makeKit() {
     whatsappStatus: jest.fn(),
     reconnectOpenWA: jest.fn(),
     updateCloudApi: jest.fn(),
+    // Como a base: só tira uma rota quando a outra continua de pé.
+    retireWhatsappRoute: jest.fn(({ state, route }) => {
+      const fail = (code: string, fix: string) =>
+        Object.assign(new Error(code), { code, fix });
+      const active = currentInboxes(state);
+      if (!active.some((inbox) => inbox.route === route)) {
+        throw fail('route_not_connected', 'Confira a rota.');
+      }
+      if (!active.some((inbox) => inbox.route !== route)) {
+        throw fail('last_channel', 'Conecte o outro número antes.');
+      }
+      return {
+        ...state,
+        inboxes: state.inboxes.map((inbox) =>
+          inbox.route === route && !inbox.retired_at
+            ? { ...inbox, retired_at: '2026-11-21T12:00:00.000Z' }
+            : inbox,
+        ),
+      };
+    }),
     conversationHistory: jest.fn(async () => []),
     syncOpenWAGroups: jest.fn(async () => ({
       sessions: 1,
@@ -135,8 +163,7 @@ function makeKit() {
     GAP_CATEGORIES: { nao_sei: 'Não soube' },
   };
   const health = {
-    currentInbox: (state: any) =>
-      state?.inboxes?.[state.inboxes.length - 1] ?? null,
+    currentInboxes,
     checkWhatsappHealth: jest.fn(),
     healthAlerts: jest.fn(),
   };
@@ -873,13 +900,17 @@ describe('AtendimentoService', () => {
         level: 'fora',
         inboxes: [{ inbox_id: 5, level: 'fora', findings }],
       });
-      expect((await service.whatsapp(superadmin)).body).toEqual({
+      const channel = {
         connected: false,
         route: 'oficial',
         status: null,
         qrCode: null,
         level: 'fora',
         findings,
+      };
+      expect((await service.whatsapp(superadmin)).body).toEqual({
+        ...channel,
+        channels: [{ ...channel, inbox_id: 5, phone: '+5548999990000' }],
       });
       kit.health.healthAlerts.mockReturnValue({ alerts: [], health: {} });
       await service.checkWhatsapp();
@@ -899,7 +930,141 @@ describe('AtendimentoService', () => {
         qrCode: null,
         level: null,
         findings: [],
+        channels: [],
       });
+    });
+  });
+
+  describe('os dois números ao mesmo tempo', () => {
+    const both = {
+      account_id: 7,
+      service_token: 's',
+      inboxes: [
+        {
+          id: 5,
+          route: 'nao_oficial',
+          session_id: 'sess-1',
+          phone: '554792621081',
+        },
+        { id: 9, route: 'oficial', phone: '+5547999990000' },
+      ],
+    };
+
+    beforeEach(() => {
+      Object.assign(process.env, {
+        OPENWA_URL: 'http://atendimento-openwa:2785',
+        OPENWA_API_KEY: 'chave',
+      });
+    });
+
+    it('a conferência olha os dois canais, e o WhatsApp Web continua com o OpenWA', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({ state: both }),
+      });
+      kit.health.checkWhatsappHealth.mockResolvedValue({
+        level: 'ok',
+        inboxes: [],
+      });
+      kit.health.healthAlerts.mockReturnValue({ alerts: [], health: {} });
+      await service.checkWhatsapp();
+      expect(kit.health.checkWhatsappHealth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inboxes: both.inboxes,
+          openwa: { url: 'http://atendimento-openwa:2785', apiKey: 'chave' },
+        }),
+      );
+    });
+
+    it('a tela recebe um bloco por canal; os campos de cima são do ligado por último', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({ state: both }),
+      });
+      kit.provision.whatsappStatus.mockResolvedValue({
+        status: 'disconnected',
+        qrCode: null,
+        level: 'fora',
+        findings: [{ code: 'numero_desconectado' }],
+      });
+      kit.health.checkWhatsappHealth.mockResolvedValue({
+        level: 'ok',
+        inboxes: [{ inbox_id: 9, level: 'ok', findings: [] }],
+      });
+      const body = (await service.whatsapp(superadmin)).body as any;
+      expect(body.channels).toEqual([
+        {
+          inbox_id: 5,
+          route: 'nao_oficial',
+          phone: '554792621081',
+          connected: false,
+          status: 'disconnected',
+          qrCode: null,
+          level: 'fora',
+          findings: [{ code: 'numero_desconectado' }],
+        },
+        {
+          inbox_id: 9,
+          route: 'oficial',
+          phone: '+5547999990000',
+          connected: true,
+          status: null,
+          qrCode: null,
+          level: 'ok',
+          findings: [],
+        },
+      ]);
+      expect(body).toMatchObject({ route: 'oficial', connected: true });
+      expect(body).not.toHaveProperty('inbox_id');
+      expect(kit.health.checkWhatsappHealth).toHaveBeenCalledWith(
+        expect.objectContaining({ inboxes: [both.inboxes[1]] }),
+      );
+    });
+
+    it('ler o QR de novo retoma o WhatsApp Web mesmo com o oficial ligado depois', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({ state: both }),
+      });
+      kit.provision.reconnectOpenWA.mockResolvedValue({
+        status: 'initializing',
+      });
+      expect((await service.reconnectWhatsapp(superadmin)).status).toBe(200);
+      expect(kit.provision.reconnectOpenWA).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'sess-1' }),
+      );
+    });
+
+    it('deixar de usar uma rota tira o número da tela e da conferência', async () => {
+      const { service, kit, data } = makeService({
+        store: makeStore({ state: both }),
+      });
+      expect(await service.retireWhatsapp(superadmin, 'oficial')).toEqual({
+        status: 200,
+        body: { ok: true },
+      });
+      expect(data.state.inboxes[1].retired_at).toBeTruthy();
+      expect(data.state.inboxes[0].retired_at).toBeUndefined();
+      kit.health.checkWhatsappHealth.mockResolvedValue({
+        level: 'ok',
+        inboxes: [],
+      });
+      kit.health.healthAlerts.mockReturnValue({ alerts: [], health: {} });
+      await service.checkWhatsapp();
+      expect(kit.health.checkWhatsappHealth).toHaveBeenLastCalledWith(
+        expect.objectContaining({ inboxes: [both.inboxes[0]] }),
+      );
+    });
+
+    it('o único número não sai (409), e só o superadmin tira um número (403)', async () => {
+      const single = { account_id: 7, inboxes: [both.inboxes[0]] };
+      const { service, store } = makeService({
+        store: makeStore({ state: single }),
+      });
+      const answer = await service.retireWhatsapp(superadmin, 'nao_oficial');
+      expect(answer.status).toBe(409);
+      expect(answer.body).toMatchObject({ code: 'last_channel' });
+      expect((await service.retireWhatsapp(outsider, 'oficial')).status).toBe(
+        403,
+      );
+      expect(store.saveState).not.toHaveBeenCalled();
     });
   });
 
@@ -993,7 +1158,11 @@ describe('AtendimentoService', () => {
         metaWebhook: { callbackUrl: 'u', verifyToken: 'v' },
       }));
       await service.connectWhatsapp(superadmin, cloud);
-      expect(kit.provision.connectCloudApi).toHaveBeenCalled();
+      expect(kit.provision.connectCloudApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cloud: expect.objectContaining({ inboxName: 'WhatsApp oficial' }),
+        }),
+      );
       expect(kit.provision.updateCloudApi).not.toHaveBeenCalled();
     });
   });
@@ -1064,11 +1233,16 @@ describe('AtendimentoService', () => {
       );
 
       const status = await service.whatsapp(superadmin);
-      expect(status.body).toEqual({
+      const channel = {
         connected: false,
         route: 'nao_oficial',
         status: 'qr_ready',
         qrCode: 'data:image/png;base64,QR',
+      };
+      // A caixa substituída na mesma rota não aparece: só a última.
+      expect(status.body).toEqual({
+        ...channel,
+        channels: [{ ...channel, inbox_id: 2, phone: null }],
       });
       expect(kit.provision.whatsappStatus).toHaveBeenCalledWith(
         expect.objectContaining({ sessionId: 's2' }),

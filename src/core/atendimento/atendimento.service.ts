@@ -770,8 +770,8 @@ export class AtendimentoService {
     }
     const kit = await this.kit();
     const state = (await this.store.loadState(PLATFORM_TENANT)) ?? {};
-    const inbox = kit.health.currentInbox(state);
-    if (!inbox) {
+    const inboxes = kit.health.currentInboxes(state);
+    if (!inboxes.length) {
       return {
         status: 200,
         body: {
@@ -781,40 +781,84 @@ export class AtendimentoService {
           qrCode: null,
           level: null,
           findings: [],
+          channels: [],
         },
       };
     }
-    if (inbox.route === 'oficial') {
-      const report = await kit.health.checkWhatsappHealth({
-        chatwootUrl: env.chatwootUrl(),
-        state,
-      });
-      const current = report.inboxes[0];
-      return {
-        status: 200,
-        body: {
-          connected: current.level !== 'fora',
+    // Um item por canal: o número oficial e o do WhatsApp Web podem estar de pé
+    // ao mesmo tempo. Os campos de cima repetem o canal ligado por último.
+    const channels: Array<Record<string, unknown>> = [];
+    for (const inbox of inboxes) {
+      if (inbox.route === 'oficial') {
+        const report = await kit.health.checkWhatsappHealth({
+          chatwootUrl: env.chatwootUrl(),
+          state,
+          inboxes: [inbox],
+        });
+        const current = report.inboxes[0];
+        channels.push({
+          inbox_id: inbox.id,
           route: 'oficial',
+          phone: inbox.phone ?? null,
+          connected: current.level !== 'fora',
           status: null,
           qrCode: null,
           level: current.level,
           findings: current.findings,
+        });
+      } else {
+        const status = await kit.provision.whatsappStatus({
+          openwaUrl: env.openwaUrl(),
+          openwaApiKey: env.openwaApiKey(),
+          sessionId: inbox.session_id,
+        });
+        channels.push({
+          inbox_id: inbox.id,
+          route: 'nao_oficial',
+          phone: inbox.phone ?? null,
+          connected: status.status === 'ready',
+          ...status,
+        });
+      }
+    }
+    const latest = { ...channels[channels.length - 1] };
+    delete latest.inbox_id;
+    delete latest.phone;
+    return { status: 200, body: { ...latest, channels } };
+  }
+
+  /**
+   * Deixa de usar uma rota quando o atendimento tem as duas: o número sai da
+   * tela e da conferência, e o histórico fica no painel.
+   */
+  async retireWhatsapp(
+    person: AtendimentoPerson | null,
+    route: string,
+  ): Promise<Answer> {
+    if (!person?.isSuperadmin) {
+      return forbidden('Você não pode mudar o número.');
+    }
+    const kit = await this.kit();
+    const state = (await this.store.loadState(PLATFORM_TENANT)) ?? {};
+    let next: SupportState;
+    try {
+      next = kit.provision.retireWhatsappRoute({
+        state,
+        route: route as 'oficial' | 'nao_oficial',
+      });
+    } catch (error) {
+      // O único número, ou uma rota sem número: a tela mostra o que fazer.
+      const { code, fix } = error as { code?: string; fix?: string };
+      return {
+        status: 409,
+        body: {
+          code: code ?? 'error',
+          message: fix ?? 'Não deu para tirar este número agora.',
         },
       };
     }
-    const status = await kit.provision.whatsappStatus({
-      openwaUrl: env.openwaUrl(),
-      openwaApiKey: env.openwaApiKey(),
-      sessionId: inbox.session_id,
-    });
-    return {
-      status: 200,
-      body: {
-        connected: status.status === 'ready',
-        route: 'nao_oficial',
-        ...status,
-      },
-    };
+    await this.store.saveState(PLATFORM_TENANT, next);
+    return { status: 200, body: { ok: true } };
   }
 
   /** Ler o QR de novo: retoma a sessão que a caixa já tem, sem criar outra. */
@@ -823,10 +867,11 @@ export class AtendimentoService {
       return forbidden('Você não pode conectar o número.');
     }
     const kit = await this.kit();
-    const inbox = kit.health.currentInbox(
-      await this.store.loadState(PLATFORM_TENANT),
-    );
-    if (inbox?.route !== 'nao_oficial' || !inbox.session_id) {
+    // O canal do WhatsApp Web, também quando o oficial foi ligado depois dele.
+    const inbox = kit.health
+      .currentInboxes(await this.store.loadState(PLATFORM_TENANT))
+      .find((item) => item.route === 'nao_oficial');
+    if (!inbox?.session_id) {
       return {
         status: 409,
         body: {
@@ -852,22 +897,24 @@ export class AtendimentoService {
   async checkWhatsapp() {
     const kit = await this.kit();
     const state = await this.store.loadState(PLATFORM_TENANT);
-    const inbox = kit.health.currentInbox(state);
-    if (!state?.account_id || !inbox) {
+    // Todos os canais de pé: o número oficial e o do WhatsApp Web, quando o
+    // atendimento tem os dois.
+    const inboxes = kit.health.currentInboxes(state);
+    if (!state?.account_id || !inboxes.length) {
       return { skipped: 'no_inbox' as const, report: null, alerts: [] };
     }
     const report = await kit.health.checkWhatsappHealth({
       chatwootUrl: env.chatwootUrl(),
       state,
+      inboxes,
       // Sem exigir as variáveis: faltando, a base devolve o achado para quem
       // cuida do servidor, em vez de uma rotina que falha sem avisar ninguém.
-      openwa:
-        inbox.route === 'nao_oficial'
-          ? {
-              url: process.env.OPENWA_URL?.trim() ?? '',
-              apiKey: process.env.OPENWA_API_KEY?.trim() ?? '',
-            }
-          : null,
+      openwa: inboxes.some((inbox) => inbox.route === 'nao_oficial')
+        ? {
+            url: process.env.OPENWA_URL?.trim() ?? '',
+            apiKey: process.env.OPENWA_API_KEY?.trim() ?? '',
+          }
+        : null,
     });
     const { alerts, health } = kit.health.healthAlerts({
       previous: state.health,
@@ -906,6 +953,9 @@ export class AtendimentoService {
         phoneNumberId: body.phoneNumberId,
         businessAccountId: body.businessAccountId,
         apiKey: body.apiKey,
+        // A caixa do WhatsApp Web já se chama "WhatsApp": com os dois números,
+        // a equipe distingue as conversas pelo nome da caixa no painel.
+        inboxName: 'WhatsApp oficial',
       };
       // O mesmo número de novo é a troca do token: o Chatwoot aceita cada
       // número uma vez só.

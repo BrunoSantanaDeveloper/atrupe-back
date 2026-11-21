@@ -1,7 +1,7 @@
-// A tela "Conectar WhatsApp": GET devolve o estado (e o QR, na rota não oficial); POST conecta ou, com
-// acao "reconectar", retoma a sessão que a caixa já tem.
+// A tela "Conectar WhatsApp": GET devolve o estado de cada canal (e o QR, na rota não oficial); POST conecta,
+// com acao "reconectar" retoma a sessão que a caixa já tem e com acao "deixar" tira uma das duas rotas.
 
-import { connectWhatsapp, reconnectWhatsapp, whatsapp } from "@/lib/atendimento";
+import { connectWhatsapp, reconnectWhatsapp, retireWhatsapp, whatsapp } from "@/lib/atendimento";
 
 export const dynamic = "force-dynamic";
 
@@ -18,11 +18,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as Record<string, string> | null;
   const reconnecting = body?.acao === "reconectar";
+  const retiring = body?.acao === "deixar";
   if (!reconnecting && (!body || !["oficial", "nao_oficial"].includes(body.route))) {
     return Response.json({ code: "route_missing", message: "Escolha a forma de conexão." }, { status: 400 });
   }
   try {
-    const result = reconnecting ? await reconnectWhatsapp(request) : await connectWhatsapp(request, body!);
+    const result = reconnecting ? await reconnectWhatsapp(request) : retiring ? await retireWhatsapp(request, body!.route) : await connectWhatsapp(request, body!);
     return Response.json(result.body, { status: result.status });
   } catch (error) {
     const code = (error as { code?: string }).code ?? "error";
