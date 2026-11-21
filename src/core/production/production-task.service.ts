@@ -3,7 +3,9 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma, ProductionAttachmentKind } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -13,11 +15,14 @@ import { isOpen } from './engine/production-chain';
 import { planAction } from './engine/task-machine';
 import {
   AttachmentDto,
+  DirectAttachmentDto,
+  DirectFileDto,
   ReleaseNextDto,
   TaskActionDto,
   TaskScheduleDto,
   TimeEntryDto,
   UpdateTaskDto,
+  UploadLinkDto,
   WorkStartDto,
 } from './dto/production-task.dto';
 import {
@@ -33,6 +38,10 @@ import {
   ProductionViewService,
   TASK_NOT_FOUND,
 } from './production-view.service';
+import {
+  ProductionFilesService,
+  refusalOf,
+} from './storage/production-files.service';
 import { ProductionStorageService } from './storage/production-storage.service';
 
 /** Tamanho máximo do arquivo do anexo (D32, PO 13/10/2026). */
@@ -58,6 +67,27 @@ export const ATTACHMENT_EXTENSIONS: Record<string, string> = {
 };
 
 const ATTACHMENT_NOT_FOUND = 'Anexo não encontrado';
+
+/** O nome do arquivo: o tipo aceito e o nome seguro para a chave. */
+export function nameOf(originalName: string) {
+  const extension = path.extname(originalName).toLowerCase();
+  const mime = ATTACHMENT_EXTENSIONS[extension];
+  if (!mime) {
+    bad('Tipo de arquivo não aceito: imagem, PDF, AI, CDR, TIFF, DXF ou ZIP');
+  }
+  const safeName =
+    path
+      .basename(originalName)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\w.-]+/g, '-')
+      .slice(-120) || `arquivo${extension}`;
+  return {
+    fileName: path.basename(originalName).slice(-200),
+    mime: mime!,
+    safeName,
+  };
+}
 const TASK_CLOSED = 'A tarefa já foi encerrada';
 
 const bad = (message: string): never => {
@@ -86,12 +116,15 @@ type Tx = Prisma.TransactionClient;
  */
 @Injectable()
 export class ProductionTaskService {
+  private readonly logger = new Logger(ProductionTaskService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProductionAccessService,
     private readonly view: ProductionViewService,
     private readonly mirror: ProductionMirrorService,
     private readonly storage: ProductionStorageService,
+    private readonly files: ProductionFilesService,
   ) {}
 
   /* ------------------------------------------------------------ apoio */
@@ -698,27 +731,16 @@ export class ProductionTaskService {
   private fileOf(file?: UploadedFile) {
     if (!file?.originalname || !file.buffer?.length) bad('Escolha o arquivo');
     if (file!.size > ATTACHMENT_MAX_BYTES) bad('O arquivo passa de 20 MB');
-    const extension = path.extname(file!.originalname).toLowerCase();
-    const mime = ATTACHMENT_EXTENSIONS[extension];
-    if (!mime) {
-      bad('Tipo de arquivo não aceito: imagem, PDF, AI, CDR, TIFF, DXF ou ZIP');
-    }
-    const safeName =
-      path
-        .basename(file!.originalname)
-        .normalize('NFD')
-        .replace(/[̀-ͯ]/g, '')
-        .replace(/[^\w.-]+/g, '-')
-        .slice(-120) || `arquivo${extension}`;
+    const name = nameOf(file!.originalname);
     return {
-      fileName: path.basename(file!.originalname).slice(-200),
+      fileName: name.fileName,
       mime:
         file!.mimetype && file!.mimetype !== 'application/octet-stream'
           ? file!.mimetype
-          : mime!,
+          : name.mime,
       size: file!.size,
       buffer: file!.buffer,
-      safeName,
+      safeName: name.safeName,
     };
   }
 
@@ -757,26 +779,83 @@ export class ProductionTaskService {
     };
   }
 
+  private keyOf(viewer: ProductionViewer, taskId: string, safeName: string) {
+    return `production/${viewer.companyId}/${taskId}/${randomUUID()}-${safeName}`;
+  }
+
   private async upload(
     viewer: ProductionViewer,
     taskId: string,
     file: ReturnType<ProductionTaskService['fileOf']>,
   ) {
-    const key = `production/${viewer.companyId}/${taskId}/${randomUUID()}-${file.safeName}`;
+    const key = this.keyOf(viewer, taskId, file.safeName);
     await this.storage.put(key, file.buffer, file.mime);
     return key;
   }
 
-  async addAttachment(
+  /** O espaço da empresa, com o teto do arquivo (GP-48 item 27). */
+  storageSummary(viewer: ProductionViewer) {
+    return this.files.summary(viewer.companyId, this.storage.configured());
+  }
+
+  /** O arquivo enviado pelo servidor (até 20 MB) também conta no espaço. */
+  private async assertServerUploadFits(viewer: ProductionViewer, size: number) {
+    this.files.assertFits(await this.storageSummary(viewer), size);
+  }
+
+  /**
+   * O link para o navegador enviar o arquivo direto ao armazenamento: confere
+   * o tipo, o teto do arquivo e o espaço antes de liberar.
+   */
+  async uploadLink(viewer: ProductionViewer, id: string, dto: UploadLinkDto) {
+    await this.load(viewer, id);
+    const name = nameOf(dto.fileName);
+    this.files.assertFits(await this.storageSummary(viewer), dto.size);
+    const key = this.keyOf(viewer, id, name.safeName);
+    return { key, url: this.storage.uploadUrl(key), mime: name.mime };
+  }
+
+  /**
+   * O arquivo que o navegador enviou: a chave precisa ser da pasta da tarefa,
+   * e o tamanho vale o do armazenamento, não o que a tela disse. Sem espaço,
+   * o arquivo é apagado e a entrada recusada.
+   */
+  private async receivedFile(
+    viewer: ProductionViewer,
+    id: string,
+    dto: DirectFileDto,
+  ) {
+    if (!dto.key.startsWith(`production/${viewer.companyId}/${id}/`)) {
+      bad('Arquivo de outra tarefa');
+    }
+    const name = nameOf(dto.fileName);
+    const size = await this.storage.sizeOf(dto.key);
+    if (size === null)
+      bad('O arquivo não chegou ao armazenamento. Envie de novo.');
+    const summary = await this.storageSummary(viewer);
+    const refusal = refusalOf(summary, size!);
+    if (refusal) {
+      await this.storage.remove(dto.key).catch(() => undefined);
+      throw new UnprocessableEntityException(refusal);
+    }
+    return {
+      fileName: name.fileName,
+      mime: dto.mime?.trim() || name.mime,
+      size: size!,
+      storageKey: dto.key,
+    };
+  }
+
+  private async createAttachment(
     viewer: ProductionViewer,
     id: string,
     dto: AttachmentDto,
-    upload?: UploadedFile,
+    file: { fileName: string; mime: string; size: number; storageKey: string },
   ) {
-    await this.load(viewer, id);
-    const file = this.fileOf(upload);
-    const name = dto.name?.trim() || bad('Dê um nome ao anexo');
-    const storageKey = await this.upload(viewer, id, file);
+    const name =
+      dto.name?.trim() ||
+      path.parse(file.fileName).name.trim() ||
+      bad('Dê um nome ao anexo');
     const attachmentId = await this.prisma.$transaction(async (tx) => {
       const attachment = await tx.productionAttachment.create({
         data: {
@@ -789,7 +868,7 @@ export class ProductionTaskService {
               fileName: file.fileName,
               size: file.size,
               mime: file.mime,
-              storageKey,
+              storageKey: file.storageKey,
               uploadedById: viewer.userId,
               uploadedBy: viewer.name,
               current: true,
@@ -804,45 +883,72 @@ export class ProductionTaskService {
     return this.attachmentView(attachmentId);
   }
 
+  async addAttachment(
+    viewer: ProductionViewer,
+    id: string,
+    dto: AttachmentDto,
+    upload?: UploadedFile,
+  ) {
+    await this.load(viewer, id);
+    const file = this.fileOf(upload);
+    if (!dto.name?.trim()) bad('Dê um nome ao anexo');
+    await this.assertServerUploadFits(viewer, file.size);
+    const storageKey = await this.upload(viewer, id, file);
+    return this.createAttachment(viewer, id, dto, { ...file, storageKey });
+  }
+
+  /** O anexo novo com o arquivo que o navegador já enviou (vários de uma vez). */
+  async addAttachmentDirect(
+    viewer: ProductionViewer,
+    id: string,
+    dto: DirectAttachmentDto,
+  ) {
+    await this.load(viewer, id);
+    const file = await this.receivedFile(viewer, id, dto);
+    return this.createAttachment(viewer, id, dto, file);
+  }
+
   private async attachmentOf(taskId: string, attachmentId: string) {
     const attachment = await this.prisma.productionAttachment.findFirst({
       where: { id: attachmentId, taskId },
       select: {
         id: true,
         name: true,
-        versions: { select: { version: true } },
+        versions: {
+          select: {
+            version: true,
+            storageKey: true,
+            current: true,
+            uploadedById: true,
+          },
+        },
       },
     });
     if (!attachment) throw new NotFoundException(ATTACHMENT_NOT_FOUND);
     return attachment;
   }
 
-  /** A versão nova vira a válida; as anteriores ficam (GP-26). */
-  async addVersion(
+  private async createVersion(
     viewer: ProductionViewer,
     id: string,
-    attachmentId: string,
-    upload?: UploadedFile,
+    attachment: Awaited<ReturnType<ProductionTaskService['attachmentOf']>>,
+    file: { fileName: string; mime: string; size: number; storageKey: string },
   ) {
-    await this.load(viewer, id);
-    const attachment = await this.attachmentOf(id, attachmentId);
-    const file = this.fileOf(upload);
-    const storageKey = await this.upload(viewer, id, file);
     const version =
       Math.max(0, ...attachment.versions.map((item) => item.version)) + 1;
     await this.prisma.$transaction(async (tx) => {
       await tx.productionAttachmentVersion.updateMany({
-        where: { attachmentId },
+        where: { attachmentId: attachment.id },
         data: { current: false },
       });
       await tx.productionAttachmentVersion.create({
         data: {
-          attachmentId,
+          attachmentId: attachment.id,
           version,
           fileName: file.fileName,
           size: file.size,
           mime: file.mime,
-          storageKey,
+          storageKey: file.storageKey,
           uploadedById: viewer.userId,
           uploadedBy: viewer.name,
           current: true,
@@ -855,7 +961,116 @@ export class ProductionTaskService {
         `Anexou ${attachment.name} v${version} (${file.fileName})`,
       );
     });
+    return this.attachmentView(attachment.id);
+  }
+
+  /** A versão nova vira a válida; as anteriores ficam (GP-26). */
+  async addVersion(
+    viewer: ProductionViewer,
+    id: string,
+    attachmentId: string,
+    upload?: UploadedFile,
+  ) {
+    await this.load(viewer, id);
+    const attachment = await this.attachmentOf(id, attachmentId);
+    const file = this.fileOf(upload);
+    await this.assertServerUploadFits(viewer, file.size);
+    const storageKey = await this.upload(viewer, id, file);
+    return this.createVersion(viewer, id, attachment, { ...file, storageKey });
+  }
+
+  async addVersionDirect(
+    viewer: ProductionViewer,
+    id: string,
+    attachmentId: string,
+    dto: DirectFileDto,
+  ) {
+    await this.load(viewer, id);
+    const attachment = await this.attachmentOf(id, attachmentId);
+    const file = await this.receivedFile(viewer, id, dto);
+    return this.createVersion(viewer, id, attachment, file);
+  }
+
+  /**
+   * Apagar libera o espaço: o gerente apaga qualquer arquivo; o operador, só
+   * o que ele mesmo enviou.
+   */
+  private assertCanDelete(
+    viewer: ProductionViewer,
+    versions: { uploadedById: string | null }[],
+  ) {
+    if (
+      !viewer.manager &&
+      versions.some((item) => item.uploadedById !== viewer.userId)
+    ) {
+      throw new ForbiddenException(
+        'Só o gerente apaga arquivos enviados por outra pessoa',
+      );
+    }
+  }
+
+  /** Apaga o anexo com todas as versões. */
+  async deleteAttachment(
+    viewer: ProductionViewer,
+    id: string,
+    attachmentId: string,
+  ) {
+    await this.load(viewer, id);
+    const attachment = await this.attachmentOf(id, attachmentId);
+    this.assertCanDelete(viewer, attachment.versions);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productionAttachment.delete({ where: { id: attachment.id } });
+      await this.log(tx, viewer, id, `Apagou o anexo ${attachment.name}`);
+    });
+    await this.removeFiles(attachment.versions.map((item) => item.storageKey));
+    return { deleted: true };
+  }
+
+  /**
+   * Apaga uma versão. Apagar a válida passa a validade para a mais recente;
+   * apagar a única apaga o anexo.
+   */
+  async deleteVersion(
+    viewer: ProductionViewer,
+    id: string,
+    attachmentId: string,
+    version: number,
+  ) {
+    await this.load(viewer, id);
+    const attachment = await this.attachmentOf(id, attachmentId);
+    const target = attachment.versions.find((item) => item.version === version);
+    if (!target) throw new NotFoundException('Versão não encontrada');
+    if (attachment.versions.length === 1) {
+      return this.deleteAttachment(viewer, id, attachmentId);
+    }
+    this.assertCanDelete(viewer, [target]);
+    const rest = attachment.versions.filter((item) => item.version !== version);
+    const latest = Math.max(...rest.map((item) => item.version));
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productionAttachmentVersion.deleteMany({
+        where: { attachmentId, version },
+      });
+      if (target.current) {
+        await tx.productionAttachmentVersion.updateMany({
+          where: { attachmentId, version: latest },
+          data: { current: true },
+        });
+      }
+      await this.log(tx, viewer, id, `Apagou ${attachment.name} v${version}`);
+    });
+    await this.removeFiles([target.storageKey]);
     return this.attachmentView(attachmentId);
+  }
+
+  /** O banco já soltou o arquivo: a falha no armazenamento só fica no log. */
+  private async removeFiles(keys: string[]) {
+    for (const key of keys) {
+      await this.storage
+        .remove(key)
+        .catch((error) =>
+          this.logger.warn(`Arquivo não apagado (${key}): ${error.message}`),
+        );
+    }
   }
 
   async setCurrentVersion(

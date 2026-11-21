@@ -131,6 +131,13 @@ const LIMIT_RULES: Record<
     enforced: true,
     detail: 'Duração dos próximos testes gratuitos (vale para o plano Trial).',
   },
+  production_storage_free_mb: {
+    min: 0,
+    allowUnlimited: true,
+    enforced: true,
+    detail:
+      'Verificado a cada arquivo enviado à produção: soma o tamanho de todas as versões dos anexos da empresa. A faixa contratada (50 GB, 200 GB, 1 TB) soma por cima.',
+  },
   ai_messages_month: {
     min: 0,
     allowUnlimited: true,

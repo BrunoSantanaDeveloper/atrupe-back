@@ -1,9 +1,12 @@
 import type { S3Client } from '@aws-sdk/client-s3';
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { presignGetUrl } from './s3-presign';
+import { presignGetUrl, presignPutUrl } from './s3-presign';
 
 /** O link de leitura vale 15 minutos e é refeito a cada leitura (GP-27). */
 export const LINK_SECONDS = 15 * 60;
+
+/** O link de envio direto vale 1 hora: o arquivo pesado demora a subir. */
+export const UPLOAD_LINK_SECONDS = 60 * 60;
 
 /**
  * O armazenamento dos anexos da produção: arte de cliente, então privado.
@@ -37,24 +40,62 @@ export class ProductionStorageService {
     }
   }
 
-  async put(key: string, body: Buffer, mime: string) {
+  // O SDK carrega só quando grava: quem só lê o link não precisa dele
+  private async sdk() {
     this.assertConfigured();
-    const { bucket, region, accessKeyId, secretAccessKey } = this.settings;
-    // O SDK carrega só no upload: quem só lê o link não precisa dele
-    const { PutObjectCommand, S3Client: Client } = await import(
-      '@aws-sdk/client-s3'
-    );
-    this.client ??= new Client({
+    const { region, accessKeyId, secretAccessKey } = this.settings;
+    const sdk = await import('@aws-sdk/client-s3');
+    this.client ??= new sdk.S3Client({
       region,
       credentials: { accessKeyId, secretAccessKey },
     });
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
+    return { sdk, client: this.client };
+  }
+
+  async put(key: string, body: Buffer, mime: string) {
+    const { sdk, client } = await this.sdk();
+    await client.send(
+      new sdk.PutObjectCommand({
+        Bucket: this.settings.bucket,
         Key: key,
         Body: body,
         ContentType: mime,
       }),
+    );
+  }
+
+  /** O link para o navegador enviar o arquivo direto ao armazenamento. */
+  uploadUrl(key: string, now = new Date()) {
+    this.assertConfigured();
+    return presignPutUrl({
+      ...this.settings,
+      key,
+      expiresSeconds: UPLOAD_LINK_SECONDS,
+      now,
+    });
+  }
+
+  /** O tamanho real do arquivo enviado; nulo quando ele não chegou. */
+  async sizeOf(key: string): Promise<number | null> {
+    const { sdk, client } = await this.sdk();
+    try {
+      const head = await client.send(
+        new sdk.HeadObjectCommand({ Bucket: this.settings.bucket, Key: key }),
+      );
+      return head.ContentLength ?? null;
+    } catch (error) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } })
+        .$metadata?.httpStatusCode;
+      if (status === 404 || (error as Error).name === 'NotFound') return null;
+      throw error;
+    }
+  }
+
+  /** Apaga o arquivo (anexo excluído ou envio recusado pela cota). */
+  async remove(key: string) {
+    const { sdk, client } = await this.sdk();
+    await client.send(
+      new sdk.DeleteObjectCommand({ Bucket: this.settings.bucket, Key: key }),
     );
   }
 

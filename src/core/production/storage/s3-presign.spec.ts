@@ -1,4 +1,4 @@
-import { presignGetUrl } from './s3-presign';
+import { presignGetUrl, presignPutUrl } from './s3-presign';
 
 describe('presignGetUrl', () => {
   // O exemplo de "Authenticating Requests: Using Query Parameters (AWS
@@ -36,5 +36,28 @@ describe('presignGetUrl', () => {
       /^https:\/\/b\.s3\.sa-east-1\.amazonaws\.com\/production\/c1\/t1\/arte%20final%20%28v2%29\.pdf\?/,
     );
     expect(url).toContain('X-Amz-Expires=900');
+  });
+});
+
+describe('presignPutUrl', () => {
+  // Conferido em 21/11/2026 com o SignatureV4 do SDK da AWS (@smithy), com o
+  // corpo sem assinatura (UNSIGNED-PAYLOAD), como o presigner do S3 faz
+  it('confere com a assinatura do SDK da AWS', () => {
+    const url = presignPutUrl({
+      bucket: 'b',
+      region: 'us-east-1',
+      key: 'production/c1/t1/arte final (v2).pdf',
+      accessKeyId: 'K',
+      secretAccessKey: 'S',
+      expiresSeconds: 3600,
+      now: new Date('2026-11-21T12:00:00Z'),
+    });
+    expect(url).toBe(
+      'https://b.s3.amazonaws.com/production/c1/t1/arte%20final%20%28v2%29.pdf' +
+        '?X-Amz-Algorithm=AWS4-HMAC-SHA256' +
+        '&X-Amz-Credential=K%2F20261121%2Fus-east-1%2Fs3%2Faws4_request' +
+        '&X-Amz-Date=20261121T120000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host' +
+        '&X-Amz-Signature=25a1cb6d06688978afd6a22e2cd4f3324b1995160c519db4c03da315d0521f76',
+    );
   });
 });

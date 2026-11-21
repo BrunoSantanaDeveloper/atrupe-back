@@ -39,6 +39,8 @@ export class SeedPlansService {
           category: feature.category,
           price: feature.price,
           isActive: feature.isActive,
+          storageGb: 'storageGb' in feature ? feature.storageGb : null,
+          listed: 'listed' in feature ? feature.listed : true,
         },
         create: feature,
       });

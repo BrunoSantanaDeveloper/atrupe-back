@@ -154,6 +154,53 @@ export class AttachmentDto {
   kind?: (typeof ATTACHMENT_KINDS)[number];
 }
 
+/** O pedido do link de envio direto (GP-48 item 27). */
+export class UploadLinkDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(255)
+  fileName: string;
+
+  @ApiProperty({
+    description: 'Tamanho em bytes, conferido de novo ao receber',
+  })
+  @IsInt()
+  @Min(1)
+  size: number;
+}
+
+/** O arquivo que o navegador já enviou ao armazenamento. */
+export class DirectFileDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(400)
+  key: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(255)
+  fileName: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  mime?: string;
+}
+
+export class DirectAttachmentDto extends DirectFileDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @ApiPropertyOptional({ enum: ATTACHMENT_KINDS })
+  @IsOptional()
+  @IsIn(ATTACHMENT_KINDS, { message: 'Tipo de anexo inválido' })
+  kind?: (typeof ATTACHMENT_KINDS)[number];
+}
+
 export class CurrentVersionDto {
   @ApiProperty()
   @IsInt()

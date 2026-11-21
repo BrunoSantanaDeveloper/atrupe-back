@@ -389,4 +389,39 @@ export const BASE_FEATURES = [
     price: 7000, // R$ 70,00 em centavos
     isActive: true,
   },
+  // As faixas de espaço dos arquivos de produção (GP-48 item 27): uma por
+  // assinatura; contratar outra troca a faixa.
+  {
+    key: 'production_storage_50gb',
+    name: 'Arquivos de produção · 50 GB',
+    description:
+      'Guarde os arquivos de cada trabalho (arte em alta resolução, PDF, CDR, AI, ZIP) nas etapas da produção, com até 2 GB por arquivo e 50 GB no total',
+    category: 'production',
+    price: 3990, // R$ 39,90
+    isActive: true,
+    storageGb: 50,
+    listed: true,
+  },
+  {
+    key: 'production_storage_200gb',
+    name: 'Arquivos de produção · 200 GB',
+    description:
+      'Guarde os arquivos de cada trabalho (arte em alta resolução, PDF, CDR, AI, ZIP) nas etapas da produção, com até 2 GB por arquivo e 200 GB no total',
+    category: 'production',
+    price: 9990, // R$ 99,90
+    isActive: true,
+    storageGb: 200,
+    listed: true,
+  },
+  {
+    key: 'production_storage_1tb',
+    name: 'Arquivos de produção · 1 TB',
+    description:
+      'Guarde os arquivos de cada trabalho (arte em alta resolução, PDF, CDR, AI, ZIP) nas etapas da produção, com até 2 GB por arquivo e 1 TB no total',
+    category: 'production',
+    price: 39990, // R$ 399,90; fora do catálogo
+    isActive: true,
+    storageGb: 1000,
+    listed: false,
+  },
 ];

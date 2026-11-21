@@ -140,10 +140,13 @@ export class PlanService {
         where: {
           isActive: true,
           price: { gt: 0 },
+          // A faixa de 1 TB não é divulgada (GP-48 item 27)
+          listed: true,
         },
         select: {
           id: true,
           key: true,
+          storageGb: true,
           name: true,
           description: true,
           price: true,

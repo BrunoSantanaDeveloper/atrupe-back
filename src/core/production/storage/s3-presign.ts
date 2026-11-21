@@ -32,6 +32,19 @@ export const s3Host = (bucket: string, region: string) =>
     : `${bucket}.s3.${region}.amazonaws.com`;
 
 export function presignGetUrl(input: PresignInput): string {
+  return presignUrl('GET', input);
+}
+
+/**
+ * O link assinado de envio: o navegador manda o arquivo direto ao S3 (PUT),
+ * sem passar pelo servidor, e o arquivo pesado não tem o teto do upload.
+ * Só o host é assinado; o tamanho real é conferido depois (HEAD).
+ */
+export function presignPutUrl(input: PresignInput): string {
+  return presignUrl('PUT', input);
+}
+
+function presignUrl(method: 'GET' | 'PUT', input: PresignInput): string {
   const host = s3Host(input.bucket, input.region);
   const amzDate = input.now.toISOString().replace(/[:-]|\.\d{3}/g, '');
   const day = amzDate.slice(0, 8);
@@ -53,7 +66,7 @@ export function presignGetUrl(input: PresignInput): string {
     .map(([name, value]) => `${name}=${value}`)
     .join('&');
   const canonical = [
-    'GET',
+    method,
     path,
     query,
     `host:${host}`,

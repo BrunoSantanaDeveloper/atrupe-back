@@ -16,6 +16,17 @@ import {
   MAX_ADDITIONAL_USERS,
 } from '../pricing/pricing.engine';
 import { ComplementsDto, ComplementsQuoteDto } from '../dto/checkout.dto';
+import {
+  FREE_LIMIT_KEY,
+  OFFER_RATIO,
+  storageSummary,
+  usedBytesOf,
+} from '../../production/storage/production-files.service';
+import {
+  assertSingleStorageTier,
+  formatBytes,
+  isStorageTier,
+} from '../pricing/storage-tiers';
 import { ContractAcceptanceService } from './contract-acceptance.service';
 import { CompanySessionService } from './company-session.service';
 import { RequestMeta } from './checkout.service';
@@ -120,7 +131,7 @@ export class ComplementsService {
       this.loadSubscription(ctx.current.id),
       this.prisma.feature.findMany({
         where: { isActive: true, price: { gt: 0 } },
-        orderBy: { name: 'asc' },
+        orderBy: [{ storageGb: 'asc' }, { name: 'asc' }],
       }),
       this.prisma.contractAcceptance.findFirst({
         where: { companyId },
@@ -140,6 +151,10 @@ export class ComplementsService {
     const sellable = contracted.filter(
       (sf) => sf.feature.isActive && sf.feature.price > 0,
     );
+    // O espaço só é lido quando há faixa fora do catálogo para oferecer
+    const storage = catalog.some((f) => !f.listed && isStorageTier(f))
+      ? await this.storageState(companyId, sub)
+      : null;
 
     return {
       intent: ctx.intent,
@@ -164,11 +179,21 @@ export class ComplementsService {
       },
       availableModules: catalog
         .filter((f) => !unavailable.has(f.key))
+        // A faixa fora do catálogo (1 TB) aparece só para quem já tem uma
+        // faixa e passou de 80% do espaço
+        .filter(
+          (f) =>
+            f.listed !== false ||
+            (isStorageTier(f) &&
+              !!storage?.nearFull &&
+              f.storageGb! > storage.tierGb),
+        )
         .map((f) => ({
           key: f.key,
           name: f.name,
           description: f.description ?? null,
           priceCents: Math.round(f.price),
+          storageGb: f.storageGb ?? null,
         })),
       contractor: contractorOnFile(lastAcceptance, sub.customer),
       terms: terms ? { id: terms.id, version: terms.version } : null,
@@ -444,6 +469,12 @@ export class ComplementsService {
       }
       return sf;
     });
+
+    // A faixa de espaço é uma por assinatura: contratar outra troca a faixa,
+    // e nenhuma troca deixa o espaço abaixo do que os arquivos já usam
+    removing.push(
+      ...(await this.storageTierChange(companyId, sub, features, removing)),
+    );
 
     const targetUsers = request.additionalUsers ?? sub.additionalUsers;
     if (targetUsers < sub.additionalUsers) {
@@ -782,6 +813,95 @@ export class ComplementsService {
    * plano ou cortesia, `grantSource`) não é módulo: não aparece, não se
    * retira por aqui e não entra na conta.
    */
+  /** A cota grátis do plano da assinatura, em MB (indefinido = partida). */
+  private async freeMbOf(sub: LoadedSubscription) {
+    const limit = await this.prisma.planLimit.findFirst({
+      where: {
+        planId: sub.planId,
+        isActive: true,
+        limit: { key: FREE_LIMIT_KEY },
+      },
+      select: { value: true },
+    });
+    return limit?.value;
+  }
+
+  /** A maior faixa entre o plano e os complementos indicados. */
+  private tierGbOf(
+    sub: LoadedSubscription,
+    modules: { feature: { storageGb?: number | null } }[],
+  ) {
+    return Math.max(
+      0,
+      ...[...sub.plan.planFeatures, ...modules].map(
+        (item) => item.feature.storageGb ?? 0,
+      ),
+    );
+  }
+
+  /** O espaço da empresa hoje, para oferecer a faixa seguinte. */
+  private async storageState(companyId: string, sub: LoadedSubscription) {
+    const tierGb = this.tierGbOf(sub, this.contractedModules(sub));
+    const summary = storageSummary({
+      usedBytes: await usedBytesOf(this.prisma, companyId),
+      freeMb: await this.freeMbOf(sub),
+      tier: tierGb ? { key: '', name: '', storageGb: tierGb } : null,
+    });
+    return {
+      usedBytes: summary.usedBytes,
+      quotaBytes: summary.quotaBytes,
+      tierGb,
+      nearFull:
+        tierGb > 0 &&
+        summary.quotaBytes !== null &&
+        summary.usedBytes >= summary.quotaBytes * OFFER_RATIO,
+    };
+  }
+
+  /**
+   * A troca de faixa: incluir uma faixa retira a contratada; e o espaço que
+   * resta (a faixa nova, ou só a cota grátis quando a faixa sai) precisa
+   * caber os arquivos que a empresa já guarda.
+   */
+  private async storageTierChange(
+    companyId: string,
+    sub: LoadedSubscription,
+    features: { storageGb?: number | null }[],
+    removing: LoadedSubscription['subscriptionFeatures'],
+  ) {
+    assertSingleStorageTier(features);
+    const contracted = this.contractedModules(sub);
+    const adding = features.some(isStorageTier);
+    const alsoRemove = adding
+      ? contracted.filter(
+          (sf) => isStorageTier(sf.feature) && !removing.includes(sf),
+        )
+      : [];
+    const leaving = new Set(
+      [...removing, ...alsoRemove].map((sf) => sf.feature.key),
+    );
+    if (!adding && !removing.some((sf) => isStorageTier(sf.feature))) {
+      return alsoRemove;
+    }
+    const remaining = contracted.filter((sf) => !leaving.has(sf.feature.key));
+    const tierGb = Math.max(
+      this.tierGbOf(sub, remaining),
+      ...features.map((f) => f.storageGb ?? 0),
+    );
+    const summary = storageSummary({
+      usedBytes: await usedBytesOf(this.prisma, companyId),
+      freeMb: await this.freeMbOf(sub),
+      tier: tierGb ? { key: '', name: '', storageGb: tierGb } : null,
+    });
+    if (summary.quotaBytes !== null && summary.usedBytes > summary.quotaBytes) {
+      throw new UnprocessableEntityException({
+        code: 'STORAGE_IN_USE',
+        message: `Os arquivos de produção ocupam ${formatBytes(summary.usedBytes)}, e o espaço passaria a ${formatBytes(summary.quotaBytes)}. Apague arquivos antes de trocar de faixa.`,
+      });
+    }
+    return alsoRemove;
+  }
+
   private contractedModules(sub: LoadedSubscription) {
     return sub.subscriptionFeatures.filter(
       (sf) => sf.isActive !== false && !!sf.feature?.key && !sf.grantSource,

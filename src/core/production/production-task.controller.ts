@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
+  Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Put,
@@ -18,6 +21,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
+import { HasAnyPermission } from '../auth/abac/has-any-permission.decorator';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
@@ -26,6 +30,8 @@ import { FeatureGuard } from '../plan/guards/feature.guard';
 import {
   AttachmentDto,
   CurrentVersionDto,
+  DirectAttachmentDto,
+  DirectFileDto,
   PendencyDto,
   TaskCommentDto,
   ReleaseNextDto,
@@ -33,6 +39,7 @@ import {
   TaskScheduleDto,
   TimeEntryDto,
   UpdateTaskDto,
+  UploadLinkDto,
   WorkStartDto,
   WorkStopDto,
 } from './dto/production-task.dto';
@@ -68,6 +75,15 @@ export class ProductionTaskController {
     private readonly access: ProductionAccessService,
     private readonly tasks: ProductionTaskService,
   ) {}
+
+  @Get('storage')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({
+    summary: 'O espaço dos arquivos de produção da empresa (GP-48 item 27)',
+  })
+  async storage(@Req() req) {
+    return this.tasks.storageSummary(await this.access.viewer(req.user));
+  }
 
   @Post(':id/action')
   @HasPermission('view', PRODUCTION)
@@ -234,6 +250,98 @@ export class ProductionTaskController {
       id,
       attachmentId,
       file,
+    );
+  }
+
+  @Post(':id/attachment/upload-link')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({
+    summary:
+      'O link para o navegador enviar o arquivo direto ao armazenamento (GP-48 item 27)',
+  })
+  async uploadLink(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: UploadLinkDto,
+  ) {
+    return this.tasks.uploadLink(await this.access.viewer(req.user), id, dto);
+  }
+
+  @Post(':id/attachment/direct')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({
+    summary: 'Cria o anexo com o arquivo já enviado ao armazenamento',
+  })
+  async addAttachmentDirect(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: DirectAttachmentDto,
+  ) {
+    return this.tasks.addAttachmentDirect(
+      await this.access.viewer(req.user),
+      id,
+      dto,
+    );
+  }
+
+  @Post(':id/attachment/:attachmentId/version/direct')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({
+    summary: 'Nova versão com o arquivo já enviado ao armazenamento',
+  })
+  async addVersionDirect(
+    @Req() req,
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+    @Body() dto: DirectFileDto,
+  ) {
+    return this.tasks.addVersionDirect(
+      await this.access.viewer(req.user),
+      id,
+      attachmentId,
+      dto,
+    );
+  }
+
+  @Delete(':id/attachment/:attachmentId')
+  // Linha de dentro da tarefa: aceita edit (regra delete × edit); o
+  // operador com view apaga só o que ele enviou (o serviço confere)
+  @HasAnyPermission(
+    { action: 'view', resource: PRODUCTION },
+    { action: 'edit', resource: PRODUCTION },
+  )
+  @ApiOperation({ summary: 'Apaga o anexo e libera o espaço' })
+  async deleteAttachment(
+    @Req() req,
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+  ) {
+    return this.tasks.deleteAttachment(
+      await this.access.viewer(req.user),
+      id,
+      attachmentId,
+    );
+  }
+
+  @Delete(':id/attachment/:attachmentId/version/:version')
+  // Linha de dentro da tarefa: aceita edit (regra delete × edit); o
+  // operador com view apaga só o que ele enviou (o serviço confere)
+  @HasAnyPermission(
+    { action: 'view', resource: PRODUCTION },
+    { action: 'edit', resource: PRODUCTION },
+  )
+  @ApiOperation({ summary: 'Apaga uma versão e libera o espaço' })
+  async deleteVersion(
+    @Req() req,
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+    @Param('version', ParseIntPipe) version: number,
+  ) {
+    return this.tasks.deleteVersion(
+      await this.access.viewer(req.user),
+      id,
+      attachmentId,
+      version,
     );
   }
 

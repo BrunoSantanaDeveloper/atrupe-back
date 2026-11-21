@@ -12,6 +12,7 @@ import { ProductionTaskController } from './production-task.controller';
 import { ProductionTaskService } from './production-task.service';
 import { ProductionViewService } from './production-view.service';
 import { ProductionController } from './production.controller';
+import { ProductionFilesService } from './storage/production-files.service';
 import { ProductionStorageService } from './storage/production-storage.service';
 
 /**
@@ -36,6 +37,7 @@ import { ProductionStorageService } from './storage/production-storage.service';
     ProductionBoardService,
     ProductionMirrorService,
     ProductionStorageService,
+    ProductionFilesService,
   ],
   exports: [ProductionProjectService],
 })

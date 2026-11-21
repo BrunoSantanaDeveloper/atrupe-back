@@ -22,6 +22,14 @@ export const BASE_LIMITS = [
     isActive: true,
   },
   {
+    key: 'production_storage_free_mb',
+    name: 'Espaço grátis dos arquivos de produção (MB)',
+    description:
+      'Espaço dos anexos da produção sem a faixa contratada, somado por empresa (todas as versões contam)',
+    unit: 'MB',
+    isActive: true,
+  },
+  {
     key: 'trial_days',
     name: 'Dias de Trial',
     description: 'Número de dias de trial gratuito',

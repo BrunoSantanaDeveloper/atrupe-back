@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { assertSingleStorageTier } from './storage-tiers';
 import { AsaasPaymentStatus, Payment } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { CouponsService } from '../../coupons/coupons.service';
@@ -367,6 +368,7 @@ export class SubscriptionQuoteService {
         },
       },
     });
+    assertSingleStorageTier(features);
     const missing = unique.filter((k) => !features.some((f) => f.key === k));
     if (missing.length > 0) {
       throw new BadRequestException(

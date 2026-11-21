@@ -89,6 +89,8 @@ describe('ComplementsService', () => {
     contractAcceptance: { findFirst: jest.fn() },
     user: { findUniqueOrThrow: jest.fn() },
     company: { findUnique: jest.fn() },
+    productionAttachmentVersion: { aggregate: jest.fn() },
+    planLimit: { findFirst: jest.fn() },
   };
   const gateway = {
     getAsaasSubscription: jest.fn(),
@@ -131,6 +133,10 @@ describe('ComplementsService', () => {
     tx.subscription.update.mockResolvedValue({ id: 'sub-1' });
     tx.contractAcceptance.findFirst.mockResolvedValue(LAST_ACCEPTANCE);
     prisma.feature.findMany.mockResolvedValue([NOTA_FISCAL]);
+    prisma.productionAttachmentVersion.aggregate.mockResolvedValue({
+      _sum: { size: 0 },
+    });
+    prisma.planLimit.findFirst.mockResolvedValue({ value: 1024 });
     // O ADMIN é o administrador principal da conta (Usuário nº 1).
     prisma.company.findUnique.mockResolvedValue({ ownerUserId: 'user-1' });
     prisma.contractAcceptance.findFirst.mockResolvedValue(LAST_ACCEPTANCE);
@@ -473,6 +479,87 @@ describe('ComplementsService', () => {
       ).rejects.toMatchObject({
         response: { code: 'PRICE_CHANGED', quote: { recurringCents: 21700 } },
       });
+    });
+  });
+
+  describe('faixas de espaço dos arquivos de produção (GP-48 item 27)', () => {
+    const GB = 1024 ** 3;
+    const tier = (gb: number, price: number, listed = true) => ({
+      id: `f-${gb}`,
+      key: `production_storage_${gb}gb`,
+      name: `Arquivos de produção · ${gb} GB`,
+      price,
+      isActive: true,
+      storageGb: gb,
+      listed,
+    });
+    const T50 = tier(50, 3990);
+    const T200 = tier(200, 9990);
+    const T1TB = tier(1000, 39990, false);
+    const com50 = startSubscription({
+      value: 186.9,
+      recurringValueCents: 18690,
+      subscriptionFeatures: [
+        { id: 'sf-50', isActive: true, price: 3990, feature: T50 },
+      ],
+    });
+    const com200 = startSubscription({
+      value: 246.9,
+      recurringValueCents: 24690,
+      subscriptionFeatures: [
+        { id: 'sf-200', isActive: true, price: 9990, feature: T200 },
+      ],
+    });
+    const used = (bytes: number) =>
+      prisma.productionAttachmentVersion.aggregate.mockResolvedValue({
+        _sum: { size: bytes },
+      });
+
+    it('contratar outra faixa troca a contratada: a mensalidade sobe só a diferença', async () => {
+      withSubscription(com50);
+      prisma.feature.findMany.mockResolvedValue([T200]);
+      const quote: any = await service.quote('company-1', {
+        modules: ['production_storage_200gb'],
+      } as any);
+      expect(quote.deltaCycleCents).toBe(6000);
+      expect(quote.recurringCents).toBe(24690);
+    });
+
+    it('não deixa descer para uma faixa menor que os arquivos guardados', async () => {
+      withSubscription(com200);
+      prisma.feature.findMany.mockResolvedValue([T50]);
+      used(80 * GB);
+      await expect(
+        service.quote('company-1', {
+          modules: ['production_storage_50gb'],
+        } as any),
+      ).rejects.toMatchObject({ response: { code: 'STORAGE_IN_USE' } });
+    });
+
+    it('duas faixas de uma vez é recusado', async () => {
+      prisma.feature.findMany.mockResolvedValue([T50, T200]);
+      await expect(
+        service.quote('company-1', {
+          modules: ['production_storage_50gb', 'production_storage_200gb'],
+        } as any),
+      ).rejects.toMatchObject({ response: { code: 'STORAGE_TIER_SINGLE' } });
+    });
+
+    it('o 1 TB fica fora do catálogo até a faixa contratada passar de 80%', async () => {
+      withSubscription(com200);
+      prisma.feature.findMany.mockResolvedValue([T50, T200, T1TB]);
+      used(100 * GB);
+      let view: any = await service.current('company-1');
+      expect(view.availableModules.map((m) => m.key)).toEqual([
+        'production_storage_50gb',
+      ]);
+
+      used(170 * GB);
+      view = await service.current('company-1');
+      expect(view.availableModules.map((m) => m.key)).toEqual([
+        'production_storage_50gb',
+        'production_storage_1000gb',
+      ]);
     });
   });
 

@@ -2475,6 +2475,12 @@ model Feature {
   category             String? // e.g., 'management', 'reports', 'production'
   price                Float                 @default(0) // preço adicional para esta feature
   isActive             Boolean               @default(true)
+  /// O espaço dos arquivos de produção que o complemento dá, em GB (a faixa
+  /// de armazenamento). Nulo = não é faixa de espaço.
+  storageGb            Int?
+  /// Aparece no catálogo de complementos. Falso = vendido só quando a tela o
+  /// oferece (ex.: a faixa de 1 TB para quem já está perto do fim dos 200 GB).
+  listed               Boolean               @default(true)
   createdAt            DateTime              @default(now())
   updatedAt            DateTime?             @updatedAt
   planFeatures         PlanFeature[]
