@@ -80,7 +80,10 @@ export class ProductionBoardService {
     );
     return [...ctx.managers.values()]
       .filter((manager) => manager.isActive)
-      .filter((manager) => viewer.manager || viewer.access.has(manager.id))
+      .filter(
+        (manager) =>
+          viewer.manager || viewer.allSectors || viewer.access.has(manager.id),
+      )
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
       .map((manager) => {
         const own = open.filter(
@@ -290,7 +293,12 @@ export class ProductionBoardService {
       })),
       managers: [...ctx.managers.values()]
         .filter((manager) => manager.isActive)
-        .filter((manager) => viewer.manager || viewer.access.has(manager.id))
+        .filter(
+          (manager) =>
+            viewer.manager ||
+            viewer.allSectors ||
+            viewer.access.has(manager.id),
+        )
         .map((manager) => this.view.managerSummaryView(manager)),
       from,
       to,

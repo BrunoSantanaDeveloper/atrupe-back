@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { AbacService } from '../auth/abac/abac.service';
+import { PlanControlService } from '../plan/plan-control.service';
 
 export const PRODUCTION = 'production:production';
 export const TIME_ENTRY = 'production:time_entry';
@@ -28,6 +29,11 @@ export type ProductionViewer = {
   productivity: boolean;
   /** O acesso do colaborador a cada gerenciador */
   access: Map<string, { onlyAssigned: boolean }>;
+  /**
+   * PRO (sem o gerenciador do ELITE): quem vê a produção vê todos os setores
+   * (GP-49, 22/11/2026). O acesso por pessoa é do ELITE.
+   */
+  allSectors?: boolean;
 };
 
 /** Quem a tarefa envolve, para a visibilidade do operador com "só o seu". */
@@ -48,6 +54,7 @@ export class ProductionAccessService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly abac: AbacService,
+    private readonly plan: PlanControlService,
   ) {}
 
   // O usuário da sessão inteiro: a permissão olha o cargo e o administrador
@@ -58,25 +65,28 @@ export class ProductionAccessService {
   }): Promise<ProductionViewer> {
     const companyId = user.companyId;
     const userId = user.userId ?? null;
-    const [employee, editor, timeEntry, productivity] = await Promise.all([
-      userId
-        ? this.prisma.employee.findFirst({
-            where: { companyId, userId, isActive: true },
-            select: {
-              id: true,
-              name: true,
-              user: { select: { name: true } },
-              productionProfile: { select: { role: true } },
-              productionManagerUsers: {
-                select: { managerId: true, onlyAssigned: true },
+    const [employee, editor, timeEntry, productivity, canView, elite] =
+      await Promise.all([
+        userId
+          ? this.prisma.employee.findFirst({
+              where: { companyId, userId, isActive: true },
+              select: {
+                id: true,
+                name: true,
+                user: { select: { name: true } },
+                productionProfile: { select: { role: true } },
+                productionManagerUsers: {
+                  select: { managerId: true, onlyAssigned: true },
+                },
               },
-            },
-          })
-        : null,
-      this.abac.hasPermission(user, 'edit', PRODUCTION),
-      this.abac.hasPermission(user, 'edit', TIME_ENTRY),
-      this.abac.hasPermission(user, 'view', PRODUCTIVITY),
-    ]);
+            })
+          : null,
+        this.abac.hasPermission(user, 'edit', PRODUCTION),
+        this.abac.hasPermission(user, 'edit', TIME_ENTRY),
+        this.abac.hasPermission(user, 'view', PRODUCTIVITY),
+        this.abac.hasPermission(user, 'view', PRODUCTION),
+        this.plan.hasFeature(companyId, 'production_manager'),
+      ]);
     const userName =
       employee?.name ||
       employee?.user?.name ||
@@ -99,6 +109,7 @@ export class ProductionAccessService {
       timeEditor: manager || timeEntry,
       // Provisória da tela: quem edita a produção também vê (contrato)
       productivity: productivity || editor,
+      allSectors: !elite && (canView || editor),
       access: new Map(
         (employee?.productionManagerUsers ?? []).map((row) => [
           row.managerId,
@@ -110,7 +121,9 @@ export class ProductionAccessService {
 
   /** O operador sem acesso ao gerenciador não abre o quadro dele. */
   assertManagerAccess(viewer: ProductionViewer, managerId: string) {
-    if (viewer.manager || viewer.access.has(managerId)) return;
+    if (viewer.manager || viewer.allSectors || viewer.access.has(managerId)) {
+      return;
+    }
     throw new ForbiddenException(NO_MANAGER_ACCESS);
   }
 
@@ -120,7 +133,7 @@ export class ProductionAccessService {
    * em que uma correção o afetou (GP-11, GP-44).
    */
   canSee(viewer: ProductionViewer, task: VisibleTask) {
-    if (viewer.manager) return true;
+    if (viewer.manager || viewer.allSectors) return true;
     if (!viewer.employeeId || !task.managerId) return false;
     const access = viewer.access.get(task.managerId);
     if (!access) return false;

@@ -26,10 +26,16 @@ const task = (patch = {}) => ({
 });
 
 describe('ProductionAccessService: quem vê o quê (GP-11)', () => {
-  const service = new ProductionAccessService({} as any, {} as any);
+  const service = new ProductionAccessService({} as any, {} as any, {} as any);
 
   it('o gerente vê tudo', () => {
     expect(service.canSee(viewer({ manager: true }), task())).toBe(true);
+  });
+
+  it('no PRO, quem vê a produção vê todos os setores (GP-49)', () => {
+    const pro = viewer({ allSectors: true });
+    expect(service.canSee(pro, task())).toBe(true);
+    expect(() => service.assertManagerAccess(pro, 'm-imp')).not.toThrow();
   });
 
   it('o operador sem acesso ao gerenciador não vê', () => {
