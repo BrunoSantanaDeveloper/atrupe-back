@@ -1,12 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -250,4 +252,37 @@ export class PeriodDto {
   @IsOptional()
   @Matches(DAY, { message: 'Data inválida' })
   to?: string;
+}
+
+/** A limpeza do espaço dos arquivos (GP-49): a porcentagem a liberar. */
+export class CleanupDto {
+  @ApiProperty({ example: 50, description: '% do espaço usado a liberar' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  percent: number;
+
+  @ApiProperty({ example: 'APAGAR', description: 'A confirmação digitada' })
+  @IsString()
+  confirm: string;
+}
+
+/** A limpeza automática (GP-49), desligada de partida. */
+export class CleanupAutoDto {
+  @ApiProperty()
+  @IsBoolean()
+  enabled: boolean;
+
+  @ApiProperty({ example: 50 })
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  percent: number;
+
+  @ApiProperty({ example: 90, description: 'A partir de quanto do espaço' })
+  @IsInt()
+  @Min(50)
+  @Max(100)
+  threshold: number;
 }

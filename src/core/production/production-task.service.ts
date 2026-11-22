@@ -859,6 +859,7 @@ export class ProductionTaskService {
             uploadedBy: true,
             uploadedAt: true,
             current: true,
+            removedAt: true,
           },
         },
       },
@@ -871,7 +872,8 @@ export class ProductionTaskService {
       versions: attachment!.versions.map(({ storageKey, ...version }) => ({
         ...version,
         uploadedAt: version.uploadedAt.toISOString(),
-        url: this.storage.signedUrl(storageKey, now),
+        removedAt: version.removedAt?.toISOString() ?? null,
+        url: version.removedAt ? null : this.storage.signedUrl(storageKey, now),
       })),
     };
   }

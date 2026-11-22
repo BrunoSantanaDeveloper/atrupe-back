@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -8,6 +9,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
   UploadedFile,
   UseGuards,
@@ -29,6 +31,8 @@ import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
 import { FeatureGuard } from '../plan/guards/feature.guard';
 import {
   AttachmentDto,
+  CleanupAutoDto,
+  CleanupDto,
   CurrentVersionDto,
   DirectAttachmentDto,
   DirectFileDto,
@@ -51,6 +55,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   ProductionTaskService,
 } from './production-task.service';
+import { ProductionCleanupService } from './storage/production-cleanup.service';
 
 // O teto do multer fica acima dos 20 MB: o serviço recusa com a mensagem
 const attachmentUpload = FileInterceptor('file', {
@@ -74,6 +79,7 @@ export class ProductionTaskController {
   constructor(
     private readonly access: ProductionAccessService,
     private readonly tasks: ProductionTaskService,
+    private readonly cleanup: ProductionCleanupService,
   ) {}
 
   @Get('storage')
@@ -83,6 +89,50 @@ export class ProductionTaskController {
   })
   async storage(@Req() req) {
     return this.tasks.storageSummary(await this.access.viewer(req.user));
+  }
+
+  @Get('storage/cleanup')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({
+    summary: 'A prévia da limpeza do espaço (GP-49): o que sairia, sem apagar',
+  })
+  async cleanupPreview(@Req() req, @Query('percent') percent?: string) {
+    this.cleanup.assertAdmin(req.user);
+    const viewer = await this.access.viewer(req.user);
+    const value = Math.min(Math.max(Math.round(Number(percent) || 50), 1), 100);
+    const [preview, history, auto] = await Promise.all([
+      this.cleanup.preview(viewer.companyId, value),
+      this.cleanup.history(viewer.companyId),
+      this.cleanup.auto(viewer.companyId),
+    ]);
+    return { ...preview, history, auto };
+  }
+
+  @Post('storage/cleanup')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({
+    summary:
+      'Apaga os arquivos mais antigos das O.S. entregues até liberar a porcentagem (GP-49)',
+  })
+  async cleanupRun(@Req() req, @Body() dto: CleanupDto) {
+    this.cleanup.assertAdmin(req.user);
+    if (dto.confirm?.trim().toUpperCase() !== 'APAGAR') {
+      throw new BadRequestException('Digite APAGAR para confirmar');
+    }
+    const viewer = await this.access.viewer(req.user);
+    return this.cleanup.run(
+      { companyId: viewer.companyId, userId: viewer.userId, name: viewer.name },
+      dto.percent,
+    );
+  }
+
+  @Put('storage/cleanup/auto')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({ summary: 'Liga ou desliga a limpeza automática (GP-49)' })
+  async cleanupAuto(@Req() req, @Body() dto: CleanupAutoDto) {
+    this.cleanup.assertAdmin(req.user);
+    const viewer = await this.access.viewer(req.user);
+    return this.cleanup.saveAuto(viewer.companyId, dto);
   }
 
   @Post(':id/action')

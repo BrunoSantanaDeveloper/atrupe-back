@@ -4848,10 +4848,44 @@ model ProductionAttachmentVersion {
   uploadedBy   String
   uploadedAt   DateTime             @default(now())
   current      Boolean              @default(false)
+  /// Apagado na limpeza do espaço (GP-49): o registro fica, o arquivo não,
+  /// e não conta no espaço usado
+  removedAt    DateTime?
   attachment   ProductionAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
 
   @@unique([attachmentId, version])
   @@map("production_attachment_versions")
+}
+
+/// A limpeza do espaço dos arquivos (GP-49): quem apagou, quando e quanto.
+model ProductionStorageCleanup {
+  id        String   @id @default(uuid())
+  companyId String
+  at        DateTime @default(now())
+  byUserId  String?
+  byName    String
+  automatic Boolean  @default(false)
+  percent   Int
+  files     Int
+  /// Bytes liberados (Float: a soma passa do Int)
+  bytes     Float
+
+  @@index([companyId, at])
+  @@map("production_storage_cleanups")
+}
+
+/// A limpeza automática (GP-49): vem desligada. Ligada, quando o espaço
+/// usado passa do limite (%), apaga os mais antigos até liberar a
+/// porcentagem.
+model ProductionStorageAuto {
+  id        String   @id @default(uuid())
+  companyId String   @unique
+  enabled   Boolean  @default(false)
+  percent   Int      @default(50)
+  threshold Int      @default(90)
+  updatedAt DateTime @updatedAt
+
+  @@map("production_storage_auto")
 }
 
 enum ProductionTaskPriority {

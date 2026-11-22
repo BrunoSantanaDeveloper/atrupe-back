@@ -137,6 +137,7 @@ const DETAIL_SELECT = {
           uploadedBy: true,
           uploadedAt: true,
           current: true,
+          removedAt: true,
         },
         orderBy: { version: 'asc' },
       },
@@ -512,7 +513,11 @@ export class ProductionViewService {
           uploadedBy: version.uploadedBy,
           uploadedAt: version.uploadedAt.toISOString(),
           current: version.current,
-          url: this.storage.signedUrl(version.storageKey, now),
+          // Apagado na limpeza do espaço (GP-49): sem link
+          removedAt: version.removedAt?.toISOString() ?? null,
+          url: version.removedAt
+            ? null
+            : this.storage.signedUrl(version.storageKey, now),
         })),
       })),
       history: row.history.map((entry) => ({

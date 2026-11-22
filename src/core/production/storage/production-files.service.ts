@@ -102,7 +102,8 @@ type Db = Pick<PrismaClient, 'productionAttachmentVersion' | 'feature'>;
 export async function usedBytesOf(db: Db, companyId: string) {
   const total = await db.productionAttachmentVersion.aggregate({
     _sum: { size: true },
-    where: { attachment: { task: { companyId } } },
+    // A versão apagada na limpeza (GP-49) não ocupa mais espaço
+    where: { removedAt: null, attachment: { task: { companyId } } },
   });
   return Number(total._sum.size ?? 0);
 }
