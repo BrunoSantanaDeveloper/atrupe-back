@@ -1790,6 +1790,7 @@ model Order {
   nfeOrders        NfeOrder[]
   nfses            Nfse[]
   nfces            Nfce[]
+  files            OrderFile[]
 
   @@index([id])
   @@map("orders")
@@ -4855,6 +4856,29 @@ model ProductionAttachmentVersion {
 
   @@unique([attachmentId, version])
   @@map("production_attachment_versions")
+}
+
+/// O arquivo da O.S. (GP-49, 22/11/2026): guardado na O.S. geral, fora dos
+/// gerenciadores. Vê quem vê a O.S.; conta no espaço dos arquivos e entra na
+/// limpeza quando a O.S. está concluída ou finalizada.
+model OrderFile {
+  id           String    @id @default(uuid())
+  companyId    String
+  orderId      String
+  fileName     String
+  size         Int
+  mime         String
+  storageKey   String
+  uploadedById String?
+  uploadedBy   String
+  uploadedAt   DateTime  @default(now())
+  /// Apagado na limpeza do espaço: o registro fica, o arquivo não
+  removedAt    DateTime?
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([companyId])
+  @@map("order_files")
 }
 
 /// A limpeza do espaço dos arquivos (GP-49): quem apagou, quando e quanto.

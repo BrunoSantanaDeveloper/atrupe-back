@@ -4,8 +4,9 @@
  * liberar a porcentagem informada do espaço usado.
  *
  * - Só os arquivos acrescentados às O.S. entregues e concluídas (todas as
- *   versões: a arte, a editada, a prova, o PDF, o projeto); nada dos
- *   cadastros e nada de O.S. em produção.
+ *   versões: a arte, a editada, a prova, o PDF, o projeto), nos
+ *   gerenciadores e na O.S. geral; nada dos cadastros e nada de O.S. em
+ *   produção.
  * - Do mais antigo para o mais novo, até alcançar o alvo.
  * - Não tem volta: na tarefa, o arquivo fica como "removido na limpeza".
  * - O automático vem desligado; ligado, roda quando o espaço passa do
@@ -14,7 +15,9 @@
 
 export type CleanupCandidate = {
   id: string;
-  taskId: string;
+  /** A tarefa do anexo; nulo no arquivo da O.S. */
+  taskId: string | null;
+  /** A venda: o projeto e a O.S. dela contam como uma O.S. */
   projectId: string;
   size: number;
   uploadedAt: Date;

@@ -44,32 +44,66 @@ export class ProductionCleanupService {
     }
   }
 
+  /**
+   * O que pode sair: as versões dos anexos das tarefas de projetos
+   * concluídos e os arquivos das O.S. concluídas ou finalizadas. A O.S. é
+   * contada pela venda (a mesma no projeto e na O.S.).
+   */
   private async candidates(companyId: string) {
-    const rows = await this.prisma.productionAttachmentVersion.findMany({
-      where: {
-        removedAt: null,
-        attachment: {
-          task: { companyId, project: { status: 'DONE' } },
+    const [versions, orderFiles] = await Promise.all([
+      this.prisma.productionAttachmentVersion.findMany({
+        where: {
+          removedAt: null,
+          attachment: {
+            task: { companyId, project: { status: 'DONE' } },
+          },
         },
-      },
-      select: {
-        id: true,
-        size: true,
-        uploadedAt: true,
-        storageKey: true,
-        attachment: {
-          select: { taskId: true, task: { select: { projectId: true } } },
+        select: {
+          id: true,
+          size: true,
+          uploadedAt: true,
+          storageKey: true,
+          attachment: {
+            select: {
+              taskId: true,
+              task: { select: { project: { select: { quotationId: true } } } },
+            },
+          },
         },
-      },
-    });
-    return rows.map((row) => ({
-      id: row.id,
-      size: row.size,
-      uploadedAt: row.uploadedAt,
-      storageKey: row.storageKey,
-      taskId: row.attachment.taskId,
-      projectId: row.attachment.task.projectId,
-    }));
+      }),
+      this.prisma.orderFile.findMany({
+        where: {
+          companyId,
+          removedAt: null,
+          order: { status: { in: ['COMPLETED', 'FINISHED'] } },
+        },
+        select: {
+          id: true,
+          size: true,
+          uploadedAt: true,
+          storageKey: true,
+          order: { select: { quotationId: true } },
+        },
+      }),
+    ]);
+    return [
+      ...versions.map((row) => ({
+        id: row.id,
+        size: row.size,
+        uploadedAt: row.uploadedAt,
+        storageKey: row.storageKey,
+        taskId: row.attachment.taskId as string | null,
+        projectId: row.attachment.task.project.quotationId,
+      })),
+      ...orderFiles.map((row) => ({
+        id: row.id,
+        size: row.size,
+        uploadedAt: row.uploadedAt,
+        storageKey: row.storageKey,
+        taskId: null as string | null,
+        projectId: row.order.quotationId,
+      })),
+    ];
   }
 
   private async plan(companyId: string, percent: number) {
@@ -112,11 +146,22 @@ export class ProductionCleanupService {
     const keys = new Map(candidates.map((file) => [file.id, file.storageKey]));
     const perTask = new Map<string, number>();
     for (const file of pick.picked) {
+      if (!file.taskId) continue;
       perTask.set(file.taskId, (perTask.get(file.taskId) ?? 0) + 1);
     }
+    const versionIds = pick.picked
+      .filter((file) => file.taskId)
+      .map((file) => file.id);
+    const orderFileIds = pick.picked
+      .filter((file) => !file.taskId)
+      .map((file) => file.id);
     await this.prisma.$transaction(async (tx) => {
       await tx.productionAttachmentVersion.updateMany({
-        where: { id: { in: ids } },
+        where: { id: { in: versionIds } },
+        data: { removedAt: now },
+      });
+      await tx.orderFile.updateMany({
+        where: { id: { in: orderFileIds } },
         data: { removedAt: now },
       });
       for (const [taskId, count] of perTask) {

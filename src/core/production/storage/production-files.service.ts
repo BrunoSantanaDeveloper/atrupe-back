@@ -96,16 +96,27 @@ export function refusalOf(
   return null;
 }
 
-type Db = Pick<PrismaClient, 'productionAttachmentVersion' | 'feature'>;
+type Db = Pick<
+  PrismaClient,
+  'productionAttachmentVersion' | 'orderFile' | 'feature'
+>;
 
-/** A soma do tamanho de todas as versões dos anexos da empresa. */
+/**
+ * A soma do tamanho de todas as versões dos anexos da empresa e dos
+ * arquivos das O.S. (GP-49). O apagado na limpeza não ocupa mais espaço.
+ */
 export async function usedBytesOf(db: Db, companyId: string) {
-  const total = await db.productionAttachmentVersion.aggregate({
-    _sum: { size: true },
-    // A versão apagada na limpeza (GP-49) não ocupa mais espaço
-    where: { removedAt: null, attachment: { task: { companyId } } },
-  });
-  return Number(total._sum.size ?? 0);
+  const [versions, orders] = await Promise.all([
+    db.productionAttachmentVersion.aggregate({
+      _sum: { size: true },
+      where: { removedAt: null, attachment: { task: { companyId } } },
+    }),
+    db.orderFile.aggregate({
+      _sum: { size: true },
+      where: { removedAt: null, companyId },
+    }),
+  ]);
+  return Number(versions._sum.size ?? 0) + Number(orders._sum.size ?? 0);
 }
 
 /** A maior faixa entre os recursos que a empresa tem. */
