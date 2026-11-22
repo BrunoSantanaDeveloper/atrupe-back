@@ -10,9 +10,11 @@ import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { toProjectDateKey } from '../fiscal/utils/project-date.util';
 import { PlanControlService } from '../plan/plan-control.service';
+import { UNIT_SYMBOL } from '../material/material-text';
 import { itemProductName } from '../sale/quotation/item-origin';
 import {
   PlanItem,
+  PlanMachineSetup,
   PlanStage,
   PlanTaskType,
   PlannedTask,
@@ -261,6 +263,8 @@ export class ProductionProjectService {
       estimatedMinutes: task.estimatedMinutes,
       setupMinutes: task.setupMinutes,
       machine: task.machine,
+      machineSetupId: task.machineSetupId,
+      machineQuality: task.machineQuality,
       baseTaskId: task.baseKey ? (ids.get(task.baseKey) ?? null) : null,
       dependsOn: task.dependsOnKeys
         .map((key) => ids.get(key))
@@ -306,8 +310,33 @@ export class ProductionProjectService {
       .filter((stage) => typeFor(stage, planTypes, none) === none)
       .map((stage) => stage.sectorId)
       .filter((id): id is string => !!id);
-    const fallback = await this.fallbackType(companyId, sectorIds);
-    return planTasks(items, planTypes, fallback);
+    const [fallback, setups] = await Promise.all([
+      this.fallbackType(companyId, sectorIds),
+      this.machineSetups(companyId),
+    ]);
+    return planTasks(items, planTypes, fallback, setups);
+  }
+
+  /** As qualidades das máquinas, com o tempo por unidade (GP-48 item 22). */
+  private async machineSetups(companyId: string): Promise<PlanMachineSetup[]> {
+    const setups = await this.prisma.assetSetup.findMany({
+      where: { asset: { companyId } },
+      select: {
+        id: true,
+        name: true,
+        unit: true,
+        timePerUnit: true,
+        asset: { select: { name: true, groupId: true } },
+      },
+    });
+    return setups.map((setup) => ({
+      id: setup.id,
+      name: setup.name,
+      assetName: setup.asset.name,
+      groupId: setup.asset.groupId,
+      unit: UNIT_SYMBOL[setup.unit],
+      timePerUnit: setup.timePerUnit,
+    }));
   }
 
   /**

@@ -2,7 +2,9 @@ import {
   PlanItem,
   PlanStage,
   PlanTaskType,
+  PlanMachineSetup,
   measureText,
+  soldMinutes,
   planTasks,
 } from './production-plan';
 
@@ -126,6 +128,8 @@ describe('planTasks', () => {
       estimatedMinutes: 32,
       setupMinutes: 10,
       machine: 'Plotter Roland',
+      machineSetupId: null,
+      machineQuality: null,
       baseKey: null,
       dependsOnKeys: [],
       quantity: 3,
@@ -361,5 +365,179 @@ describe('planTasks', () => {
     expect(measureText({ quantity: 1000, width: null, height: null })).toBe(
       '1000 un',
     );
+  });
+});
+
+describe('o tempo da máquina pela qualidade vendida (GP-48 item 22)', () => {
+  const setups: PlanMachineSetup[] = [
+    {
+      id: 'q-alta',
+      name: 'Alta qualidade',
+      assetName: 'Roland',
+      groupId: 'g-solvente',
+      unit: 'm²',
+      timePerUnit: 6,
+    },
+    {
+      id: 'q-rapida',
+      name: 'Rápida',
+      assetName: 'Roland',
+      groupId: 'g-solvente',
+      unit: 'm²',
+      timePerUnit: 2,
+    },
+    {
+      id: 'q-sem-tempo',
+      name: 'Sem tempo',
+      assetName: 'Mimaki',
+      groupId: null,
+      unit: 'm²',
+      timePerUnit: 0,
+    },
+  ];
+
+  it('a linha de máquina em m² vira minutos pelo tempo da qualidade', () => {
+    expect(
+      soldMinutes(
+        [
+          {
+            kind: 'MACHINE',
+            resourceId: 'machine:q-alta',
+            quantity: 5,
+            unit: 'm²',
+          },
+        ],
+        setups,
+      ),
+    ).toBe(30);
+  });
+
+  it('soma com as linhas em tempo (min e h)', () => {
+    expect(
+      soldMinutes(
+        [
+          { kind: 'LABOR', quantity: 10, unit: 'min' },
+          { kind: 'LABOR', quantity: 0.5, unit: 'h' },
+          {
+            kind: 'MACHINE',
+            resourceId: 'machine:q-rapida',
+            quantity: 5,
+            unit: 'm²',
+          },
+        ],
+        setups,
+      ),
+    ).toBe(50);
+  });
+
+  it('a linha de máquina já em minutos não é convertida de novo', () => {
+    expect(
+      soldMinutes(
+        [
+          {
+            kind: 'MACHINE',
+            resourceId: 'machine:q-alta',
+            quantity: 12,
+            unit: 'min',
+          },
+        ],
+        setups,
+      ),
+    ).toBe(12);
+  });
+
+  it('sem a qualidade ou sem o tempo por unidade, a máquina não soma', () => {
+    expect(
+      soldMinutes(
+        [
+          {
+            kind: 'MACHINE',
+            resourceId: 'machine:q-sem-tempo',
+            quantity: 5,
+            unit: 'm²',
+          },
+          {
+            kind: 'MACHINE',
+            resourceId: 'machine:outra',
+            quantity: 5,
+            unit: 'm²',
+          },
+          { kind: 'MACHINE', resource: 'Roland', quantity: 5, unit: 'm²' },
+        ],
+        setups,
+      ),
+    ).toBe(0);
+  });
+
+  it('o grupo de máquinas usa a média das qualidades na mesma unidade', () => {
+    expect(
+      soldMinutes(
+        [
+          {
+            kind: 'MACHINE',
+            resourceId: 'machine-group:g-solvente',
+            quantity: 3,
+            unit: 'm²',
+          },
+        ],
+        setups,
+      ),
+    ).toBe(12);
+  });
+
+  it('a tarefa guarda a qualidade e soma o preparo', () => {
+    const tasks = planTasks(
+      [
+        item([
+          stage({
+            blockId: 'imp',
+            setupMinutes: 10,
+            lines: [
+              {
+                kind: 'MACHINE',
+                resource: 'Roland · Alta qualidade',
+                resourceId: 'machine:q-alta',
+                quantity: 4,
+                unit: 'm²',
+              },
+            ],
+          }),
+        ]),
+      ],
+      types,
+      fallback,
+      setups,
+    );
+    expect(tasks[0]).toMatchObject({
+      estimatedMinutes: 34,
+      machineSetupId: 'q-alta',
+      machineQuality: 'Alta qualidade',
+    });
+  });
+
+  it('sem as qualidades (chamada antiga), segue como antes', () => {
+    const tasks = planTasks(
+      [
+        item([
+          stage({
+            blockId: 'imp',
+            lines: [
+              {
+                kind: 'MACHINE',
+                resourceId: 'machine:q-alta',
+                quantity: 4,
+                unit: 'm²',
+              },
+            ],
+          }),
+        ]),
+      ],
+      types,
+      fallback,
+    );
+    expect(tasks[0]).toMatchObject({
+      estimatedMinutes: 0,
+      machineQuality: null,
+    });
   });
 });

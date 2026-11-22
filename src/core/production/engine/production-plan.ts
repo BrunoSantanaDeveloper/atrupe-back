@@ -12,9 +12,33 @@ export type PlanLine = {
   kind?: string;
   name?: string;
   resource?: string | null;
+  /** `machine:<configuração>`, `machine-group:<grupo>`, `material:…` */
+  resourceId?: string | null;
   quantity?: number | null;
   unit?: string;
-  entries?: { name?: string; quantity?: number | null; unit?: string }[] | null;
+  entries?:
+    | {
+        name?: string;
+        resourceId?: string | null;
+        quantity?: number | null;
+        unit?: string;
+      }[]
+    | null;
+};
+
+/**
+ * A qualidade (configuração) da máquina, com o tempo por unidade: o
+ * cadastro do bem (AssetSetup, vindo do legado).
+ */
+export type PlanMachineSetup = {
+  id: string;
+  name: string;
+  assetName: string;
+  groupId: string | null;
+  /** O símbolo da unidade da configuração (m², m, un, h…) */
+  unit: string;
+  /** Minutos por unidade */
+  timePerUnit: number;
 };
 
 export type PlanStage = {
@@ -64,6 +88,9 @@ export type PlannedTask = {
   estimatedMinutes: number;
   setupMinutes: number;
   machine: string | null;
+  /** A qualidade vendida (GP-48 item 22): a configuração da máquina */
+  machineSetupId: string | null;
+  machineQuality: string | null;
   /** Chaves (não ids): o serviço troca pelos ids gravados */
   baseKey: string | null;
   dependsOnKeys: string[];
@@ -95,11 +122,90 @@ export const measureText = (measure: PlanItem['measure']) =>
 
 const key = (name: string) => name.trim().toLocaleLowerCase('pt-BR');
 
-/** O tempo vendido da etapa: o preparo mais as linhas em minutos (CP-15). */
-const laborMinutes = (lines: PlanLine[]) =>
-  lines
-    .filter((line) => line.unit === 'min')
-    .reduce((sum, line) => sum + (Number(line.quantity) || 0), 0);
+// O tempo da linha em minutos; fora de unidade de tempo, nulo
+const timeOf = (quantity: number, unit: string | undefined) =>
+  unit === 'min' ? quantity : unit === 'h' ? quantity * 60 : null;
+
+const prefixed = (resourceId: string | null | undefined) => {
+  const at = (resourceId ?? '').indexOf(':');
+  return at < 0
+    ? ['', '']
+    : [resourceId!.slice(0, at), resourceId!.slice(at + 1)];
+};
+
+/**
+ * A máquina vendida na linha: a configuração (`machine:<id>`) ou, no grupo
+ * de máquinas, a média das configurações do grupo na mesma unidade.
+ */
+const machineOf = (
+  resourceId: string | null | undefined,
+  unit: string | undefined,
+  setups: PlanMachineSetup[],
+): { setup: PlanMachineSetup | null; timePerUnit: number } | null => {
+  const [prefix, id] = prefixed(resourceId);
+  if (prefix === 'machine') {
+    const setup = setups.find((item) => item.id === id);
+    return setup ? { setup, timePerUnit: setup.timePerUnit } : null;
+  }
+  if (prefix === 'machine-group') {
+    const same = setups.filter(
+      (item) => item.groupId === id && item.unit === unit && item.timePerUnit,
+    );
+    if (!same.length) return null;
+    return {
+      setup: null,
+      timePerUnit:
+        same.reduce((sum, item) => sum + item.timePerUnit, 0) / same.length,
+    };
+  }
+  return null;
+};
+
+/**
+ * O tempo vendido da etapa, sem o preparo (CP-15, GP-48 item 22): as linhas
+ * em tempo (min ou h) e a linha de máquina vendida em outra unidade (m², m,
+ * un…), que vira minutos pelo tempo por unidade da qualidade vendida. Sem a
+ * qualidade ou sem o tempo por unidade, a linha não soma tempo.
+ */
+export const soldMinutes = (
+  lines: PlanLine[],
+  setups: PlanMachineSetup[] = [],
+) =>
+  lines.reduce((sum, line) => {
+    const quantity = Number(line.quantity) || 0;
+    const time = timeOf(quantity, line.unit);
+    if (time !== null) return sum + time;
+    if (line.kind !== 'MACHINE') return sum;
+    const uses = line.entries?.length
+      ? line.entries.map((entry) => ({
+          resourceId: entry.resourceId ?? line.resourceId,
+          quantity: Number(entry.quantity) || 0,
+          unit: entry.unit ?? line.unit,
+        }))
+      : [{ resourceId: line.resourceId, quantity, unit: line.unit }];
+    return (
+      sum +
+      uses.reduce((total, use) => {
+        const machine = machineOf(use.resourceId, use.unit, setups);
+        return total + (machine ? use.quantity * machine.timePerUnit : 0);
+      }, 0)
+    );
+  }, 0);
+
+/** A qualidade vendida: a configuração da primeira linha de máquina. */
+const qualityOf = (lines: PlanLine[], setups: PlanMachineSetup[]) => {
+  for (const line of lines.filter((item) => item.kind === 'MACHINE')) {
+    const ids = [
+      line.resourceId,
+      ...(line.entries ?? []).map((entry) => entry.resourceId),
+    ];
+    for (const id of ids) {
+      const setup = machineOf(id, line.unit, setups)?.setup;
+      if (setup) return setup;
+    }
+  }
+  return null;
+};
 
 const consumptionOf = (lines: PlanLine[]) =>
   lines.flatMap((line) =>
@@ -174,6 +280,7 @@ export function planTasks(
   items: PlanItem[],
   types: PlanTaskType[],
   fallback: PlanTaskType,
+  setups: PlanMachineSetup[] = [],
 ): PlannedTask[] {
   const planned: PlannedTask[] = [];
   for (const item of items) {
@@ -199,6 +306,7 @@ export function planTasks(
     for (const stage of itemStages) {
       if (!kept.has(stage.blockId)) continue;
       const type = typeFor(stage, types, fallback);
+      const quality = qualityOf(stage.lines, setups);
       const flow = [...new Set(stage.dependsOn.flatMap((id) => resolve(id)))];
       const base = stage.baseBlockId ? resolve(stage.baseBlockId) : [];
       // A regra do tipo ajusta a ligação com a base: o acabamento espera a
@@ -221,11 +329,13 @@ export function planTasks(
         taskTypeId: type.id,
         currentStepId: type.firstStepId,
         estimatedMinutes: Math.round(
-          stage.setupMinutes + laborMinutes(stage.lines),
+          stage.setupMinutes + soldMinutes(stage.lines, setups),
         ),
         setupMinutes: Math.round(stage.setupMinutes),
         machine:
           stage.lines.find((line) => line.kind === 'MACHINE')?.resource ?? null,
+        machineSetupId: quality?.id ?? null,
+        machineQuality: quality?.name ?? null,
         baseKey: base[0] ?? null,
         dependsOnKeys: dependsOnKeys.filter(
           (id) => id !== keyOf(stage.blockId),

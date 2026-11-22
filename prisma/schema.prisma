@@ -4688,6 +4688,9 @@ model ProductionTask {
   estimatedMinutes   Int                        @default(0)
   setupMinutes       Int                        @default(0)
   machine            String?
+  /// A qualidade vendida (GP-48 item 22): a configuração da máquina
+  machineSetupId     String?
+  machineQuality     String?
   /// A tarefa da base desta etapa, e as tarefas de que ela depende de fato
   baseTaskId         String?
   dependsOn          String[]
