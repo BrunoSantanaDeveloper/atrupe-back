@@ -180,6 +180,13 @@ const MANAGER_SELECT = {
   flowId: true,
   timeMode: true,
   intervalMinutes: true,
+  workStart: true,
+  workEnd: true,
+  breakStart: true,
+  breakEnd: true,
+  runsThroughBreak: true,
+  liveSchedule: true,
+  afterDoneMinutes: true,
   isActive: true,
   sector: { select: SECTOR_SELECT },
   users: { select: { employeeId: true, onlyAssigned: true } },
@@ -281,8 +288,19 @@ export class ProductionViewService {
     const projectMap = new Map(
       projects.map((project) => [project.id, project]),
     );
+    // A espera depois de concluir vem do gerenciador da última etapa do tipo
+    const afterDoneOf = new Map(
+      types.map((type) => {
+        const last = type.steps[type.steps.length - 1];
+        const manager = managers.find((item) => item.id === last?.managerId);
+        return [type.id, manager?.afterDoneMinutes ?? 0] as const;
+      }),
+    );
     const chain = new ProductionChain(
-      rows.map((row) => this.chainTask(row)),
+      rows.map((row) => ({
+        ...this.chainTask(row),
+        afterDoneMinutes: afterDoneOf.get(row.taskTypeId) ?? 0,
+      })),
       new Map(
         projects.map((project) => [
           project.id,
@@ -517,6 +535,9 @@ export class ProductionViewService {
       sector: view.sector,
       timeMode: view.timeMode,
       intervalMinutes: view.intervalMinutes,
+      hours: view.hours,
+      liveSchedule: view.liveSchedule,
+      afterDoneMinutes: view.afterDoneMinutes,
       active: view.active,
     };
   }

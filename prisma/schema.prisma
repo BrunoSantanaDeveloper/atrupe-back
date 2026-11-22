@@ -4497,25 +4497,45 @@ model ProductionFlow {
 /// Gerenciador de produção (GP-15, GP-43): um setor de trabalho, com o
 /// jeito de apontar o tempo e o intervalo entre tarefas na mesma máquina.
 model ProductionManager {
-  id              String                  @id @default(uuid())
-  companyId       String
-  name            String
-  sectorId        String
-  flowId          String
-  timeMode        ProductionTimeMode      @default(PLAY_STOP)
+  id               String                  @id @default(uuid())
+  companyId        String
+  name             String
+  sectorId         String
+  flowId           String
+  timeMode         ProductionTimeMode      @default(PLAY_STOP)
   /// Minutos perdidos entre uma tarefa e a seguinte na mesma máquina (GP-20)
-  intervalMinutes Int                     @default(0)
-  isActive        Boolean                 @default(true)
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-  company         Company                 @relation(fields: [companyId], references: [id])
-  sector          CompanySector           @relation(fields: [sectorId], references: [id])
-  flow            ProductionFlow          @relation(fields: [flowId], references: [id])
-  users           ProductionManagerUser[]
-  steps           ProductionTaskStep[]
+  intervalMinutes  Int                     @default(0)
+  /// O expediente do gerenciador (GP-48 item 19), "HH:MM"; nulo = o da
+  /// empresa (ProductionCalendar). O intervalo (almoço) é opcional.
+  workStart        String?
+  workEnd          String?
+  breakStart       String?
+  breakEnd         String?
+  /// A máquina segue no intervalo (impressora) ou para (equipe)
+  runsThroughBreak Boolean                 @default(false)
+  /// Agenda viva (item 20): reagenda e avisa, ou só avisa
+  liveSchedule     ProductionLiveSchedule  @default(WARN)
+  /// Tempo após a conclusão antes da etapa seguinte, ex.: secagem (item 21)
+  afterDoneMinutes Int                     @default(0)
+  isActive         Boolean                 @default(true)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  company          Company                 @relation(fields: [companyId], references: [id])
+  sector           CompanySector           @relation(fields: [sectorId], references: [id])
+  flow             ProductionFlow          @relation(fields: [flowId], references: [id])
+  users            ProductionManagerUser[]
+  steps            ProductionTaskStep[]
 
   @@index([companyId])
   @@map("production_managers")
+}
+
+/// Agenda viva do gerenciador (GP-48 item 20)
+enum ProductionLiveSchedule {
+  /// Só avisa: mostra o atraso e quem decide reagenda (§12.2, GP-24)
+  WARN
+  /// Reagenda em sequência e avisa o que mudou (GP-48 item 4)
+  RESCHEDULE
 }
 
 /// O acesso de um colaborador ao gerenciador (GP-11): a tudo, ou só ao que

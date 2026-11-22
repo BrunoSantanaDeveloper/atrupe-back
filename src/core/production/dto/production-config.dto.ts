@@ -20,6 +20,10 @@ export const TIME_MODES = ['PLAY_STOP', 'DRAG_DROP', 'NONE'] as const;
 export const RELEASE_RULES = ['AFTER_BASE', 'WITH_BASE', 'DONE'] as const;
 export const ACCESS_LEVELS = ['NONE', 'ALL', 'ASSIGNED'] as const;
 export const ROLES = ['OPERATOR', 'MANAGER'] as const;
+export const LIVE_SCHEDULES = ['WARN', 'RESCHEDULE'] as const;
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const HHMM_MESSAGE = 'Informe o horário como 08:00';
 
 /** O gerenciador (GP-15, GP-20, GP-43). Nome e setor, o serviço confere. */
 export class ManagerDto {
@@ -48,6 +52,48 @@ export class ManagerDto {
   @IsInt({ message: 'O intervalo é um número inteiro de minutos' })
   @Min(0, { message: 'O intervalo não pode ser negativo' })
   intervalMinutes?: number;
+
+  @ApiPropertyOptional({
+    example: '08:00',
+    description: 'Sem ele, o da empresa',
+  })
+  @IsOptional()
+  @Matches(HHMM, { message: HHMM_MESSAGE })
+  workStart?: string | null;
+
+  @ApiPropertyOptional({ example: '18:00' })
+  @IsOptional()
+  @Matches(HHMM, { message: HHMM_MESSAGE })
+  workEnd?: string | null;
+
+  @ApiPropertyOptional({ example: '12:00' })
+  @IsOptional()
+  @Matches(HHMM, { message: HHMM_MESSAGE })
+  breakStart?: string | null;
+
+  @ApiPropertyOptional({ example: '13:00' })
+  @IsOptional()
+  @Matches(HHMM, { message: HHMM_MESSAGE })
+  breakEnd?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'A máquina segue trabalhando no intervalo',
+  })
+  @IsOptional()
+  @IsBoolean()
+  runsThroughBreak?: boolean;
+
+  @ApiPropertyOptional({ enum: LIVE_SCHEDULES })
+  @IsOptional()
+  @IsIn(LIVE_SCHEDULES, { message: 'Escolha como a agenda reage ao atraso' })
+  liveSchedule?: (typeof LIVE_SCHEDULES)[number];
+
+  @ApiPropertyOptional({ example: 30, description: 'Ex.: secagem' })
+  @IsOptional()
+  @IsInt({ message: 'O tempo após a conclusão é um número inteiro de minutos' })
+  @Min(0, { message: 'O tempo após a conclusão não pode ser negativo' })
+  @Max(10080, { message: 'O tempo após a conclusão vai até 7 dias' })
+  afterDoneMinutes?: number;
 }
 
 export class InactivateManagerDto {

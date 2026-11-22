@@ -29,6 +29,11 @@ export type ChainTask = {
   dependsOn: string[];
   /** Liberou a próxima etapa antes de concluir (FL-13) */
   released: boolean;
+  /**
+   * A espera depois de concluir antes da etapa seguinte (ex.: secagem), do
+   * gerenciador onde a tarefa termina (GP-48 item 21)
+   */
+  afterDoneMinutes?: number;
   schedule: { date: string; start: string; minutes: number } | null;
   entries: ChainEntry[];
 };
@@ -207,7 +212,11 @@ export class ProductionChain {
       .filter((item) => isOpen(item.status))
       .map((item) => this.remainingAhead(item));
     this.visitingAhead.delete(task.id);
-    const total = own + (next.length ? Math.max(...next) : 0);
+    // A espera depois de concluir (secagem) só conta enquanto a etapa está
+    // aberta: concluída, ela já passou a contar no relógio
+    const wait =
+      next.length && isOpen(task.status) ? (task.afterDoneMinutes ?? 0) : 0;
+    const total = own + (next.length ? wait + Math.max(...next) : 0);
     this.ahead.set(task.id, total);
     return total;
   }

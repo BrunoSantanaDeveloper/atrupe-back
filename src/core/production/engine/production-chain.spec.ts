@@ -274,3 +274,36 @@ describe('ProductionChain', () => {
     });
   });
 });
+
+describe('tempo após a conclusão (GP-48 item 21)', () => {
+  it('a espera (secagem) entra no caminho até a etapa seguinte', () => {
+    const chain = chainOf([
+      task({ id: 'impressao', estimatedMinutes: 60, afterDoneMinutes: 30 }),
+      task({
+        id: 'acabamento',
+        estimatedMinutes: 40,
+        dependsOn: ['impressao'],
+      }),
+    ]);
+    expect(chain.remainingAhead(chain.task('impressao')!)).toBe(130);
+  });
+
+  it('a última etapa não espera nada depois', () => {
+    const chain = chainOf([
+      task({ id: 'impressao', estimatedMinutes: 60, afterDoneMinutes: 30 }),
+    ]);
+    expect(chain.remainingAhead(chain.task('impressao')!)).toBe(60);
+  });
+
+  it('concluída, a espera já não conta', () => {
+    const chain = chainOf([
+      task({ id: 'impressao', status: 'DONE', afterDoneMinutes: 30 }),
+      task({
+        id: 'acabamento',
+        estimatedMinutes: 40,
+        dependsOn: ['impressao'],
+      }),
+    ]);
+    expect(chain.remainingAhead(chain.task('impressao')!)).toBe(40);
+  });
+});

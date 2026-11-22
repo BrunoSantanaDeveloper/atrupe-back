@@ -42,6 +42,13 @@ const MANAGER_SELECT = {
   flowId: true,
   timeMode: true,
   intervalMinutes: true,
+  workStart: true,
+  workEnd: true,
+  breakStart: true,
+  breakEnd: true,
+  runsThroughBreak: true,
+  liveSchedule: true,
+  afterDoneMinutes: true,
   isActive: true,
   sector: { select: SECTOR_SELECT },
   users: {
@@ -69,6 +76,71 @@ type TaskTypeRow = Prisma.ProductionTaskTypeGetPayload<{
   select: typeof TASK_TYPE_SELECT;
 }>;
 
+const minutesOf = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+};
+
+/**
+ * O expediente do gerenciador (GP-48 item 19): início e fim juntos, ou
+ * nenhum (vale o da empresa); o intervalo, opcional, dentro do expediente.
+ */
+export const hoursData = (dto: {
+  workStart?: string | null;
+  workEnd?: string | null;
+  breakStart?: string | null;
+  breakEnd?: string | null;
+  runsThroughBreak?: boolean;
+}) => {
+  const workStart = dto.workStart || null;
+  const workEnd = dto.workEnd || null;
+  const breakStart = dto.breakStart || null;
+  const breakEnd = dto.breakEnd || null;
+  if (!workStart !== !workEnd) {
+    bad('Informe o início e o fim do expediente, ou deixe os dois vazios');
+  }
+  if (workStart && workEnd && minutesOf(workStart) >= minutesOf(workEnd)) {
+    bad('O fim do expediente precisa ser depois do início');
+  }
+  if (!breakStart !== !breakEnd) {
+    bad('Informe o início e o fim do intervalo, ou deixe os dois vazios');
+  }
+  if (breakStart && breakEnd) {
+    if (minutesOf(breakStart) >= minutesOf(breakEnd)) {
+      bad('O fim do intervalo precisa ser depois do início');
+    }
+    if (
+      workStart &&
+      workEnd &&
+      (minutesOf(breakStart) < minutesOf(workStart) ||
+        minutesOf(breakEnd) > minutesOf(workEnd))
+    ) {
+      bad('O intervalo precisa estar dentro do expediente');
+    }
+  }
+  return {
+    workStart,
+    workEnd,
+    breakStart,
+    breakEnd,
+    runsThroughBreak: dto.runsThroughBreak ?? false,
+  };
+};
+
+const hoursView = (row: {
+  workStart: string | null;
+  workEnd: string | null;
+  breakStart: string | null;
+  breakEnd: string | null;
+  runsThroughBreak: boolean;
+}) => ({
+  workStart: row.workStart,
+  workEnd: row.workEnd,
+  breakStart: row.breakStart,
+  breakEnd: row.breakEnd,
+  runsThroughBreak: row.runsThroughBreak,
+});
+
 export const managerView = (row: ManagerRow) => ({
   id: row.id,
   name: row.name,
@@ -76,6 +148,9 @@ export const managerView = (row: ManagerRow) => ({
   flowId: row.flowId,
   timeMode: row.timeMode,
   intervalMinutes: row.intervalMinutes,
+  hours: hoursView(row),
+  liveSchedule: row.liveSchedule,
+  afterDoneMinutes: row.afterDoneMinutes,
   users: row.users.map((user) => ({
     collaboratorId: user.employeeId,
     onlyAssigned: user.onlyAssigned,
@@ -272,6 +347,9 @@ export class ProductionConfigService {
       flowId,
       timeMode: dto.timeMode,
       intervalMinutes: dto.intervalMinutes ?? 0,
+      ...hoursData(dto),
+      liveSchedule: dto.liveSchedule ?? 'WARN',
+      afterDoneMinutes: dto.afterDoneMinutes ?? 0,
     };
   }
 
