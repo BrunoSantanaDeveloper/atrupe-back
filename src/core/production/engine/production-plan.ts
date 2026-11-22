@@ -281,6 +281,11 @@ export function planTasks(
   types: PlanTaskType[],
   fallback: PlanTaskType,
   setups: PlanMachineSetup[] = [],
+  /**
+   * PRO (GP-49): o tipo vem do setor da etapa (cada ícone é uma tela de
+   * setor); sem resposta, vale o tipo pelo nome
+   */
+  bySector?: (stage: PlanStage) => PlanTaskType | undefined,
 ): PlannedTask[] {
   const planned: PlannedTask[] = [];
   for (const item of items) {
@@ -305,7 +310,7 @@ export function planTasks(
 
     for (const stage of itemStages) {
       if (!kept.has(stage.blockId)) continue;
-      const type = typeFor(stage, types, fallback);
+      const type = bySector?.(stage) ?? typeFor(stage, types, fallback);
       const quality = qualityOf(stage.lines, setups);
       const flow = [...new Set(stage.dependsOn.flatMap((id) => resolve(id)))];
       const base = stage.baseBlockId ? resolve(stage.baseBlockId) : [];
@@ -350,3 +355,18 @@ export function planTasks(
   }
   return planned;
 }
+
+/** Os setores das etapas, com as caixas das partes (FL-10). */
+export const stageSectors = (stages: PlanStage[]): Map<string, string> => {
+  const sectors = new Map<string, string>();
+  const walk = (list: PlanStage[]) => {
+    for (const stage of list) {
+      if (stage.sectorId && !sectors.has(stage.sectorId)) {
+        sectors.set(stage.sectorId, stage.sector);
+      }
+      if (stage.parts?.length) walk(stage.parts);
+    }
+  };
+  walk(stages);
+  return sectors;
+};

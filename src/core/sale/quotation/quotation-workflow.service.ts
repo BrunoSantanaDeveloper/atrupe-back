@@ -1062,8 +1062,9 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
     quotationId: string,
   ): Promise<ApprovalReprocessResult['failed']> {
     const steps: [string, () => Promise<void>][] = [
-      ['productionStages', () => this.ensureProductionStages(quotationId)],
+      // O retrato antes da agenda: no PRO as etapas saem da composição
       ['snapshots', () => this.ensureSnapshots(quotationId)],
+      ['productionStages', () => this.ensureProductionStages(quotationId)],
       ['outsourcedPayables', () => this.ensureOutsourcedPayables(quotationId)],
       // Depois do retrato: as tarefas nascem dele (ELITE, Fase 6)
       [
@@ -1472,8 +1473,30 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
     });
     if (existingStages > 0) return;
 
-    // O item sem produto (material, montado na hora) fica fora da busca
+    // O retrato de cada item (o montado na hora e o produto com composição
+    // liberada): a sequência de ícones segue a composição (PRO, GP-49)
+    const snapshots = await this.prisma.quotationItemSnapshot.findMany({
+      where: { quotationProduct: { quotationId } },
+      select: { quotationProductId: true, data: true },
+    });
+    const snapshotSectors = new Map(
+      snapshots.map((row) => [
+        row.quotationProductId,
+        snapshotStages(row.data)
+          .map((stage) => stage.sectorId)
+          .filter((id): id is string => !!id),
+      ]),
+    );
+    const withSnapshot = new Set(
+      [...snapshotSectors.entries()]
+        .filter(([, sectors]) => sectors.length)
+        .map(([id]) => id),
+    );
+
+    // O item sem produto (material, montado na hora) fica fora da busca; o
+    // produto cuja composição já diz os setores também
     const quotationProductsIds = quotation.quotationProduct
+      .filter((product) => !withSnapshot.has(product.id))
       .map((product) => product.productId)
       .filter(Boolean);
 
@@ -1507,18 +1530,13 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
         })
       : [];
 
-    // O item montado na hora passa pelos setores das etapas dele, quando
-    // são etapa de produção (ORC-11, PO 14/10/2026)
-    const composedSnapshots = await this.prisma.quotationItemSnapshot.findMany({
-      where: { quotationProduct: { quotationId, origin: 'COMPOSED' } },
-      select: { data: true },
-    });
+    // O item montado na hora (ORC-11) e o produto com composição passam
+    // pelos setores das etapas, na ordem delas, quando são etapa de produção
     const composedSectorIds = [
       ...new Set(
-        composedSnapshots
-          .flatMap((row) => snapshotStages(row.data))
-          .map((stage) => stage.sectorId)
-          .filter(Boolean),
+        quotation.quotationProduct.flatMap(
+          (product) => snapshotSectors.get(product.id) ?? [],
+        ),
       ),
     ];
     const composedSectors = composedSectorIds.length
@@ -1532,6 +1550,11 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
           select: { id: true },
         })
       : [];
+    // Na ordem da composição
+    composedSectors.sort(
+      (a, b) =>
+        composedSectorIds.indexOf(a.id) - composedSectorIds.indexOf(b.id),
+    );
 
     const allStages: ProductionStageJson[] = [
       ...products.flatMap((product) => {

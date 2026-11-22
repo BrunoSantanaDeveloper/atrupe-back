@@ -19,9 +19,11 @@ import {
   PlanTaskType,
   PlannedTask,
   planTasks,
+  stageSectors,
   typeFor,
 } from './engine/production-plan';
 import { ProductionViewer } from './production-access.service';
+import { DEFAULT_FLOW } from './production-config.service';
 import { cancelProjectInTx, moveScheduleInTx } from './production-follow';
 import { ProductionMirrorService } from './production-mirror.service';
 import {
@@ -35,6 +37,8 @@ import { consumeSale } from '../stock/stock-consumption';
 // O projeto nasce também na tela por setor do PRO (GP-46, GP-47)
 export const PRODUCTION_FEATURE = ['production_manager', 'sector_board'];
 const DEFAULT_TYPE = 'Produção';
+/** O tipo de tarefa do setor no PRO (GP-49): a chave não casa com nome */
+export const SECTOR_TYPE_PREFIX = 'setor:';
 const SYSTEM = 'sistema';
 const PROJECT_CLOSED = 'O projeto já foi encerrado';
 
@@ -279,8 +283,13 @@ export class ProductionProjectService {
 
   /** As tarefas dos itens: o tipo pelo nome da etapa, ou o padrão. */
   private async planFor(companyId: string, items: PlanItem[]) {
+    // O tipo do setor do PRO não casa pelo nome (no ELITE, vale o cadastro)
     const types = await this.prisma.productionTaskType.findMany({
-      where: { companyId, isActive: true },
+      where: {
+        companyId,
+        isActive: true,
+        NOT: { nameKey: { startsWith: SECTOR_TYPE_PREFIX } },
+      },
       select: {
         id: true,
         name: true,
@@ -310,11 +319,173 @@ export class ProductionProjectService {
       .filter((stage) => typeFor(stage, planTypes, none) === none)
       .map((stage) => stage.sectorId)
       .filter((id): id is string => !!id);
+    const elite = await this.plan.hasFeature(companyId, 'production_manager');
+    const bySector = elite
+      ? null
+      : await this.sectorTypes(
+          companyId,
+          stageSectors(items.flatMap((item) => item.stages)),
+        );
+    // No PRO, só a etapa sem setor cai no tipo padrão
     const [fallback, setups] = await Promise.all([
-      this.fallbackType(companyId, sectorIds),
+      !bySector || items.some((item) => this.hasStageWithoutSector(item.stages))
+        ? this.fallbackType(companyId, sectorIds)
+        : Promise.resolve(none),
       this.machineSetups(companyId),
     ]);
-    return planTasks(items, planTypes, fallback, setups);
+    return planTasks(
+      items,
+      planTypes,
+      fallback,
+      setups,
+      bySector
+        ? (stage) => (stage.sectorId ? bySector.get(stage.sectorId) : undefined)
+        : undefined,
+    );
+  }
+
+  private hasStageWithoutSector(stages: PlanItem['stages']): boolean {
+    return stages.some(
+      (stage) =>
+        (!stage.parts?.length && !stage.sectorId) ||
+        (!!stage.parts?.length && this.hasStageWithoutSector(stage.parts)),
+    );
+  }
+
+  /**
+   * O PRO sem gerenciadores cadastrados (GP-49, 22/11/2026): o setor é o
+   * ícone do fluxo. Cada setor da composição tem a sua tela, criada sozinha
+   * na primeira venda (o gerenciador do setor no modo sem tempo, com o
+   * expediente da empresa) e um tipo de tarefa próprio com uma etapa nela.
+   * O gerenciador que a empresa já tem para o setor é reaproveitado.
+   */
+  private async sectorTypes(
+    companyId: string,
+    sectors: Map<string, string>,
+  ): Promise<Map<string, PlanTaskType>> {
+    const result = new Map<string, PlanTaskType>();
+    if (!sectors.size) return result;
+    const keys = [...sectors.keys()].map((id) => SECTOR_TYPE_PREFIX + id);
+    const existing = await this.prisma.productionTaskType.findMany({
+      where: { companyId, nameKey: { in: keys } },
+      select: {
+        nameKey: true,
+        id: true,
+        name: true,
+        release: true,
+        steps: {
+          select: { id: true },
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+          take: 1,
+        },
+      },
+    });
+    for (const type of existing) {
+      if (!type.steps[0]) continue;
+      result.set(type.nameKey.slice(SECTOR_TYPE_PREFIX.length), {
+        id: type.id,
+        name: type.name,
+        release: type.release,
+        firstStepId: type.steps[0].id,
+      });
+    }
+    const missing = [...sectors.keys()].filter((id) => !result.has(id));
+    if (!missing.length) return result;
+    const [rows, managers, calendar] = await Promise.all([
+      this.prisma.companySector.findMany({
+        where: { id: { in: missing }, companyId },
+        select: { id: true, name: true },
+      }),
+      this.prisma.productionManager.findMany({
+        where: { companyId, sectorId: { in: missing }, isActive: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, sectorId: true },
+      }),
+      this.prisma.productionCalendar.findUnique({
+        where: { companyId },
+        select: {
+          startTime: true,
+          endTime: true,
+          breakStart: true,
+          breakEnd: true,
+        },
+      }),
+    ]);
+    let flowId: string | null = null;
+    for (const sector of rows) {
+      let managerId = managers.find((item) => item.sectorId === sector.id)?.id;
+      if (!managerId) {
+        flowId ??= await this.defaultFlowId(companyId);
+        managerId = (
+          await this.prisma.productionManager.create({
+            data: {
+              companyId,
+              name: sector.name,
+              sectorId: sector.id,
+              flowId,
+              timeMode: 'NONE',
+              workStart: calendar?.startTime ?? '08:00',
+              workEnd: calendar?.endTime ?? '18:00',
+              breakStart: calendar?.breakStart ?? null,
+              breakEnd: calendar?.breakEnd ?? null,
+            },
+            select: { id: true },
+          })
+        ).id;
+        this.logger.log(
+          `Tela do setor "${sector.name}" criada na empresa ${companyId}`,
+        );
+      }
+      const nameKey = SECTOR_TYPE_PREFIX + sector.id;
+      const type = await this.prisma.productionTaskType.upsert({
+        where: { companyId_nameKey: { companyId, nameKey } },
+        create: {
+          companyId,
+          name: sector.name,
+          nameKey,
+          release: 'AFTER_BASE',
+          timeControl: false,
+          steps: {
+            create: { name: sector.name, managerId, position: 0 },
+          },
+        },
+        update: {},
+        select: {
+          id: true,
+          name: true,
+          release: true,
+          steps: {
+            select: { id: true },
+            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+            take: 1,
+          },
+        },
+      });
+      result.set(sector.id, {
+        id: type.id,
+        name: type.name,
+        release: type.release,
+        firstStepId: type.steps[0]?.id ?? null,
+      });
+    }
+    return result;
+  }
+
+  private async defaultFlowId(companyId: string) {
+    const existing = await this.prisma.productionFlow.findFirst({
+      where: { companyId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+    return (
+      await this.prisma.productionFlow.upsert({
+        where: { companyId_name: { companyId, name: DEFAULT_FLOW } },
+        create: { companyId, name: DEFAULT_FLOW },
+        update: {},
+        select: { id: true },
+      })
+    ).id;
   }
 
   /** As qualidades das máquinas, com o tempo por unidade (GP-48 item 22). */

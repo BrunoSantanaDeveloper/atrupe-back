@@ -6,6 +6,7 @@ import {
   measureText,
   soldMinutes,
   planTasks,
+  stageSectors,
 } from './production-plan';
 
 const types: PlanTaskType[] = [
@@ -539,5 +540,63 @@ describe('o tempo da máquina pela qualidade vendida (GP-48 item 22)', () => {
       estimatedMinutes: 0,
       machineQuality: null,
     });
+  });
+});
+
+describe('PRO: o setor é o ícone (GP-49)', () => {
+  const sectorType = (id: string): PlanTaskType => ({
+    id: `tt-${id}`,
+    name: id,
+    release: 'AFTER_BASE',
+    firstStepId: `st-${id}`,
+  });
+
+  it('a etapa vai para a tela do setor dela, mesmo com o tipo pelo nome', () => {
+    const tasks = planTasks(
+      [
+        item([
+          stage({ blockId: 'imp', sectorId: 's-imp', taskType: 'Impressão' }),
+          stage({ blockId: 'acab', sectorId: 's-acab', dependsOn: ['imp'] }),
+        ]),
+      ],
+      types,
+      fallback,
+      [],
+      (st) => (st.sectorId ? sectorType(st.sectorId) : undefined),
+    );
+    expect(tasks.map((task) => task.currentStepId)).toEqual([
+      'st-s-imp',
+      'st-s-acab',
+    ]);
+    expect(tasks[1].dependsOnKeys).toEqual(['i1:imp']);
+  });
+
+  it('sem setor, a etapa cai no tipo pelo nome ou no padrão', () => {
+    const [task] = planTasks(
+      [item([stage({ blockId: 'x', sectorId: null })])],
+      types,
+      fallback,
+      [],
+      () => undefined,
+    );
+    expect(task.currentStepId).toBe('st-prod');
+  });
+
+  it('os setores das etapas, com os de dentro das partes, sem repetir', () => {
+    const sectors = stageSectors([
+      stage({ blockId: 'a', sectorId: 's-imp', sector: 'Impressão' }),
+      stage({
+        blockId: 'p',
+        sectorId: null,
+        parts: [
+          stage({ blockId: 'b', sectorId: 's-router', sector: 'Router' }),
+          stage({ blockId: 'c', sectorId: 's-imp', sector: 'Impressão' }),
+        ],
+      }),
+    ]);
+    expect([...sectors.entries()]).toEqual([
+      ['s-imp', 'Impressão'],
+      ['s-router', 'Router'],
+    ]);
   });
 });
