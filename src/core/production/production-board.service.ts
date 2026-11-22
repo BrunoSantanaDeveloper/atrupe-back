@@ -119,6 +119,9 @@ export class ProductionBoardService {
       manager: {
         ...this.view.managerSummaryView(row),
         flowId: row.flowId,
+        // O expediente da empresa: o padrão do gerenciador sem expediente e
+        // os dias que não são de trabalho (feriado fica em vermelho, GP-49)
+        calendar: ctx.calendar,
         users: row.users.map((user) => ({
           collaboratorId: user.employeeId,
           onlyAssigned: user.onlyAssigned,

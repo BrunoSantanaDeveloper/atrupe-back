@@ -195,6 +195,23 @@ export class CalendarDto {
     message: 'Feriado com data inválida',
   })
   holidays?: string[];
+
+  @ApiPropertyOptional({
+    example: '12:00',
+    description: 'Vazio = sem intervalo',
+  })
+  @IsOptional()
+  @Matches(/^(([01]\d|2[0-3]):[0-5]\d)?$/, {
+    message: 'Início do intervalo inválido',
+  })
+  breakStart?: string | null;
+
+  @ApiPropertyOptional({ example: '13:00' })
+  @IsOptional()
+  @Matches(/^(([01]\d|2[0-3]):[0-5]\d)?$/, {
+    message: 'Fim do intervalo inválido',
+  })
+  breakEnd?: string | null;
 }
 
 export class VehicleDto {

@@ -166,6 +166,21 @@ describe('ProductionChain', () => {
       expect(chain.alert(chain.task('curto')!)?.kind).toBe('LATE_PREDECESSOR');
     });
 
+    it('a hora da entrega da venda encurta o prazo (GP-49)', () => {
+      // Até 09/10 às 12:00: hoje 480 + 600 + 09/10 das 08:00 às 12:00 (240)
+      const chain = chainOf([task({ id: 'a', estimatedMinutes: 1400 })], {
+        dueTime: '12:00',
+      });
+      expect(chain.workMinutesUntil('2026-10-09', '12:00')).toBe(1320);
+      expect(chain.workMinutesUntil('2026-10-09')).toBe(1680);
+      expect(chain.alert(chain.task('a')!)).toEqual({
+        kind: 'DELIVERY_RISK',
+        text: 'O que falta daqui para a frente (1400 min) não cabe até a entrega em 09/10/2026 às 12:00.',
+      });
+      // A hora depois do fim do expediente não estica o dia
+      expect(chain.workMinutesUntil('2026-10-09', '22:00')).toBe(1680);
+    });
+
     it('o apontado desconta do que falta, e o alerta some quando cabe', () => {
       const chain = chainOf([
         task({

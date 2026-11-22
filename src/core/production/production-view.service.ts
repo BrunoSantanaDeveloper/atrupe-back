@@ -9,6 +9,7 @@ import {
   ChainClock,
   ChainTask,
   ProductionChain,
+  WorkCalendar,
   entryMinutes,
 } from './engine/production-chain';
 import {
@@ -160,6 +161,8 @@ const PROJECT_SELECT = {
   firstDue: true,
   due: true,
   status: true,
+  // A hora da entrega da venda, opcional (GP-49): o prazo do alerta
+  quotation: { select: { deliveryInfo: { select: { deliveryTime: true } } } },
 } satisfies Prisma.ProductionProjectSelect;
 
 const TYPE_SELECT = {
@@ -221,11 +224,19 @@ export type ProductionContext = {
   types: Map<string, TypeRow>;
   managers: Map<string, ManagerRow>;
   collaborators: Map<string, Collaborator>;
+  /** O expediente da empresa, com o intervalo e os feriados */
+  calendar: WorkCalendar;
 };
 
 const correctionPeople = (value: unknown) => {
   const id = (value as { collaboratorId?: unknown } | null)?.collaboratorId;
   return typeof id === 'string' ? [id] : [];
+};
+
+/** A hora da entrega da venda, quando válida ("HH:MM"). */
+export const deliveryTimeOf = (row: ProjectRow) => {
+  const value = row.quotation?.deliveryInfo?.deliveryTime?.trim() ?? '';
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
 };
 
 export const projectView = (row: ProjectRow) => ({
@@ -238,6 +249,7 @@ export const projectView = (row: ProjectRow) => ({
   deliveryType: row.deliveryType,
   firstDue: dayKey(row.firstDue),
   due: dayKey(row.due),
+  dueTime: deliveryTimeOf(row),
   status: row.status,
 });
 
@@ -304,7 +316,12 @@ export class ProductionViewService {
       new Map(
         projects.map((project) => [
           project.id,
-          { id: project.id, status: project.status, due: dayKey(project.due)! },
+          {
+            id: project.id,
+            status: project.status,
+            due: dayKey(project.due)!,
+            dueTime: deliveryTimeOf(project),
+          },
         ]),
       ),
       { ...productionClock(now), calendar },
@@ -320,6 +337,7 @@ export class ProductionViewService {
       collaborators: new Map(
         collaborators.map((person) => [person.id, person]),
       ),
+      calendar,
     };
   }
 

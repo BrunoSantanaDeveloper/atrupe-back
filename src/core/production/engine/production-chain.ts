@@ -38,7 +38,13 @@ export type ChainTask = {
   entries: ChainEntry[];
 };
 
-export type ChainProject = { id: string; status: ProjectStatus; due: string };
+export type ChainProject = {
+  id: string;
+  status: ProjectStatus;
+  due: string;
+  /** A hora da entrega na venda (opcional, "HH:MM"); sem ela, o fim do expediente */
+  dueTime?: string | null;
+};
 
 export type ChainAlert = {
   kind: 'OVERDUE' | 'LATE_PREDECESSOR' | 'DELIVERY_RISK';
@@ -61,6 +67,9 @@ export type WorkCalendar = {
   startTime: string;
   endTime: string;
   holidays: string[];
+  /** O intervalo (almoço), opcional: o gerenciador novo copia (GP-49) */
+  breakStart?: string | null;
+  breakEnd?: string | null;
 };
 
 /** O expediente de referência até existir calendário (§4.8): 8h às 18h. */
@@ -77,6 +86,8 @@ export const DEFAULT_CALENDAR: WorkCalendar = {
   startTime: WORK_START,
   endTime: WORK_END,
   holidays: [],
+  breakStart: null,
+  breakEnd: null,
 };
 
 const weekdayOf = (day: string) => new Date(`${day}T12:00:00.000Z`).getUTCDay();
@@ -222,12 +233,18 @@ export class ProductionChain {
   }
 
   /** Os minutos de expediente de agora até o fim do dia da entrega. */
-  workMinutesUntil(due: string) {
-    const cached = this.available.get(due);
+  workMinutesUntil(due: string, dueTime?: string | null) {
+    const cacheKey = `${due} ${dueTime ?? ''}`;
+    const cached = this.available.get(cacheKey);
     if (cached !== undefined) return cached;
     const calendar = this.clock.calendar ?? DEFAULT_CALENDAR;
     const now = this.clock.now.getTime();
-    const deadline = this.clock.at(due, calendar.endTime).getTime();
+    const deadline = this.clock
+      .at(
+        due,
+        dueTime && dueTime < calendar.endTime ? dueTime : calendar.endTime,
+      )
+      .getTime();
     let minutes = 0;
     let day = this.clock.dayOf(this.clock.now);
     for (let count = 0; day <= due && count < MAX_DAYS; count++) {
@@ -247,7 +264,7 @@ export class ProductionChain {
       }
       day = nextDay(day);
     }
-    this.available.set(due, minutes);
+    this.available.set(cacheKey, minutes);
     return minutes;
   }
 
@@ -293,10 +310,10 @@ export class ProductionChain {
       }
     }
     const remaining = this.remainingAhead(task);
-    if (remaining > this.workMinutesUntil(project.due)) {
+    if (remaining > this.workMinutesUntil(project.due, project.dueTime)) {
       return {
         kind: 'DELIVERY_RISK',
-        text: `O que falta daqui para a frente (${Math.round(remaining)} min) não cabe até a entrega em ${brDate(project.due)}.`,
+        text: `O que falta daqui para a frente (${Math.round(remaining)} min) não cabe até a entrega em ${brDate(project.due)}${project.dueTime ? ` às ${project.dueTime}` : ''}.`,
       };
     }
     if (task.schedule && task.schedule.date > project.due) {

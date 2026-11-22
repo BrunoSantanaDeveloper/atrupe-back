@@ -11,6 +11,11 @@ import { Prisma, ProductionAttachmentKind } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import {
+  toProjectDateKey,
+  toProjectTimeKey,
+} from '../fiscal/utils/project-date.util';
+import { rescheduleAfter, toMinutes } from './engine/live-schedule';
 import { isOpen } from './engine/production-chain';
 import { planAction } from './engine/task-machine';
 import {
@@ -34,6 +39,7 @@ import { ProductionMirrorService } from './production-mirror.service';
 import { dateColumn } from './production-project.service';
 import {
   ChainRow,
+  ManagerRow,
   ProductionContext,
   ProductionViewService,
   TASK_NOT_FOUND,
@@ -264,6 +270,15 @@ export class ProductionTaskService {
       }
       for (const text of plan.history) await this.log(tx, viewer, id, text);
     });
+    // A máquina ficou livre: a agenda viva grava o horário novo dos
+    // seguintes que já não cabem (GP-48 item 20)
+    if (plan.complete || plan.advanceStep) {
+      const managerId = this.view.stepOf(ctx, row).managerId;
+      const manager = managerId ? ctx.managers.get(managerId) : undefined;
+      if (manager?.liveSchedule === 'RESCHEDULE') {
+        await this.liveReschedule(viewer, id, manager, now);
+      }
+    }
     // Iniciar ou continuar com quem faz liga o relógio dele (GP-43)
     if (plan.mayOpenClock && dto.collaboratorId) {
       const type = ctx.types.get(row.taskTypeId);
@@ -273,6 +288,88 @@ export class ProductionTaskService {
     }
     await this.mirror.sync(row.projectId);
     return this.respond(viewer, id, plan.message);
+  }
+
+  /**
+   * "Reagenda e avisa" gravado (GP-48 item 20; Maicol, 22/11/2026): os
+   * trabalhos de hoje na mesma máquina e no mesmo gerenciador, ainda não
+   * iniciados, que já não cabem andam para depois deste, na sequência. Com
+   * outro trabalho em andamento na máquina, espera: ele reagenda ao sair.
+   */
+  private async liveReschedule(
+    viewer: ProductionViewer,
+    id: string,
+    manager: ManagerRow,
+    now: Date,
+  ) {
+    const task = await this.prisma.productionTask.findUnique({
+      where: { id },
+      select: { machine: true },
+    });
+    if (!task?.machine) return;
+    const steps = await this.prisma.productionTaskStep.findMany({
+      where: { managerId: manager.id },
+      select: { id: true },
+    });
+    const today = toProjectDateKey(now);
+    const others = await this.prisma.productionTask.findMany({
+      where: {
+        companyId: viewer.companyId,
+        id: { not: id },
+        machine: task.machine,
+        currentStepId: { in: steps.map((step) => step.id) },
+        OR: [
+          { status: 'IN_PROGRESS' },
+          { status: 'NOT_STARTED', scheduleDate: dateColumn(today) },
+        ],
+      },
+      select: {
+        id: true,
+        projectId: true,
+        status: true,
+        scheduleStart: true,
+        scheduleMinutes: true,
+        estimatedMinutes: true,
+      },
+    });
+    if (others.some((item) => item.status === 'IN_PROGRESS')) return;
+    const moves = rescheduleAfter({
+      freeAt: toMinutes(toProjectTimeKey(now)),
+      intervalMinutes: manager.intervalMinutes,
+      hours: {
+        breakStart: manager.breakStart,
+        breakEnd: manager.breakEnd,
+        runsThroughBreak: manager.runsThroughBreak,
+      },
+      tasks: others
+        .filter((item) => item.scheduleStart)
+        .map((item) => ({
+          id: item.id,
+          start: item.scheduleStart!,
+          minutes: item.scheduleMinutes || item.estimatedMinutes,
+        })),
+    });
+    if (!moves.length) return;
+    await this.prisma.$transaction(async (tx) => {
+      for (const move of moves) {
+        await tx.productionTask.update({
+          where: { id: move.id },
+          data: { scheduleStart: move.to },
+        });
+        await this.log(
+          tx,
+          viewer,
+          move.id,
+          `Reagendada de ${move.from} para ${move.to}: o trabalho anterior na máquina atrasou (agenda viva)`,
+        );
+      }
+    });
+    const projects = new Set(
+      others
+        .filter((item) => moves.some((move) => move.id === item.id))
+        .map((item) => item.projectId),
+    );
+    for (const projectId of projects) await this.mirror.sync(projectId);
   }
 
   /** O impedimento descrito: a tarefa fica pendente e os relógios param. */

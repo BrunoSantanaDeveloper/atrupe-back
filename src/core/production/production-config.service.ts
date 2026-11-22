@@ -213,6 +213,8 @@ export class ProductionConfigService {
         startTime: true,
         endTime: true,
         holidays: true,
+        breakStart: true,
+        breakEnd: true,
       },
     });
     return row ?? { ...DEFAULT_CALENDAR };
@@ -222,10 +224,19 @@ export class ProductionConfigService {
     if (dto.endTime <= dto.startTime) {
       bad('O fim do expediente vem depois do início');
     }
+    // O intervalo segue as mesmas regras do gerenciador
+    const hours = hoursData({
+      workStart: dto.startTime,
+      workEnd: dto.endTime,
+      breakStart: dto.breakStart,
+      breakEnd: dto.breakEnd,
+    });
     const data = {
       workDays: [...dto.workDays].sort((a, b) => a - b),
       startTime: dto.startTime,
       endTime: dto.endTime,
+      breakStart: hours.breakStart,
+      breakEnd: hours.breakEnd,
       holidays: [...new Set(dto.holidays ?? [])].sort(),
     };
     await this.prisma.productionCalendar.upsert({
@@ -355,6 +366,17 @@ export class ProductionConfigService {
 
   async createManager(companyId: string, dto: ManagerDto) {
     const data = await this.managerData(companyId, dto);
+    // O gerenciador novo nasce com o expediente da empresa, editável
+    // (GP-49): só quando o formulário veio sem expediente
+    if (!data.workStart) {
+      const calendar = await this.calendar(companyId);
+      data.workStart = calendar.startTime;
+      data.workEnd = calendar.endTime;
+      if (!data.breakStart) {
+        data.breakStart = calendar.breakStart ?? null;
+        data.breakEnd = calendar.breakEnd ?? null;
+      }
+    }
     const row = await this.prisma.productionManager.create({
       data: { companyId, ...data },
       select: MANAGER_SELECT,

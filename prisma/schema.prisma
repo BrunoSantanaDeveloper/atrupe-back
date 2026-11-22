@@ -4611,16 +4611,20 @@ model ProductionTaskStep {
 /// feriados da empresa, para a cadeia de alertas. Sem linha, segunda a sexta,
 /// das 08:00 às 18:00 (o fim de semana não conta como expediente).
 model ProductionCalendar {
-  id        String   @id @default(uuid())
-  companyId String   @unique
+  id         String   @id @default(uuid())
+  companyId  String   @unique
   /// 0 = domingo … 6 = sábado
-  workDays  Int[]    @default([1, 2, 3, 4, 5])
-  startTime String   @default("08:00")
-  endTime   String   @default("18:00")
+  workDays   Int[]    @default([1, 2, 3, 4, 5])
+  startTime  String   @default("08:00")
+  endTime    String   @default("18:00")
+  /// O intervalo (almoço) da empresa, opcional; o gerenciador novo copia
+  /// o expediente com ele (GP-49)
+  breakStart String?
+  breakEnd   String?
   /// YYYY-MM-DD
-  holidays  String[]
-  updatedAt DateTime @updatedAt
-  company   Company  @relation(fields: [companyId], references: [id])
+  holidays   String[]
+  updatedAt  DateTime @updatedAt
+  company    Company  @relation(fields: [companyId], references: [id])
 
   @@map("production_calendars")
 }
