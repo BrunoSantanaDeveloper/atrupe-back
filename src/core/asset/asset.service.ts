@@ -684,6 +684,7 @@ export class AssetService {
         yieldUnit: dto.yieldUnit,
         subCategoryId: dto.financialNatureId || null,
         lastOccurrence: toDate(dto.lastOccurrence),
+        ...blockData(dto),
         setupId: dto.nature === 'SETUP_VARIABLE' ? dto.setupId! : null,
       },
     });
@@ -723,6 +724,13 @@ export class AssetService {
           ? dto.lastOccurrence
           : dateOnly(current.lastOccurrence),
       setupId: dto.setupId !== undefined ? dto.setupId : current.setupId,
+      blocksSchedule: dto.blocksSchedule ?? current.blocksSchedule,
+      blockStart:
+        dto.blockStart !== undefined ? dto.blockStart : current.blockStart,
+      blockMinutes:
+        dto.blockMinutes !== undefined
+          ? dto.blockMinutes
+          : current.blockMinutes,
     };
     await this.assertCost(companyId, row, merged);
     const updated = await this.prisma.assetCost.update({
@@ -735,6 +743,7 @@ export class AssetService {
         yieldUnit: merged.yieldUnit,
         subCategoryId: merged.financialNatureId || null,
         lastOccurrence: toDate(merged.lastOccurrence),
+        ...blockData(merged),
         setupId: merged.nature === 'SETUP_VARIABLE' ? merged.setupId! : null,
       },
     });
@@ -1040,6 +1049,9 @@ export class AssetService {
               .join(' — ')
           : null,
         lastOccurrence: dateOnly(cost.lastOccurrence),
+        blocksSchedule: cost.blocksSchedule,
+        blockStart: cost.blockStart,
+        blockMinutes: cost.blockMinutes,
         monthlyCost: cost.monthlyCost,
         setupId: cost.setupId,
       })),
@@ -1157,6 +1169,18 @@ export class AssetService {
       });
       if (!account) throw new NotFoundException('Conta não encontrada');
     }
+    // Bloquear a agenda pede a data da última vez, o horário e a duração
+    if (dto.blocksSchedule) {
+      if (dto.nature !== 'FIXED') {
+        bad('Só a manutenção periódica (custo fixo) bloqueia a agenda');
+      }
+      if (!dto.lastOccurrence) {
+        bad('Informe a última ocorrência para saber a próxima manutenção');
+      }
+      if (!dto.blockStart || !dto.blockMinutes) {
+        bad('Informe o horário e a duração do bloqueio da agenda');
+      }
+    }
   }
 
   private assertSetup(
@@ -1249,4 +1273,15 @@ export class AssetService {
       data: { allocationOutdated: true },
     });
   }
+}
+
+/** O bloqueio da agenda só vale ligado; desligado, limpa o período. */
+function blockData(dto: AssetCostDto) {
+  return dto.blocksSchedule
+    ? {
+        blocksSchedule: true,
+        blockStart: dto.blockStart ?? null,
+        blockMinutes: dto.blockMinutes ?? null,
+      }
+    : { blocksSchedule: false, blockStart: null, blockMinutes: null };
 }

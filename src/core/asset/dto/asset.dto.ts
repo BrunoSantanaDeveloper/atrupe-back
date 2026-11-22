@@ -221,6 +221,23 @@ export class AssetCostDto {
   @ApiProperty({ required: false })
   lastOccurrence?: string | null;
 
+  // A manutenção que bloqueia a agenda da máquina (GP-49 item 6, ELITE)
+  @IsOptional()
+  @IsBoolean()
+  @ApiProperty({ required: false })
+  blocksSchedule?: boolean;
+
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Horário inválido' })
+  @ApiProperty({ required: false, example: '14:00' })
+  blockStart?: string | null;
+
+  @IsOptional()
+  @IsInt({ message: 'A duração vai em minutos' })
+  @Min(1, { message: 'Informe a duração da manutenção' })
+  @ApiProperty({ required: false })
+  blockMinutes?: number | null;
+
   @IsOptional()
   @IsUUID('all', { message: 'Configuração não encontrada' })
   @ApiProperty({ required: false })

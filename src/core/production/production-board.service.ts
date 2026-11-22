@@ -9,6 +9,7 @@ import {
   toProjectDateKey,
 } from '../fiscal/utils/project-date.util';
 import { isOpen } from './engine/production-chain';
+import { maintenanceBlocks } from './engine/maintenance';
 import {
   ProductionAccessService,
   ProductionViewer,
@@ -98,6 +99,46 @@ export class ProductionBoardService {
       });
   }
 
+  /**
+   * As manutenções dos próximos 30 dias que bloqueiam a agenda: o custo
+   * fixo do patrimônio com a última ocorrência e o bloqueio ligado.
+   */
+  private async maintenance(companyId: string) {
+    const costs = await this.prisma.assetCost.findMany({
+      where: {
+        blocksSchedule: true,
+        lastOccurrence: { not: null },
+        blockStart: { not: null },
+        blockMinutes: { not: null },
+        asset: { companyId, inactivatedAt: null, soldAt: null },
+      },
+      select: {
+        id: true,
+        name: true,
+        yieldAmount: true,
+        lastOccurrence: true,
+        blockStart: true,
+        blockMinutes: true,
+        asset: { select: { name: true } },
+      },
+    });
+    const today = toProjectDateKey(new Date());
+    const until = toProjectDateKey(new Date(Date.now() + 30 * 86400000));
+    return maintenanceBlocks(
+      costs.map((cost) => ({
+        id: cost.id,
+        name: cost.name,
+        machine: cost.asset.name,
+        lastOccurrence: cost.lastOccurrence!.toISOString().slice(0, 10),
+        everyMonths: cost.yieldAmount,
+        start: cost.blockStart!,
+        minutes: cost.blockMinutes!,
+      })),
+      today,
+      until,
+    );
+  }
+
   /** O quadro: as tarefas cuja etapa atual está no gerenciador. */
   async board(viewer: ProductionViewer, managerId: string) {
     const manager = await this.prisma.productionManager.findFirst({
@@ -140,6 +181,8 @@ export class ProductionBoardService {
         visible.map((task) => task.id),
       ),
       hidden: own.length - visible.length,
+      // As manutenções que bloqueiam a agenda das máquinas (GP-49 item 6)
+      maintenance: await this.maintenance(viewer.companyId),
       collaborators,
       taskTypes: [...ctx.types.values()]
         .filter((type) =>

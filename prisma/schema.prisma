@@ -729,6 +729,12 @@ model AssetCost {
   /// A conta do plano de contas (subcategoria) do custo (P-17)
   subCategoryId  String?
   lastOccurrence DateTime?       @db.Date
+  /// Manutenção que bloqueia a agenda da máquina (GP-49 item 6, ELITE): na
+  /// próxima data (última ocorrência + a periodicidade), a fila do setor não
+  /// põe trabalho na máquina das blockStart por blockMinutes
+  blocksSchedule Boolean         @default(false)
+  blockStart     String?
+  blockMinutes   Int?
   setupId        String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
