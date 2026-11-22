@@ -70,7 +70,12 @@ const eliteFeatures = [
   'productivity_tracking',
 ];
 
-const fullFeatures = [...eliteFeatures, 'stock_control', 'invoice_entry'];
+const fullFeatures = [
+  ...eliteFeatures,
+  'stock_control',
+  'invoice_entry',
+  'purchasing',
+];
 
 export const PLAN_CONFIGURATIONS = {
   TRIAL: {

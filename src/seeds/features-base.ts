@@ -368,6 +368,15 @@ export const BASE_FEATURES = [
     price: 0,
     isActive: true,
   },
+  {
+    key: 'purchasing',
+    name: 'Compras e lotes',
+    description:
+      'Solicitação de material, cotação, pedido de compra com conferência e o estoque por lote',
+    category: 'stock',
+    price: 0,
+    isActive: true,
+  },
   // A tela por setor da produção sem controle de tempo (PRO; GP-46/GP-47,
   // 29/10/2026): cada setor vê a sua fila e conclui o que é seu
   {

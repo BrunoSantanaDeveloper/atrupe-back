@@ -7,10 +7,10 @@ import {
 import { Prisma, StockMovementKind } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { PricingParametersService } from '../pricing/pricing-parameters.service';
-import { costChange } from '../material/material.service';
 import { UNIT_SYMBOL, normalizeText } from '../material/material-text';
 import { CashActor } from '../financial/cash-control/cash-ledger';
 import { NfeXmlError, parseNfeXml } from './nfe-xml';
+import { enterStock } from './stock-entry';
 import {
   InvoiceEntryFilterDto,
   MatchInvoiceItemDto,
@@ -24,9 +24,6 @@ const bad = (message: string): never => {
 
 const INVOICE_NOT_FOUND = 'Nota não encontrada';
 const ITEM_NOT_FOUND = 'Item não encontrado';
-
-const stockKey = (materialId: string, variationId: string | null) =>
-  `${materialId}|${variationId ?? ''}`;
 
 const day = (date: Date | null) =>
   date ? date.toISOString().slice(0, 10) : null;
@@ -566,104 +563,21 @@ export class StockService {
           throw new ConflictException('Esta nota já deu entrada no estoque');
         }
         for (const item of invoice.items) {
-          const quantity = item.quantity * item.conversionFactor;
+          const quantity = item.quantity * item.conversionFactor!;
           if (!(quantity > 0)) continue;
-          const entryCost = Math.round(
-            (item.unitValue * item.quantity) / quantity,
-          );
-          const key = stockKey(item.materialId, item.variationId);
-          const current = await tx.stockItem.findUnique({
-            where: { companyId_key: { companyId, key } },
-          });
-          // Saldo negativo não pesa no custo médio
-          const before = Math.max(0, current?.quantity ?? 0);
-          const averageCost =
-            before > 0
-              ? Math.round(
-                  (before * (current?.averageCost ?? 0) +
-                    quantity * entryCost) /
-                    (before + quantity),
-                )
-              : entryCost;
-          const stock = await tx.stockItem.upsert({
-            where: { companyId_key: { companyId, key } },
-            create: {
-              companyId,
-              key,
-              materialId: item.materialId,
-              variationId: item.variationId,
-              quantity,
-              averageCost,
-              lastEntryCost: entryCost,
-              lastEntryDate: invoice.issueDate,
-            },
-            update: {
-              quantity: { increment: quantity },
-              averageCost,
-              lastEntryCost: entryCost,
-              lastEntryDate: invoice.issueDate,
-            },
-          });
-          await tx.stockMovement.create({
-            data: {
-              companyId,
-              stockItemId: stock.id,
-              kind: StockMovementKind.ENTRY,
-              quantity,
-              unitCost: entryCost,
-              origin,
-              invoiceId: invoice.id,
-              date: invoice.issueDate,
-              createdById: actor.id,
-              createdByName: actor.name,
-            },
+          const stock = await enterStock(tx, {
+            companyId,
+            materialId: item.materialId!,
+            variationId: item.variationId,
+            quantity,
+            entryCost: Math.round((item.unitValue * item.quantity) / quantity),
+            origin,
+            invoiceId: invoice.id,
+            date: invoice.issueDate,
+            actor,
+            charges,
           });
           touched.add(stock.id);
-          // O custo médio é o custo do material na composição (ES-5): no
-          // preço variável o preço acompanha; no fixo, só a margem muda
-          const material = await tx.material.findUnique({
-            where: { id: item.materialId },
-            select: {
-              priceRule: true,
-              cost: true,
-              price: true,
-              desiredMargin: true,
-              _count: { select: { variations: true } },
-            },
-          });
-          if (item.variationId) {
-            const variation = await tx.materialVariation.findUnique({
-              where: { id: item.variationId },
-              select: { cost: true, price: true, desiredMargin: true },
-            });
-            if (material && variation) {
-              const data = costChange(
-                material.priceRule,
-                variation,
-                averageCost,
-                charges,
-              );
-              if (Object.keys(data).length) {
-                await tx.materialVariation.update({
-                  where: { id: item.variationId },
-                  data,
-                });
-              }
-            }
-          } else if (material && !material._count.variations) {
-            const data = costChange(
-              material.priceRule,
-              material,
-              averageCost,
-              charges,
-            );
-            if (Object.keys(data).length) {
-              await tx.material.update({
-                where: { id: item.materialId },
-                data,
-              });
-            }
-          }
         }
       },
       { timeout: 20000 },

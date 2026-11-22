@@ -47,6 +47,8 @@ export const PLAN_FEATURE_KEYS = [
   'productivity_tracking',
   'stock_control',
   'invoice_entry',
+  // 22/11/2026: compras e lotes no FULL (ES-8 a ES-17)
+  'purchasing',
   // 14/10/2026: o bloqueio da venda pelo limite de crédito (LITE).
   'credit_limit_enforcement',
   // 13/10/2026: Papéis no LITE (gráfica rápida). O papel é um material com a
@@ -103,6 +105,8 @@ export const FEATURE_DEPENDENCIES: Partial<
   productivity_tracking: ['production_manager'],
   // A entrada de nota alimenta o estoque.
   invoice_entry: ['stock_control'],
+  // As compras dão entrada no estoque
+  purchasing: ['stock_control'],
   // O bloqueio confere o limite que a configuração cadastra.
   credit_limit_enforcement: ['credit_limit_configuration'],
 };
@@ -282,6 +286,11 @@ export const FEATURE_ENFORCEMENT: Record<
     level: 'api',
     detail:
       'Entrada de nota pelo XML da NF-e, conciliação com o de-para do fornecedor e entrada no estoque (Fase 7.5).',
+  },
+  purchasing: {
+    level: 'api',
+    detail:
+      'Solicitação de material, cotação, pedido de compra (entrega, conferência com a nota, contas a pagar e entrada no estoque) e o estoque por lote (ES-8 a ES-17).',
   },
   credit_limit_enforcement: {
     level: 'api',

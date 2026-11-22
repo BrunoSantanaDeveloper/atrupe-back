@@ -122,6 +122,9 @@ model Company {
   pendingSales           PendingSale[]
   stockItems             StockItem[]
   inboundInvoices        InboundInvoice[]
+  purchaseRequests       PurchaseRequest[]
+  purchaseOrders         PurchaseOrder[]
+  stockLots              StockLot[]
   bankStatementLines     BankStatementLine[]
   dataResets             CompanyDataReset[]
 
@@ -5165,6 +5168,7 @@ model StockItem {
   material      Material           @relation(fields: [materialId], references: [id], onDelete: Cascade)
   variation     MaterialVariation? @relation(fields: [variationId], references: [id], onDelete: Cascade)
   movements     StockMovement[]
+  lots          StockLot[]
 
   @@unique([companyId, key])
   @@map("stock_items")
@@ -5372,4 +5376,234 @@ model FollowUpSettings {
   updatedAt            DateTime @updatedAt
 
   @@map("follow_up_settings")
+}
+
+/// O almoxarifado do FULL (ES-8 a ES-17; Maicol, 22/11/2026: "constrói e
+/// adiciona no FULL"), como na primeira versão (VivaSign): Solicitação →
+/// Cotação → Pedido de compra → Entrega e conferência → Estoque por lote.
+
+enum PurchaseRequestStatus {
+  /// Pedida, esperando a cotação
+  REQUESTED
+  /// Com cotação lançada
+  QUOTING
+  /// Virou pedido de compra
+  ORDERED
+  /// O pedido entrou no estoque
+  RECEIVED
+  CANCELED
+}
+
+/// A solicitação de material (ES-14, ES-17): aberta a quem tem a permissão;
+/// guarda quem pediu, o quê e quando, e a linha do tempo até a entrega.
+model PurchaseRequest {
+  id              String                @id @default(uuid())
+  companyId       String
+  /// Sequencial por empresa
+  number          Int
+  /// O material e a variação; sem eles, a descrição livre
+  materialId      String?
+  variationId     String?
+  description     String
+  quantity        Float
+  unit            String                @default("")
+  /// Para quando precisa (opcional)
+  neededBy        DateTime?             @db.Date
+  note            String?
+  status          PurchaseRequestStatus @default(REQUESTED)
+  requestedById   String?
+  requestedByName String
+  cancelReason    String?
+  /// O item do pedido em que a solicitação entrou
+  orderItemId     String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  company         Company               @relation(fields: [companyId], references: [id])
+  quotes          PurchaseQuote[]
+  events          PurchaseEvent[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@map("purchase_requests")
+}
+
+/// A cotação de uma solicitação com um fornecedor (ES-14). Fechar o pedido
+/// escolhe uma cotação por solicitação.
+model PurchaseQuote {
+  id            String          @id @default(uuid())
+  companyId     String
+  requestId     String
+  supplierId    String?
+  supplierName  String
+  quantity      Float
+  /// Centavos por unidade
+  unitPrice     Int
+  deliveryDays  Int?
+  paymentTerms  String?
+  validUntil    DateTime?       @db.Date
+  note          String?
+  chosen        Boolean         @default(false)
+  createdByName String
+  createdAt     DateTime        @default(now())
+  request       PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@map("purchase_quotes")
+}
+
+enum PurchaseOrderStatus {
+  /// Pedido feito, esperando a entrega
+  PENDING_DELIVERY
+  /// Entregue: falta a conferência
+  CHECKING
+  /// Conferido e lançado no estoque
+  FINISHED
+  CANCELED
+}
+
+/// O pedido de compra (ES-13, ES-15): nasce da cotação ou direto; confirma
+/// a entrega, confere (com a nota, quando houver) e lança o estoque.
+model PurchaseOrder {
+  id            String              @id @default(uuid())
+  companyId     String
+  number        Int
+  supplierId    String?
+  supplierName  String
+  status        PurchaseOrderStatus @default(PENDING_DELIVERY)
+  expectedAt    DateTime?           @db.Date
+  deliveredAt   DateTime?
+  checkedAt     DateTime?
+  checkedByName String?
+  /// A nota de entrada conferida contra o pedido
+  invoiceId     String?
+  /// A conta a pagar gerada pelo pedido (ES-15)
+  payableId     String?
+  total         Int                 @default(0)
+  note          String?
+  cancelReason  String?
+  createdById   String?
+  createdByName String
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  company       Company             @relation(fields: [companyId], references: [id])
+  items         PurchaseOrderItem[]
+  events        PurchaseEvent[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String        @id @default(uuid())
+  orderId          String
+  requestId        String?
+  materialId       String?
+  variationId      String?
+  description      String
+  unit             String        @default("")
+  quantity         Float
+  /// Centavos por unidade
+  unitPrice        Int
+  /// O que chegou, na conferência
+  receivedQuantity Float?
+  /// O que a conferência anotou (faltou, sobrou, avariado)
+  divergence       String?
+  order            PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("purchase_order_items")
+}
+
+/// A linha do tempo da solicitação e do pedido (ES-17).
+model PurchaseEvent {
+  id        String           @id @default(uuid())
+  companyId String
+  requestId String?
+  orderId   String?
+  text      String
+  byName    String
+  at        DateTime         @default(now())
+  request   PurchaseRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  order     PurchaseOrder?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([orderId])
+  @@map("purchase_events")
+}
+
+enum StockLotStatus {
+  /// Fechado: entrou e ainda não foi aberto
+  CLOSED
+  /// Aberto: está sendo consumido
+  OPEN
+  /// Acabou
+  FINISHED
+  CANCELED
+}
+
+enum StockLotMeasure {
+  /// Rolo: largura × comprimento (metro linear)
+  ROLL
+  /// Chapa: largura × altura
+  SHEET
+  /// Por quantidade
+  UNIT
+}
+
+/// O lote (ES-8 a ES-12): cada rolo ou chapa que entrou, com o fornecedor,
+/// o custo, a marca, a cor e as medidas; o saldo atual guarda a sobra (o
+/// rolo de 1,22 × 50 m que hoje está com 0,50 × 47 m).
+model StockLot {
+  id              String          @id @default(uuid())
+  companyId       String
+  stockItemId     String
+  /// Sequencial por empresa: L-nn
+  number          Int
+  supplierName    String          @default("")
+  brand           String          @default("")
+  color           String          @default("")
+  measure         StockLotMeasure @default(UNIT)
+  /// Centavos: o custo do lote inteiro
+  cost            Int             @default(0)
+  quantity        Float
+  width           Float?
+  length          Float?
+  currentQuantity Float
+  currentWidth    Float?
+  currentLength   Float?
+  status          StockLotStatus  @default(CLOSED)
+  openedAt        DateTime?
+  finishedAt      DateTime?
+  cancelReason    String?
+  /// De onde veio: o pedido, a nota, ou o lote que foi dividido
+  orderId         String?
+  invoiceId       String?
+  parentId        String?
+  createdByName   String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  company         Company         @relation(fields: [companyId], references: [id])
+  stockItem       StockItem       @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  events          StockLotEvent[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([stockItemId])
+  @@map("stock_lots")
+}
+
+/// O que aconteceu com o lote: entrada, abertura, baixa, divisão, fim.
+model StockLotEvent {
+  id       String   @id @default(uuid())
+  lotId    String
+  text     String
+  /// A baixa: quanto saiu (na unidade do material)
+  quantity Float?
+  byName   String
+  at       DateTime @default(now())
+  lot      StockLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+
+  @@index([lotId])
+  @@map("stock_lot_events")
 }

@@ -5,12 +5,23 @@ import { PlanControlModule } from '../plan/plan-control.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { InvoiceEntryController, StockController } from './stock.controller';
 import { StockService } from './stock.service';
+import {
+  PurchasingController,
+  StockLotController,
+} from './purchasing/purchasing.controller';
+import { PurchasingService } from './purchasing/purchasing.service';
+import { StockLotService } from './purchasing/stock-lot.service';
 
-/** Estoque e entrada de nota (Fase 7.5, FULL). */
+/** Estoque, entrada de nota, compras e lotes (Fase 7.5 e ES-8 a ES-17, FULL). */
 @Module({
   imports: [AuthModule, PrismaModule, PlanControlModule, PricingModule],
-  controllers: [StockController, InvoiceEntryController],
-  providers: [StockService],
+  controllers: [
+    StockController,
+    InvoiceEntryController,
+    PurchasingController,
+    StockLotController,
+  ],
+  providers: [StockService, PurchasingService, StockLotService],
   exports: [StockService],
 })
 export class StockModule {}

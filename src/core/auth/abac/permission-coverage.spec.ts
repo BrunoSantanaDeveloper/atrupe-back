@@ -97,6 +97,8 @@ const CONTROLLERS_SEM_PERMISSAO: Record<string, string> = {
   AppController: 'saúde da API',
   AccountResetController: 'superadmin (zerar dados da conta)',
   AcademyController: 'conteúdo de ajuda; a escrita é do superadmin',
+  CompanyStorageController:
+    'só o administrador da empresa (o armazenamento e a limpeza, que não tem volta)',
   ActivityMonitorController: 'superadmin; o logout é da própria sessão',
   AiController:
     'assistente: conversas da própria sessão, com limite por usuário',
