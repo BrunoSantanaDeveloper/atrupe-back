@@ -41,10 +41,16 @@ export class CompanyStorageController {
 
   @Get('cleanup')
   @ApiOperation({ summary: 'A prévia da limpeza, sem apagar' })
-  preview(@Req() req, @Query('percent') percent?: string) {
+  async preview(@Req() req, @Query('percent') percent?: string) {
     this.cleanup.assertAdmin(req.user);
     const value = Math.min(Math.max(Math.round(Number(percent) || 50), 1), 100);
-    return this.cleanup.preview(req.user.companyId, value);
+    const companyId = req.user.companyId;
+    const [preview, history, auto] = await Promise.all([
+      this.cleanup.preview(companyId, value),
+      this.cleanup.history(companyId),
+      this.cleanup.auto(companyId),
+    ]);
+    return { ...preview, history, auto };
   }
 
   @Post('cleanup')
