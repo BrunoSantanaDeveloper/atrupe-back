@@ -16,6 +16,8 @@ import { ProductionFilesService } from './storage/production-files.service';
 import { ProductionCleanupService } from './storage/production-cleanup.service';
 import { OrderFilesService } from './storage/order-files.service';
 import { OrderFilesController } from './order-files.controller';
+import { CompanyStorageController } from './company-storage.controller';
+import { CompanyStorageService } from './storage/company-storage.service';
 import { ProductionStorageService } from './storage/production-storage.service';
 
 /**
@@ -31,6 +33,7 @@ import { ProductionStorageService } from './storage/production-storage.service';
     ProductionController,
     ProductionTaskController,
     OrderFilesController,
+    CompanyStorageController,
   ],
   providers: [
     ProductionAccessService,
@@ -44,6 +47,7 @@ import { ProductionStorageService } from './storage/production-storage.service';
     ProductionFilesService,
     ProductionCleanupService,
     OrderFilesService,
+    CompanyStorageService,
   ],
   exports: [ProductionProjectService],
 })
