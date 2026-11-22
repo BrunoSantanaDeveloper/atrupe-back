@@ -309,11 +309,37 @@ export class ProductionViewService {
         return [type.id, manager?.afterDoneMinutes ?? 0] as const;
       }),
     );
+    // O expediente do gerenciador da etapa atual (GP-48 item 19)
+    const managerOfStep = new Map(
+      types.flatMap((type) =>
+        type.steps.map((step) => {
+          const manager = managers.find((item) => item.id === step.managerId);
+          return [step.id, manager] as const;
+        }),
+      ),
+    );
+    const firstStep = new Map(
+      types.map((type) => [type.id, type.steps[0]?.id ?? null] as const),
+    );
     const chain = new ProductionChain(
-      rows.map((row) => ({
-        ...this.chainTask(row),
-        afterDoneMinutes: afterDoneOf.get(row.taskTypeId) ?? 0,
-      })),
+      rows.map((row) => {
+        const manager = managerOfStep.get(
+          row.currentStepId ?? firstStep.get(row.taskTypeId) ?? '',
+        );
+        return {
+          ...this.chainTask(row),
+          afterDoneMinutes: afterDoneOf.get(row.taskTypeId) ?? 0,
+          hours:
+            manager?.workStart && manager.workEnd
+              ? {
+                  startTime: manager.workStart,
+                  endTime: manager.workEnd,
+                  breakStart: manager.breakStart,
+                  breakEnd: manager.breakEnd,
+                }
+              : null,
+        };
+      }),
       new Map(
         projects.map((project) => [
           project.id,
@@ -351,14 +377,15 @@ export class ProductionViewService {
       estimatedMinutes: row.estimatedMinutes,
       dependsOn: row.dependsOn,
       released: !!row.releasedNext,
-      schedule:
-        row.scheduleDate && row.scheduleStart && row.scheduleMinutes
-          ? {
-              date: dayKey(row.scheduleDate)!,
-              start: row.scheduleStart,
-              minutes: row.scheduleMinutes,
-            }
-          : null,
+      // Só o dia (GP-49): sem a hora, com o tempo da tarefa
+      schedule: row.scheduleDate
+        ? {
+            date: dayKey(row.scheduleDate)!,
+            start: row.scheduleStart || null,
+            minutes:
+              row.scheduleMinutes || Math.max(row.estimatedMinutes ?? 0, 0),
+          }
+        : null,
       entries: row.timeEntries,
     };
   }

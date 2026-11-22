@@ -447,16 +447,24 @@ export class ProductionTaskService {
     if (dto.schedule === undefined) bad('Informe a agenda');
     const value = dto.schedule;
     if (value) {
-      const minutes = Math.round(value.minutes);
-      if (!(minutes > 0)) bad('Informe os minutos');
+      const start = value.start || null;
+      // Só o dia (GP-49): a hora e os minutos ficam para depois
+      const minutes =
+        value.minutes === null || value.minutes === undefined
+          ? null
+          : Math.round(value.minutes);
+      if (start && !(minutes && minutes > 0)) bad('Informe os minutos');
+      if (minutes !== null && !(minutes > 0)) bad('Informe os minutos');
       if (Number.isNaN(dateColumn(value.date).getTime())) bad('Data inválida');
-      const message = `Agendou para ${brDate(value.date)} às ${value.start}`;
+      const message = start
+        ? `Agendou para ${brDate(value.date)} às ${start}`
+        : `Agendou para ${brDate(value.date)}, sem horário`;
       await this.prisma.$transaction(async (tx) => {
         await tx.productionTask.update({
           where: { id },
           data: {
             scheduleDate: dateColumn(value.date),
-            scheduleStart: value.start,
+            scheduleStart: start,
             scheduleMinutes: minutes,
           },
         });

@@ -68,13 +68,17 @@ export class TaskScheduleValueDto {
   @Matches(DAY, { message: 'Data inválida' })
   date: string;
 
-  @ApiProperty({ example: '08:30' })
+  /** Sem a hora, a tarefa fica agendada só no dia (GP-49) */
+  @ApiPropertyOptional({ example: '08:30', nullable: true })
+  @IsOptional()
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Horário inválido' })
-  start: string;
+  start?: string | null;
 
-  @ApiProperty({ example: 60 })
+  /** Sem a hora, opcional: vale o tempo previsto da tarefa */
+  @ApiPropertyOptional({ example: 60 })
+  @IsOptional()
   @IsNumber({}, { message: 'Informe os minutos' })
-  minutes: number;
+  minutes?: number | null;
 }
 
 export class TaskScheduleDto {

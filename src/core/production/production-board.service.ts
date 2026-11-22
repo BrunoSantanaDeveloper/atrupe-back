@@ -184,8 +184,9 @@ export class ProductionBoardService {
           task.schedule.date <= to,
       )
       .sort((a, b) =>
-        `${a.task.schedule!.date}${a.task.schedule!.start}`.localeCompare(
-          `${b.task.schedule!.date}${b.task.schedule!.start}`,
+        // Só o dia vai depois das que têm hora
+        `${a.task.schedule!.date}${a.task.schedule!.start ?? '99:99'}`.localeCompare(
+          `${b.task.schedule!.date}${b.task.schedule!.start ?? '99:99'}`,
         ),
       );
     const unscheduled = visible.filter(

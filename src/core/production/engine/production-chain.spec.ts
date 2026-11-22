@@ -181,6 +181,47 @@ describe('ProductionChain', () => {
       expect(chain.workMinutesUntil('2026-10-09', '22:00')).toBe(1680);
     });
 
+    it('o expediente do gerenciador e o intervalo contam no prazo (GP-49)', () => {
+      const hours = {
+        startTime: '08:00',
+        endTime: '12:00',
+        breakStart: null,
+        breakEnd: null,
+      };
+      const chain = chainOf([task({ id: 'a', estimatedMinutes: 600, hours })]);
+      // Hoje 10:00–12:00 (120) + 08/10 (240) + 09/10 (240)
+      expect(chain.workMinutesUntil('2026-10-09', null, hours)).toBe(600);
+      expect(chain.alert(chain.task('a')!)).toBeNull();
+      // O almoço de 12:00 às 13:00 sai de cada dia: 1680 − 3 × 60
+      expect(
+        chain.workMinutesUntil('2026-10-09', null, {
+          startTime: '08:00',
+          endTime: '18:00',
+          breakStart: '12:00',
+          breakEnd: '13:00',
+        }),
+      ).toBe(1500);
+      const short = chainOf([task({ id: 'a', estimatedMinutes: 700, hours })]);
+      expect(short.alert(short.task('a')!)?.kind).toBe('DELIVERY_RISK');
+    });
+
+    it('agendada só no dia: atrasa depois do fim do expediente daquele dia', () => {
+      const ontem = chainOf([
+        task({
+          id: 'a',
+          schedule: { date: '2026-10-06', start: null, minutes: 60 },
+        }),
+      ]);
+      expect(ontem.overdue(ontem.task('a')!)).toBe(true);
+      const hoje = chainOf([
+        task({
+          id: 'a',
+          schedule: { date: '2026-10-07', start: null, minutes: 60 },
+        }),
+      ]);
+      expect(hoje.overdue(hoje.task('a')!)).toBe(false);
+    });
+
     it('o apontado desconta do que falta, e o alerta some quando cabe', () => {
       const chain = chainOf([
         task({
