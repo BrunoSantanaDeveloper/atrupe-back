@@ -183,6 +183,14 @@ export class ProductionConfigController {
     return this.config.removeStep(req.user.companyId, id, stepId);
   }
 
+  /** Os feriados e os dias de trabalho, para a Agenda de entrega (GP-49) */
+  @Get('calendar')
+  @HasPermission('view', 'production:delivery_schedule')
+  @ApiOperation({ summary: 'O expediente da empresa, só leitura' })
+  getCalendar(@Req() req) {
+    return this.config.calendar(req.user.companyId);
+  }
+
   @Put('calendar')
   @HasPermission('edit', PRODUCTION)
   @ApiOperation({ summary: 'O expediente: dias, horário e feriados (§4.8)' })
