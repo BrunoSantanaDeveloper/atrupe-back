@@ -134,6 +134,13 @@ export const RESET_STEPS: ResetStep[] = [
   { model: 'OrderHistory', group: 'documents', where: byOrder },
   // O vínculo entre nota e O.S. sai com a O.S.; a nota, se ficar, segue.
   { model: 'NfeOrder', group: 'documents', where: byOrder },
+  // Os arquivos da O.S. (GP-49) saem com ela
+  {
+    model: 'OrderFile',
+    label: 'Arquivos das O.S.',
+    group: 'documents',
+    where: (companyId) => ({ companyId }),
+  },
   {
     model: 'Order',
     label: 'Ordens de serviço',
@@ -260,7 +267,46 @@ export const RESET_STEPS: ResetStep[] = [
     where: (companyId) => ({ companyId }),
   },
 
-  // Estoque: os saldos, os movimentos e as entradas de nota.
+  // Estoque: as compras e os lotes (ES-8 a ES-17), os saldos, os
+  // movimentos e as entradas de nota. O lote aponta para o saldo: sai antes.
+  {
+    model: 'StockLotEvent',
+    group: 'stock',
+    where: (companyId) => ({ lot: { companyId } }),
+  },
+  {
+    model: 'StockLot',
+    label: 'Lotes',
+    group: 'stock',
+    where: (companyId) => ({ companyId }),
+  },
+  {
+    model: 'PurchaseEvent',
+    group: 'stock',
+    where: (companyId) => ({ companyId }),
+  },
+  {
+    model: 'PurchaseQuote',
+    group: 'stock',
+    where: (companyId) => ({ companyId }),
+  },
+  {
+    model: 'PurchaseOrderItem',
+    group: 'stock',
+    where: (companyId) => ({ order: { companyId } }),
+  },
+  {
+    model: 'PurchaseOrder',
+    label: 'Pedidos de compra',
+    group: 'stock',
+    where: (companyId) => ({ companyId }),
+  },
+  {
+    model: 'PurchaseRequest',
+    label: 'Solicitações de material',
+    group: 'stock',
+    where: (companyId) => ({ companyId }),
+  },
   {
     model: 'StockMovement',
     label: 'Movimentos de estoque',
@@ -559,6 +605,17 @@ export const RESET_STEPS: ResetStep[] = [
   {
     model: 'ProductionVehicle',
     label: 'Frota',
+    group: 'settings',
+    where: (companyId) => ({ companyId }),
+  },
+  // A limpeza do espaço dos arquivos (GP-49): o histórico e o automático
+  {
+    model: 'ProductionStorageCleanup',
+    group: 'settings',
+    where: (companyId) => ({ companyId }),
+  },
+  {
+    model: 'ProductionStorageAuto',
     group: 'settings',
     where: (companyId) => ({ companyId }),
   },

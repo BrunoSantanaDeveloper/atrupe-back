@@ -90,6 +90,10 @@ describe('ComplementsService', () => {
     user: { findUniqueOrThrow: jest.fn() },
     company: { findUnique: jest.fn() },
     productionAttachmentVersion: { aggregate: jest.fn() },
+    // Os arquivos da O.S. contam no espaço (GP-49)
+    orderFile: {
+      aggregate: jest.fn().mockResolvedValue({ _sum: { size: 0 } }),
+    },
     planLimit: { findFirst: jest.fn() },
   };
   const gateway = {
