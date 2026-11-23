@@ -196,6 +196,14 @@ export class ProductAssemblyController {
     return this.service.addBlock(await this.ctx(req, id, dto.variationId), dto);
   }
 
+  // PRO: o fluxo de ícones do produto vira a composição (etapas vazias)
+  @Post(':id/assembly/from-flow')
+  @HasPermission('edit', COMPOSITION_KEY)
+  @ApiOperation({ summary: 'Cria as etapas pela sequência de ícones' })
+  async fromFlow(@Req() req, @Param('id', ProductId) id: string) {
+    return this.service.fromFlow(await this.ctx(req, id, null));
+  }
+
   @Patch(':id/assembly/block/:blockId')
   @HasPermission('edit', COMPOSITION_KEY)
   @ApiOperation({ summary: 'Ajusta a etapa: nome, tarefa, regras, ligações' })

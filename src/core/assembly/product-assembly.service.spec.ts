@@ -221,6 +221,42 @@ describe('ProductAssemblyService', () => {
     );
   });
 
+  it('o fluxo do produto cria as etapas vazias, na ordem dos ícones (PRO)', async () => {
+    prisma.product.findFirst
+      .mockResolvedValueOnce(product())
+      .mockResolvedValueOnce({
+        productionStages: [
+          { id: 's-2', isActive: true },
+          { id: 's-1', isActive: true },
+          { id: 's-x', isActive: false },
+        ],
+      });
+    prisma.companySector.findMany = jest.fn().mockResolvedValue([
+      { id: 's-1', name: 'Impressão' },
+      { id: 's-2', name: 'Criação' },
+    ]);
+
+    expect(await service.fromFlow(ctx)).toEqual({ created: 2 });
+    const created = tx.assemblyBlock.create.mock.calls.map(([arg]) => [
+      arg.data.name,
+      arg.data.position,
+      arg.data.type,
+    ]);
+    expect(created).toEqual([
+      ['Criação', 0, 'OWN'],
+      ['Impressão', 1, 'OWN'],
+    ]);
+  });
+
+  it('o fluxo não mexe na composição que já tem etapas', async () => {
+    prisma.productAssembly.findUnique.mockResolvedValue(
+      assembly([processBlock()]),
+    );
+    await expect(service.fromFlow(ctx)).rejects.toThrow(
+      'A composição já tem etapas',
+    );
+  });
+
   it('etapa própria nasce com as regras pela posição e o tipo de tarefa do setor', async () => {
     prisma.productAssembly.findUnique.mockResolvedValue(
       assembly([processBlock()]),

@@ -650,6 +650,63 @@ export class ProductAssemblyService {
     return { id: base.id };
   }
 
+  /**
+   * PRO: a sequência de ícones do produto (o fluxo, desenhado no LITE) cria
+   * a composição, mesmo vazia (área 9; Maicol, 23/11/2026): uma etapa própria
+   * por setor ativo do fluxo, na ordem dos ícones, com o nome do setor. A
+   * empresa preenche nelas os processos produtivos. Só na composição sem
+   * etapas: a que já tem etapas fica como está.
+   */
+  async fromFlow(ctx: Ctx) {
+    const { assembly } = await this.writable(ctx);
+    if (assembly.blocks.length) bad('A composição já tem etapas');
+    const product = await this.prisma.product.findFirst({
+      where: { id: ctx.productId, companyId: ctx.companyId },
+      select: { productionStages: true },
+    });
+    const raw = product?.productionStages;
+    const stages = (
+      (typeof raw === 'string' ? JSON.parse(raw) : raw) as
+        | { id: string; isActive?: boolean }[]
+        | null
+    )
+      ?.filter((stage) => stage?.isActive !== false)
+      .map((stage) => stage.id);
+    if (!stages?.length) bad('O produto não tem fluxo de produção');
+    const sectors = await this.prisma.companySector.findMany({
+      where: {
+        id: { in: stages! },
+        companyId: ctx.companyId,
+        isActive: true,
+        isProductionStage: true,
+      },
+      select: { id: true, name: true },
+    });
+    const ordered = [...new Set(stages!)]
+      .map((id) => sectors.find((sector) => sector.id === id))
+      .filter((sector): sector is { id: string; name: string } => !!sector);
+    if (!ordered.length) bad('O fluxo não tem setor de produção ativo');
+    await this.prisma.$transaction(async (tx) => {
+      for (const [position, sector] of ordered.entries()) {
+        await tx.assemblyBlock.create({
+          data: {
+            id: randomUUID(),
+            assemblyId: assembly.id,
+            type: 'OWN',
+            name: sector.name,
+            sectorId: sector.id,
+            taskType: sector.name,
+            dependsOn: [],
+            baseBlockId: null,
+            position,
+            rules: { ...BASE_RULES },
+          },
+        });
+      }
+    });
+    return { created: ordered.length };
+  }
+
   async updateBlock(ctx: Ctx, blockId: string, dto: UpdateBlockDto) {
     const { assembly } = await this.writable(ctx);
     const block = this.findBlock(assembly, blockId);
