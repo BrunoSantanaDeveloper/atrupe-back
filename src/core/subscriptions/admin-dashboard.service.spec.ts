@@ -661,6 +661,18 @@ describe('AdminDashboardService', () => {
       });
     });
 
+    it('a busca acha a conta pelo e-mail de um usuário dela ou do cadastro de cobrança', async () => {
+      await listWith([], { search: 'gabriel@x.com' });
+
+      const email = { contains: 'gabriel@x.com', mode: 'insensitive' };
+      expect(whereOfList().AND[1].OR).toEqual(
+        expect.arrayContaining([
+          { employees: { some: { user: { email } } } },
+          { customer: { some: { email } } },
+        ]),
+      );
+    });
+
     it('a exportação devolve todas as contas do filtro, sem paginação', async () => {
       mockPrismaService.company.findMany.mockResolvedValue([company()]);
       mockAccountQueries();
@@ -922,6 +934,32 @@ describe('AdminDashboardService', () => {
 
       expect(result.total).toBe(0);
       expect(result.data).toHaveLength(0);
+    });
+
+    it('a busca acha o teste pelo e-mail de um usuário dele ou do cadastro de cobrança', async () => {
+      // O teste vencido da Comunicca tinha o e-mail da empresa diferente do
+      // e-mail do titular, que estava preso no cadastro.
+      mockPrismaService.subscription.findMany.mockResolvedValue([]);
+      mockPrismaService.company.findMany.mockResolvedValue([]);
+
+      await service.listTrialCompanies(
+        1,
+        10,
+        'inativas',
+        'name',
+        'gabriel@x.com',
+      );
+
+      const email = { contains: 'gabriel@x.com', mode: 'insensitive' };
+      const [{ where }] = mockPrismaService.subscription.findMany.mock.calls[0];
+      expect(where.OR).toContainEqual({
+        Company: {
+          OR: [
+            { employees: { some: { user: { email } } } },
+            { customer: { some: { email } } },
+          ],
+        },
+      });
     });
 
     it('should filter by status "ativas" excluding expired trials', async () => {

@@ -86,6 +86,22 @@ const USER_IN_USE_WHERE = {
   user: { isActive: true },
 } satisfies Prisma.EmployeeWhereInput;
 
+/**
+ * A busca das telas de contas também acha a empresa pelo e-mail de quem a
+ * usa: o de qualquer usuário dela e o do cadastro de cobrança. São esses dois
+ * que travam um e-mail ("E-mail já cadastrado"), e nenhum é o e-mail da
+ * empresa, o único que a busca olhava. Um teste antigo vencido prendia o
+ * e-mail de quem depois ia ser usuário de outra conta, e o superadmin não
+ * achava a conta para excluir.
+ */
+function companyByPeopleEmail(search: string): Prisma.CompanyWhereInput[] {
+  const email = { contains: search, mode: 'insensitive' as const };
+  return [
+    { employees: { some: { user: { email } } } },
+    { customer: { some: { email } } },
+  ];
+}
+
 /** Os eventos do histórico que mudam o que a conta paga. */
 const BILLING_CHANGE_ACTIONS = [
   'CONTRACTED',
@@ -744,6 +760,7 @@ export class AdminDashboardService {
           ...(digits.length >= 3 && digits !== search
             ? [{ cnpj: { contains: digits } }]
             : []),
+          ...companyByPeopleEmail(search),
         ],
       });
     }
@@ -1059,6 +1076,7 @@ export class AdminDashboardService {
             },
           },
         },
+        { Company: { OR: companyByPeopleEmail(search) } },
       ];
     }
 
