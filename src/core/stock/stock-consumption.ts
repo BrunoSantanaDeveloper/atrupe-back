@@ -62,6 +62,103 @@ const addLines = (
   }
 };
 
+export type SaleItem = {
+  origin: string | null;
+  quantity: number;
+  materialId: string | null;
+  materialVariationId: string | null;
+  snapshot: { data: unknown } | null;
+  lines: { resolved: unknown }[];
+};
+
+/**
+ * Os materiais da venda por material|variação: o material de venda direta,
+ * as linhas do retrato de cada item e as das linhas acrescentadas. A mesma
+ * conta serve à baixa da venda (ES-7) e à reserva (FULL).
+ */
+export function saleMaterials(items: SaleItem[]) {
+  const total = new Map<
+    string,
+    { materialId: string; variationId: string | null; quantity: number }
+  >();
+  for (const item of items) {
+    if (item.origin === 'MATERIAL' && item.materialId) {
+      const key = stockKey(item.materialId, item.materialVariationId);
+      const row = total.get(key) ?? {
+        materialId: item.materialId,
+        variationId: item.materialVariationId,
+        quantity: 0,
+      };
+      row.quantity += item.quantity;
+      total.set(key, row);
+    }
+    if (item.snapshot?.data) addLines(total, item.snapshot.data);
+    for (const line of item.lines) addLines(total, line.resolved);
+  }
+  return total;
+}
+
+/**
+ * A reserva (item 23; Maicol, 23/11/2026, FULL): o material das vendas
+ * aprovadas cuja O.S. ainda está em andamento e que ainda não tiveram a
+ * baixa da venda. O material que o impressor já baixou no rolo (ES-16) sai
+ * da reserva daquela venda. A baixa real continua na produção.
+ */
+export async function reservedByKey(prisma: PrismaClient, companyId: string) {
+  const sales = await prisma.quotation.findMany({
+    where: {
+      companyId,
+      status: 'APPROVED',
+      order: {
+        is: { status: { in: ['PENDING', 'IN_PRODUCTION', 'DELIVERY'] } },
+      },
+    },
+    select: {
+      id: true,
+      quotationProduct: {
+        select: {
+          origin: true,
+          quantity: true,
+          materialId: true,
+          materialVariationId: true,
+          snapshot: { select: { data: true } },
+          lines: { select: { resolved: true } },
+        },
+      },
+    },
+  });
+  if (!sales.length) return new Map<string, number>();
+  const ids = sales.map((sale) => sale.id);
+  const moves = await prisma.stockMovement.findMany({
+    where: { companyId, quotationId: { in: ids } },
+    select: { quotationId: true, lotId: true, kind: true, replacesKey: true },
+  });
+  const consumed = new Set(
+    moves
+      .filter((move) => move.kind === 'CONSUMPTION' && !move.lotId)
+      .map((move) => move.quotationId),
+  );
+  const fromRolls = new Map<string, Set<string>>();
+  for (const move of moves) {
+    if (!move.lotId || !move.replacesKey || !move.quotationId) continue;
+    const keys = fromRolls.get(move.quotationId) ?? new Set<string>();
+    keys.add(move.replacesKey);
+    fromRolls.set(move.quotationId, keys);
+  }
+  const reserved = new Map<string, number>();
+  for (const sale of sales) {
+    if (consumed.has(sale.id)) continue;
+    const rolls = fromRolls.get(sale.id);
+    for (const [key, row] of saleMaterials(
+      sale.quotationProduct as SaleItem[],
+    )) {
+      if (rolls?.has(key)) continue;
+      reserved.set(key, (reserved.get(key) ?? 0) + row.quantity);
+    }
+  }
+  return reserved;
+}
+
 /**
  * A baixa por consumo da venda (ES-7): nasce da produção. Quando o projeto
  * do gerenciador conclui ou a entrega da O.S. é concluída (o que vier
@@ -100,24 +197,7 @@ export async function consumeSale(
   const uses = await prisma.stockItem.count({ where: { companyId } });
   if (!uses) return { consumed: 0 };
 
-  const total = new Map<
-    string,
-    { materialId: string; variationId: string | null; quantity: number }
-  >();
-  for (const item of quotation.quotationProduct) {
-    if (item.origin === 'MATERIAL' && item.materialId) {
-      const key = stockKey(item.materialId, item.materialVariationId);
-      const row = total.get(key) ?? {
-        materialId: item.materialId,
-        variationId: item.materialVariationId,
-        quantity: 0,
-      };
-      row.quantity += item.quantity;
-      total.set(key, row);
-    }
-    if (item.snapshot?.data) addLines(total, item.snapshot.data);
-    for (const line of item.lines) addLines(total, line.resolved);
-  }
+  const total = saleMaterials(quotation.quotationProduct);
   if (!total.size) return { consumed: 0 };
 
   // Só o material do cadastro da empresa

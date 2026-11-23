@@ -9,6 +9,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { PricingParametersService } from '../pricing/pricing-parameters.service';
 import { UNIT_SYMBOL, normalizeText } from '../material/material-text';
 import { CashActor } from '../financial/cash-control/cash-ledger';
+import { reservedByKey } from './stock-consumption';
 import { NfeXmlError, parseNfeXml } from './nfe-xml';
 import { enterStock } from './stock-entry';
 import {
@@ -67,6 +68,8 @@ type InvoiceRow = Prisma.InboundInvoiceGetPayload<{
  * variação com o custo médio, os movimentos com a origem e a nota de
  * entrada, da conciliação com o de-para à entrada no estoque.
  */
+const round3 = (value: number) => Math.round(value * 1000) / 1000;
+
 @Injectable()
 export class StockService {
   constructor(
@@ -106,6 +109,8 @@ export class StockService {
           : true,
     );
     const page = paged(filtered, filter.page, filter.limit);
+    // A reserva das vendas aprovadas em andamento (item 23, FULL)
+    const reserved = await reservedByKey(this.prisma as never, companyId);
     return {
       ...page,
       data: page.data.map((row) => ({
@@ -116,6 +121,9 @@ export class StockService {
         variation: variationLabel(row.variation),
         unit: UNIT_SYMBOL[row.material.unit],
         quantity: row.quantity,
+        // O disponível é o saldo menos o reservado para as vendas
+        reserved: round3(reserved.get(row.key) ?? 0),
+        available: round3(row.quantity - (reserved.get(row.key) ?? 0)),
         minimum: row.minimum,
         // Custo só com a permissão de valores
         ...(values
