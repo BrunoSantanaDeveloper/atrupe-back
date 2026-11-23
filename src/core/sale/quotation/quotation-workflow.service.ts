@@ -1581,7 +1581,7 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
             id: { in: materialIds },
             sector: { isProductionStage: true, isActive: true },
           },
-          select: { sectorId: true },
+          select: { id: true, sectorId: true },
         })
       : [];
 
@@ -1641,6 +1641,45 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
       scheduleId,
     }));
 
+    // As etapas de cada item (área 9 §4.7; Maicol, 23/11/2026): os setores do
+    // fluxo do item, na ordem em que o fluxo foi criado. A etapa do pedido do
+    // mesmo setor passa a ser o resumo delas
+    const orderSectors = new Set(uniqueStages.map((stage) => stage.id));
+    const productSectors = new Map(
+      products.map((product) => {
+        const stages: ProductionStageJson[] =
+          typeof product.productionStages === 'string'
+            ? JSON.parse(product.productionStages)
+            : (product.productionStages as unknown as ProductionStageJson[]);
+        return [
+          product.id,
+          (stages ?? [])
+            .filter((stage) => stage.isActive)
+            .map((stage) => stage.id),
+        ];
+      }),
+    );
+    const materialSector = new Map(
+      materialSectors.map((material) => [material.id, material.sectorId]),
+    );
+    const itemStages = quotation.quotationProduct.flatMap((item) => {
+      const sectors = withSnapshot.has(item.id)
+        ? (snapshotSectors.get(item.id) ?? [])
+        : item.productId
+          ? (productSectors.get(item.productId) ?? [])
+          : item.materialId && materialSector.get(item.materialId)
+            ? [materialSector.get(item.materialId) as string]
+            : [];
+      return [...new Set(sectors)]
+        .filter((sectorId) => orderSectors.has(sectorId))
+        .map((stageId, index) => ({
+          scheduleId,
+          quotationProductId: item.id,
+          stageId,
+          order: index + 1,
+        }));
+    });
+
     if (quotation.deliveryInfo?.deliveryType === 'CARRIER') {
       const systemStage = await this.prisma.companySector.findFirst({
         where: {
@@ -1690,6 +1729,9 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
       await this.prisma.productionStage.createMany({
         data: productionStages,
       });
+      if (itemStages.length) {
+        await this.prisma.productionItemStage.createMany({ data: itemStages });
+      }
       this.logger.log('Etapas de produção criadas com sucesso!');
     }
   }

@@ -245,6 +245,7 @@ model CompanySector {
   Category                    Category[]
   employees                   Employee[]
   productionStage             ProductionStage[]
+  productionItemStages        ProductionItemStage[]
   product                     Product[]
   role                        Role[]
   productionManagers          ProductionManager[]
@@ -1589,6 +1590,8 @@ model QuotationProduct {
   variation            ProductVariation?      @relation(fields: [variationId], references: [id], onDelete: SetNull)
   /// O retrato da composição na venda (ORC-10), em tabela própria
   snapshot             QuotationItemSnapshot?
+  /// As etapas do item na Agenda de entrega (área 9 §4.7, LITE)
+  productionItemStages ProductionItemStage[]
 
   @@map("quotation_products")
 }
@@ -2366,6 +2369,7 @@ model DeliverySchedule {
   order              Order?                 @relation(fields: [orderId], references: [id])
   quotation          Quotation?             @relation(fields: [quotationId], references: [id])
   productionStages   ProductionStage[]
+  itemStages         ProductionItemStage[]
 
   @@map("delivery_schedules")
 }
@@ -2384,6 +2388,30 @@ model ProductionStage {
   stage      CompanySector?        @relation(fields: [stageId], references: [id])
 
   @@map("production_stages")
+}
+
+/// A etapa de um item do pedido na Agenda de entrega (área 9 §4.7; Maicol,
+/// 23/11/2026). Nasce na aprovação com os setores do fluxo do item, na ordem
+/// dele. A etapa do pedido (ProductionStage) do mesmo setor passa a ser o
+/// resumo das etapas dos itens. Os estados são os da GP-28.
+model ProductionItemStage {
+  id                 String                @id @default(uuid())
+  scheduleId         String
+  quotationProductId String
+  stageId            String
+  order              Int                   @default(0)
+  status             ProductionStageStatus @default(NOT_STARTED)
+  prevStatus         String?
+  notes              String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime?             @updatedAt
+  schedule           DeliverySchedule      @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  quotationProduct   QuotationProduct      @relation(fields: [quotationProductId], references: [id], onDelete: Cascade)
+  stage              CompanySector         @relation(fields: [stageId], references: [id])
+
+  @@index([scheduleId])
+  @@index([quotationProductId])
+  @@map("production_item_stages")
 }
 
 model Nature {

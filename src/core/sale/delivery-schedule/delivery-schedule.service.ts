@@ -40,7 +40,10 @@ const measureOf = (
   return `${total} un${size}`;
 };
 
-/** Os itens da ordem com as etapas de cada um, quando o gerenciador existe. */
+/**
+ * Os itens da ordem com as etapas de cada um: as tarefas, quando a venda segue
+ * o gerenciador; senão, as etapas por item da agenda (LITE, §4.7).
+ */
 const itemsOf = (
   products: {
     id: string;
@@ -55,7 +58,9 @@ const itemsOf = (
     status: string;
     sectorId: string | null;
     sectorName: string;
+    notes?: string | null;
   }[],
+  editable = false,
 ) =>
   products.map((product) => ({
     id: product.id,
@@ -70,6 +75,10 @@ const itemsOf = (
         sectorId: task.sectorId,
         sector: task.sectorName,
         status: task.status,
+        notes: task.notes ?? null,
+        // A etapa do item que se troca na agenda (LITE): a rota é
+        // sale/production-stage/item/:id
+        editable,
       })),
   }));
 
@@ -203,6 +212,19 @@ export class DeliveryScheduleService {
               },
             },
             deliveryInfo: true,
+            // As etapas de cada item (LITE, §4.7): o segundo nível da agenda
+            // quando a venda não segue o gerenciador
+            itemStages: {
+              select: {
+                id: true,
+                quotationProductId: true,
+                status: true,
+                notes: true,
+                order: true,
+                stage: { select: { id: true, name: true } },
+              },
+              orderBy: { order: 'asc' },
+            },
             productionStages: {
               select: {
                 id: true,
@@ -336,7 +358,19 @@ export class DeliveryScheduleService {
             // não existem no dado: a lista vem vazia
             items: itemsOf(
               delivery.order?.quotation?.quotationProduct ?? [],
-              delivery.order?.quotation?.productionProject?.tasks ?? [],
+              delivery.order?.quotation?.productionProject
+                ? delivery.order.quotation.productionProject.tasks
+                : (delivery.itemStages ?? []).map((stage) => ({
+                    id: stage.id,
+                    quotationProductId: stage.quotationProductId,
+                    stageName: stage.stage.name,
+                    status: stage.status,
+                    sectorId: stage.stage.id,
+                    sectorName: stage.stage.name,
+                    notes: stage.notes,
+                  })),
+              // Sem gerenciador, a etapa do item se troca na agenda
+              !delivery.order?.quotation?.productionProject,
             ),
             createdAt: delivery.createdAt,
             updatedAt: delivery.updatedAt,

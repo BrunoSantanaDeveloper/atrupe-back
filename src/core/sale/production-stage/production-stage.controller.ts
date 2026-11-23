@@ -7,6 +7,7 @@ import {
   Get,
   Body,
   Patch,
+  Post,
   Param,
   Delete,
   UseGuards,
@@ -18,6 +19,7 @@ import { UpdateProductionStageDto } from './dto/update-production-stage.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
 import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
+import { UpdateItemStageDto, FinishAllStagesDto } from './dto/item-stage.dto';
 
 const RESOURCE = 'production-stage';
 
@@ -69,6 +71,36 @@ export class ProductionStageController {
     return this.productionStageService.update(
       id,
       updateProductionStageDto,
+      req.user.companyId,
+    );
+  }
+
+  @Patch('item/:id')
+  @HasPermission('edit', 'production:delivery_schedule')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('delivery_stage_status_change')
+  @ApiOperation({
+    summary: 'Trocar o estado da etapa de um item na agenda (§4.7)',
+  })
+  updateItem(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: UpdateItemStageDto,
+  ) {
+    return this.productionStageService.updateItem(id, dto, req.user.companyId);
+  }
+
+  // Concluir tudo de uma vez (gerencial, §4.7): chave própria no cargo
+  @Post('finish-all')
+  @HasPermission('edit', 'production:delivery_schedule_finish_all')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('delivery_stage_status_change')
+  @ApiOperation({
+    summary: 'Finalizar todas as etapas das agendas escolhidas',
+  })
+  finishAll(@Req() req, @Body() dto: FinishAllStagesDto) {
+    return this.productionStageService.finishAll(
+      dto.scheduleIds,
       req.user.companyId,
     );
   }

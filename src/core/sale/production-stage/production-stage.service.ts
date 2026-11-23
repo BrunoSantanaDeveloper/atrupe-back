@@ -7,12 +7,17 @@ import {
 
 import { Prisma } from '@prisma/client';
 import { UpdateProductionStageDto } from './dto/update-production-stage.dto';
+import { UpdateItemStageDto } from './dto/item-stage.dto';
+import { StageStatus, aggregateStatus, itemsToApply } from './stage-aggregate';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
 const STAGE_NOT_FOUND = 'Etapa de produção nao encontrada';
 const MANAGED_BY_PRODUCTION =
   'As etapas desta venda seguem o gerenciador de produção';
+const ITEM_STAGE_NOT_FOUND = 'Etapa do item não encontrada';
+// Entrega e Cliente Retira não são etapas de produção
+const DELIVERY_STAGES = ['Entrega', 'Cliente Retira'];
 
 /**
  * A agenda de entrega da empresa: a companyId da agenda é opcional, então
@@ -77,11 +82,139 @@ export class ProductionStageService {
         data: updateProductionStageDto,
       });
 
+      // Com etapas por item (§4.7), a ação no pedido vale para os itens
+      // abertos daquele setor, e o pedido volta a ser o resumo deles
+      const stageId =
+        updateProductionStageDto.stageId ?? productionStage.stageId;
+      if (updateProductionStageDto.status && stageId) {
+        await this.applyToItems(
+          productionStage.scheduleId,
+          stageId,
+          updateProductionStageDto.status as StageStatus,
+          updateProductionStageDto.notes,
+        );
+      }
+
       await this.updateStatusIfAllStagesAreDone(productionStage.scheduleId);
     } catch (error) {
       console.error(error);
       throw new BadRequestException('Error on update production stage');
     }
+  }
+
+  /**
+   * A troca de estado na etapa de um item (área 9 §4.7; Maicol, 23/11/2026).
+   * Vale só para aquele item; a etapa do pedido no mesmo setor é recalculada.
+   */
+  async updateItem(id: string, dto: UpdateItemStageDto, companyId: string) {
+    const item = await this.prisma.productionItemStage.findFirst({
+      where: { id, schedule: scheduleOfCompany(companyId) },
+    });
+    if (!item) throw new NotFoundException(ITEM_STAGE_NOT_FOUND);
+    await this.assertNotManaged(item.scheduleId);
+    await this.prisma.productionItemStage.update({
+      where: { id },
+      data: {
+        status: dto.status,
+        prevStatus: item.status,
+        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+      },
+    });
+    await this.syncOrderStage(item.scheduleId, item.stageId);
+    await this.updateStatusIfAllStagesAreDone(item.scheduleId);
+    return { ok: true };
+  }
+
+  /** Aplica a ação do pedido aos itens do setor e recalcula o pedido. */
+  private async applyToItems(
+    scheduleId: string,
+    stageId: string,
+    next: StageStatus,
+    notes?: string,
+  ) {
+    const items = await this.prisma.productionItemStage.findMany({
+      where: { scheduleId, stageId },
+      select: { id: true, status: true },
+    });
+    if (!items.length) return;
+    for (const item of itemsToApply(
+      items as { id: string; status: StageStatus }[],
+      next,
+    )) {
+      await this.prisma.productionItemStage.update({
+        where: { id: item.id },
+        data: {
+          status: next,
+          prevStatus: item.status,
+          ...(notes !== undefined ? { notes } : {}),
+        },
+      });
+    }
+    await this.syncOrderStage(scheduleId, stageId);
+  }
+
+  /** A etapa do pedido no setor = o resumo das etapas dos itens (§4.7). */
+  private async syncOrderStage(scheduleId: string, stageId: string) {
+    const items = await this.prisma.productionItemStage.findMany({
+      where: { scheduleId, stageId },
+      select: { status: true },
+    });
+    if (!items.length) return;
+    const status = aggregateStatus(
+      items.map((item) => item.status as StageStatus),
+    );
+    const order = await this.prisma.productionStage.findFirst({
+      where: { scheduleId, stageId },
+      select: { id: true, status: true },
+    });
+    if (!order || order.status === status) return;
+    await this.prisma.productionStage.update({
+      where: { id: order.id },
+      data: { status, prevStatus: order.status },
+    });
+  }
+
+  /**
+   * Concluir tudo de uma vez (gerencial; Maicol, 23/11/2026): finaliza as
+   * etapas de produção e as dos itens das agendas escolhidas, para quem não
+   * usou a agenda do jeito certo limpar e começar de novo. Entrega e Cliente
+   * Retira ficam como estão; a venda que segue o gerenciador fica de fora.
+   */
+  async finishAll(scheduleIds: string[], companyId: string) {
+    const schedules = await this.prisma.deliverySchedule.findMany({
+      where: { id: { in: scheduleIds }, ...scheduleOfCompany(companyId) },
+      select: { id: true },
+    });
+    let finished = 0;
+    let skipped = 0;
+    for (const { id } of schedules) {
+      if (await this.isManaged(id)) {
+        skipped++;
+        continue;
+      }
+      await this.prisma.productionItemStage.updateMany({
+        where: { scheduleId: id, status: { notIn: ['DONE', 'CANCELED'] } },
+        data: { status: 'DONE' },
+      });
+      await this.prisma.productionStage.updateMany({
+        where: {
+          scheduleId: id,
+          status: { notIn: ['DONE', 'CANCELED'] },
+          OR: [
+            { stageId: null },
+            { stage: { name: { notIn: DELIVERY_STAGES } } },
+          ],
+        },
+        data: { status: 'DONE' },
+      });
+      await this.updateStatusIfAllStagesAreDone(id);
+      finished++;
+    }
+    return {
+      finished,
+      skipped,
+      notFound: scheduleIds.length - schedules.length,
+    };
   }
 
   async updateStatusIfAllStagesAreDone(scheduleId: string) {
@@ -118,7 +251,7 @@ export class ProductionStageService {
 
     // Separar a etapa de entrega
     const productionStages = allStages.filter(
-      (stage) => !['Entrega', 'Cliente Retira'].includes(stage.stage.name),
+      (stage) => !DELIVERY_STAGES.includes(stage.stage?.name ?? ''),
     );
 
     // Verificar se todas as etapas estão "DONE" ou "CANCELED"
@@ -153,6 +286,12 @@ export class ProductionStageService {
    * tarefas do gerenciador, sem edição na agenda (D20, PO 14/10/2026).
    */
   private async assertNotManaged(scheduleId: string) {
+    if (await this.isManaged(scheduleId)) {
+      throw new ConflictException(MANAGED_BY_PRODUCTION);
+    }
+  }
+
+  private async isManaged(scheduleId: string) {
     const managed = await this.prisma.productionProject.count({
       where: {
         quotation: {
@@ -167,7 +306,7 @@ export class ProductionStageService {
         },
       },
     });
-    if (managed) throw new ConflictException(MANAGED_BY_PRODUCTION);
+    return managed > 0;
   }
 
   async remove(id: string, companyId: string) {

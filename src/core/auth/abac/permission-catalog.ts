@@ -43,7 +43,15 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
   cost: ['base', 'pricing'],
   // Corrigir e lançar tempo (GP-44) e a produtividade por pessoa (PCP-3),
   // chaves novas do gerenciador (Fase 6)
-  production: ['production', 'delivery_schedule', 'time_entry', 'productivity'],
+  // Concluir tudo de uma vez na Agenda de entrega (§4.7; Maicol, 23/11/2026):
+  // a ação gerencial de limpar a agenda
+  production: [
+    'production',
+    'delivery_schedule',
+    'delivery_schedule_finish_all',
+    'time_entry',
+    'productivity',
+  ],
   // Compras e lotes do FULL (ES-8 a ES-17): a solicitação é aberta a
   // quem tem a chave; cotação e pedido são de quem compra
   stock: ['stock', 'invoice_entry', 'purchase_request', 'purchase', 'lot'],

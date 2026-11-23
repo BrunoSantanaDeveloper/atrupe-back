@@ -122,6 +122,9 @@ const createMockPrismaService = () => ({
     createMany: jest.fn(),
     count: jest.fn(),
   },
+  productionItemStage: {
+    createMany: jest.fn(),
+  },
   companySector: {
     findFirst: jest.fn(),
   },
@@ -1285,7 +1288,7 @@ describe('QuotationWorkflowService', () => {
             }
           : {
               ...mockQuotation,
-              quotationProduct: [{ productId: 'product-1' }],
+              quotationProduct: [{ id: 'qp-1', productId: 'product-1' }],
               deliveryInfo: {
                 deliveryType: 'PICKUP',
                 deliverySchedule: state.deliverySchedule
@@ -1396,6 +1399,18 @@ describe('QuotationWorkflowService', () => {
             order: 2,
             prevStatus: null,
             scheduleId: 'schedule-1',
+          },
+        ],
+      });
+      // As etapas do item (§4.7): os setores ativos do fluxo do produto, sem
+      // a entrega, que é só do pedido
+      expect(prisma.productionItemStage.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            scheduleId: 'schedule-1',
+            quotationProductId: 'qp-1',
+            stageId: 'sector-1',
+            order: 1,
           },
         ],
       });

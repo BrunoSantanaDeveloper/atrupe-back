@@ -120,6 +120,12 @@ export const RESET_STEPS: ResetStep[] = [
     group: 'documents',
     where: (companyId) => ({ companyId }),
   },
+  // As etapas por item da agenda (§4.7) saem antes das do pedido
+  {
+    model: 'ProductionItemStage',
+    group: 'documents',
+    where: (companyId) => ({ schedule: { companyId } }),
+  },
   {
     model: 'ProductionStage',
     group: 'documents',
