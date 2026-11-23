@@ -195,6 +195,38 @@ export class ProductionTaskService {
   }
 
   /** Registra a baixa no histórico da tarefa e devolve a tarefa. */
+  /**
+   * A configuração produtiva usada na impressão (item 10 do GP-48): o
+   * impressor pode trocar no apontamento; o tempo estimado não muda (vem da
+   * venda). Usa as configurações do patrimônio (AssetSetup).
+   */
+  async useSetup(viewer: ProductionViewer, ids: string[], setupId: string) {
+    const setup = await this.prisma.assetSetup.findFirst({
+      where: { id: setupId, asset: { companyId: viewer.companyId } },
+      select: { id: true, name: true },
+    });
+    if (!setup) throw new NotFoundException('Configuração não encontrada');
+    for (const id of ids) {
+      const task = await this.prisma.productionTask.findUnique({
+        where: { id },
+        select: { machineSetupId: true, machineQuality: true },
+      });
+      if (!task || task.machineSetupId === setup.id) continue;
+      await this.prisma.$transaction(async (tx) => {
+        await tx.productionTask.update({
+          where: { id },
+          data: { machineSetupId: setup.id, machineQuality: setup.name },
+        });
+        await this.log(
+          tx,
+          viewer,
+          id,
+          `Imprimiu em ${setup.name}${task.machineQuality ? ` (vendido em ${task.machineQuality})` : ''}`,
+        );
+      });
+    }
+  }
+
   async lotUsed(viewer: ProductionViewer, id: string, text: string) {
     await this.prisma.$transaction((tx) => this.log(tx, viewer, id, text));
     return this.respond(viewer, id, text);

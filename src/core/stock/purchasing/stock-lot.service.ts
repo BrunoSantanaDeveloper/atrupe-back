@@ -580,6 +580,23 @@ export class StockLotService {
    * concluíram antes), o que ela tirou volta ao saldo. Material diferente do
    * vendido fica como troca (VS-1.1).
    */
+  /**
+   * A baixa conjunta (VS-2): o rolo aberto e se o comprimento cabe nele.
+   * Sem caber, avisa e pede o segundo rolo para o resto.
+   */
+  async batchRoll(companyId: string, lotId: string, length: number) {
+    const row = await this.row(companyId, lotId);
+    if (row.status !== 'OPEN')
+      bad(`Abra o lote L-${row.number} antes de dar baixa`);
+    if (!row.currentWidth) bad(`O lote L-${row.number} não é rolo com largura`);
+    if (row.currentLength !== null && length > row.currentLength + 1e-6) {
+      bad(
+        `Material insuficiente no lote L-${row.number}: restam ${m(row.currentLength)} m. Escolha o segundo rolo para o resto.`,
+      );
+    }
+    return { width: row.currentWidth as number, number: row.number };
+  }
+
   async useForTask(
     companyId: string,
     task: LotTask,

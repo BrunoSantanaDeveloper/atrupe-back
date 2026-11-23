@@ -7,6 +7,7 @@ import {
 } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsEnum,
@@ -515,6 +516,53 @@ export class TaskLotUseDto {
   @IsString()
   @MaxLength(80)
   replaces?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string;
+}
+
+/**
+ * A baixa conjunta (VS-2, FULL): os trabalhos marcados numa impressão só,
+ * o rolo e o comprimento usado; acabando o rolo, o segundo rolo e o resto.
+ */
+export class BatchLotUseDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @IsUUID('all', { each: true, message: 'Tarefa não encontrada' })
+  taskIds: string[];
+
+  @ApiProperty()
+  @IsUUID('all', { message: 'Lote não encontrado' })
+  lotId: string;
+
+  @ApiProperty({ description: 'Metros usados no rolo (com o refugo)' })
+  @IsNumber()
+  @Min(0.001)
+  length: number;
+
+  @ApiPropertyOptional({
+    description: 'O segundo rolo, quando o primeiro acaba',
+  })
+  @IsOptional()
+  @IsUUID('all', { message: 'Lote não encontrado' })
+  secondLotId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  secondLength?: number;
+
+  /** A configuração produtiva usada (ex.: 4 passes); o tempo não muda */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID('all', { message: 'Configuração não encontrada' })
+  setupId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

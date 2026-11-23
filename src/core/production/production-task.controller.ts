@@ -60,7 +60,11 @@ import {
 } from './production-task.service';
 import { ProductionCleanupService } from './storage/production-cleanup.service';
 import { StockLotService } from '../stock/purchasing/stock-lot.service';
-import { TaskLotUseDto } from '../stock/purchasing/purchasing.dto';
+import {
+  BatchLotUseDto,
+  TaskLotUseDto,
+} from '../stock/purchasing/purchasing.dto';
+import { areaOf, batchShares, batchWaste } from '../stock/purchasing/lot-batch';
 
 // O teto do multer fica acima dos 20 MB: o serviço recusa com a mensagem
 const attachmentUpload = FileInterceptor('file', {
@@ -182,6 +186,70 @@ export class ProductionTaskController {
     const viewer = await this.access.viewer(req.user);
     const task = await this.tasks.lotTask(viewer, id);
     return this.lots_.forTask(viewer.companyId, task);
+  }
+
+  /**
+   * A baixa conjunta (VS-2; Maicol, 23/11/2026, FULL): os trabalhos marcados
+   * numa impressão só. O comprimento usado (com o refugo) é dividido pela
+   * área de cada trabalho; acabando o rolo, o segundo rolo leva o resto. A
+   * configuração produtiva usada pode ser trocada (o tempo não muda).
+   */
+  @Post('lot-use-batch')
+  @HasPermission('view', PRODUCTION)
+  @RequiresFeature('purchasing')
+  @ApiOperation({ summary: 'Baixa conjunta de vários trabalhos num rolo' })
+  async lotUseBatch(@Req() req, @Body() dto: BatchLotUseDto) {
+    const viewer = await this.access.viewer(req.user);
+    const ids = [...new Set(dto.taskIds)];
+    const tasks = [];
+    for (const id of ids) tasks.push(await this.tasks.lotTask(viewer, id));
+    const items = tasks.map((task) => ({
+      id: task.id,
+      area: areaOf(task.consumption),
+    }));
+    const rolls = [{ lotId: dto.lotId, length: dto.length }];
+    if (dto.secondLotId && dto.secondLength) {
+      if (dto.secondLotId === dto.lotId) {
+        throw new BadRequestException('Escolha outro rolo para o resto');
+      }
+      rolls.push({ lotId: dto.secondLotId, length: dto.secondLength });
+    }
+    // Confere os rolos antes de dar qualquer baixa
+    let usedArea = 0;
+    for (const roll of rolls) {
+      const { width } = await this.lots_.batchRoll(
+        viewer.companyId,
+        roll.lotId,
+        roll.length,
+      );
+      usedArea += width * roll.length;
+    }
+    if (dto.setupId) await this.tasks.useSetup(viewer, ids, dto.setupId);
+    const waste = batchWaste(items, usedArea);
+    const note = [
+      `Impressão conjunta de ${tasks.length} trabalhos`,
+      waste ? `refugo ${waste.percent}%` : null,
+      dto.note?.trim() || null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    for (const roll of rolls) {
+      for (const share of batchShares(items, roll.length)) {
+        if (!(share.length > 0)) continue;
+        const task = tasks.find((item) => item.id === share.id)!;
+        const { text } = await this.lots_.useForTask(
+          viewer.companyId,
+          task,
+          { lotId: roll.lotId, length: share.length, note },
+          { id: viewer.userId, name: viewer.name },
+        );
+        await this.tasks.lotUsed(viewer, task.id, text);
+      }
+    }
+    return {
+      message: `Baixa conjunta de ${tasks.length} trabalhos${waste ? `: ${waste.printed} m² impressos, ${waste.used} m² gastos, refugo ${waste.percent}%` : ''}`,
+      waste,
+    };
   }
 
   /**
