@@ -100,6 +100,8 @@ export type PlannedTask = {
   consumption: {
     kind: string;
     resource: string;
+    /** `material:<id>[:<variação>]`: a baixa no lote sabe o que foi vendido */
+    resourceId?: string | null;
     quantity: number | null;
     unit: string;
   }[];
@@ -213,6 +215,7 @@ const consumptionOf = (lines: PlanLine[]) =>
       ? line.entries.map((entry) => ({
           kind: line.kind ?? '',
           resource: entry.name ?? '',
+          resourceId: entry.resourceId ?? null,
           quantity: entry.quantity ?? null,
           unit: entry.unit ?? '',
         }))
@@ -220,6 +223,7 @@ const consumptionOf = (lines: PlanLine[]) =>
           {
             kind: line.kind ?? '',
             resource: line.resource || line.name || '',
+            resourceId: line.resourceId ?? null,
             quantity: line.quantity ?? null,
             unit: line.unit ?? '',
           },

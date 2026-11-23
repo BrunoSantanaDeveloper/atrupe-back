@@ -22,6 +22,6 @@ import { StockLotService } from './purchasing/stock-lot.service';
     StockLotController,
   ],
   providers: [StockService, PurchasingService, StockLotService],
-  exports: [StockService],
+  exports: [StockService, StockLotService],
 })
 export class StockModule {}

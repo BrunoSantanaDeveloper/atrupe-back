@@ -151,6 +151,33 @@ export class ProductionTaskService {
     return { ctx, row, project };
   }
 
+  /**
+   * A tarefa para a baixa no lote (ES-16): o setor, a venda e o consumo,
+   * depois de conferir que quem pede vê a tarefa.
+   */
+  async lotTask(viewer: ProductionViewer, id: string) {
+    const { row, project } = await this.load(viewer, id);
+    const task = await this.prisma.productionTask.findUnique({
+      where: { id: row.id },
+      select: { code: true, consumption: true },
+    });
+    return {
+      id: row.id,
+      code: task!.code,
+      sectorId: row.sectorId ?? null,
+      stageName: row.stageName,
+      quotationId: project.quotationId,
+      number: project.number,
+      consumption: task!.consumption,
+    };
+  }
+
+  /** Registra a baixa no histórico da tarefa e devolve a tarefa. */
+  async lotUsed(viewer: ProductionViewer, id: string, text: string) {
+    await this.prisma.$transaction((tx) => this.log(tx, viewer, id, text));
+    return this.respond(viewer, id, text);
+  }
+
   private async respond(viewer: ProductionViewer, id: string, message: string) {
     const task = await this.prisma.productionTask.findUnique({
       where: { id },

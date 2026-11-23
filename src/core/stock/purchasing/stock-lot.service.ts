@@ -9,10 +9,13 @@ import type { CashActor } from '../../financial/cash-control/cash-ledger';
 import { UNIT_SYMBOL } from '../../material/material-text';
 import { PricingParametersService } from '../../pricing/pricing-parameters.service';
 import { enterStock, stockKey } from '../stock-entry';
+import { LotTask, soldMaterials } from './lot-task';
 import { LotCut, LotUse, splitLot, unitCostOf, useLot } from './lot-math';
 import {
+  LotOpenDto,
   LotSplitDto,
   LotUseDto,
+  TaskLotUseDto,
   StockLotDto,
   StockLotFilterDto,
 } from './purchasing.dto';
@@ -31,7 +34,7 @@ const LOT_INCLUDE = {
     select: {
       materialId: true,
       variationId: true,
-      material: { select: { name: true, unit: true } },
+      material: { select: { name: true, unit: true, sectorId: true } },
       variation: { select: { brand: true, color: true } },
     },
   },
@@ -90,6 +93,8 @@ export class StockLotService {
         row.quantity > 0 ? (row.cost * row.currentQuantity) / row.quantity : 0,
       ),
       status: row.status,
+      sectorId: row.sectorId,
+      sectorName: row.sectorName,
       openedAt: row.openedAt?.toISOString() ?? null,
       finishedAt: row.finishedAt?.toISOString() ?? null,
       cancelReason: row.cancelReason,
@@ -112,6 +117,7 @@ export class StockLotService {
     const rows = await this.prisma.stockLot.findMany({
       where: {
         companyId,
+        ...(filter.sectorId && { sectorId: filter.sectorId }),
         ...(filter.status
           ? { status: filter.status }
           : view === 'active'
@@ -238,27 +244,77 @@ export class StockLotService {
     return this.lot(companyId, id);
   }
 
-  /** Abrir o lote: o rolo começa a ser consumido (ES-11). */
-  async open(companyId: string, id: string, actor: CashActor) {
+  /**
+   * Abrir o lote (ES-11): o rolo sai do estoque fechado e vai para um setor
+   * (a impressão), onde fica disponível nas tarefas. Sem setor, o do
+   * material.
+   */
+  async open(companyId: string, id: string, dto: LotOpenDto, actor: CashActor) {
     const row = await this.row(companyId, id);
     if (row.status !== 'CLOSED') bad('Só o lote fechado pode ser aberto');
+    const sector = await this.sectorOf(companyId, row, dto.sectorId);
     await this.prisma.stockLot.update({
       where: { id },
       data: {
         status: 'OPEN',
         openedAt: new Date(),
-        events: { create: { text: 'Aberto', byName: actor.name } },
+        sectorId: sector?.id ?? null,
+        sectorName: sector?.name ?? '',
+        events: {
+          create: {
+            text: sector ? `Aberto no setor ${sector.name}` : 'Aberto',
+            byName: actor.name,
+          },
+        },
       },
     });
     return this.lot(companyId, id);
   }
 
-  /** A baixa no lote: em metros, pela sobra medida ou por quantidade. */
-  async use(companyId: string, id: string, dto: LotUseDto, actor: CashActor) {
+  /** Levar o lote aberto para outro setor. */
+  async move(companyId: string, id: string, dto: LotOpenDto, actor: CashActor) {
     const row = await this.row(companyId, id);
-    if (row.status === 'FINISHED' || row.status === 'CANCELED') {
-      bad('O lote está encerrado');
-    }
+    if (row.status !== 'OPEN') bad('Só o lote aberto muda de setor');
+    const sector = await this.sectorOf(companyId, row, dto.sectorId);
+    if (!sector) bad('Escolha o setor');
+    await this.prisma.stockLot.update({
+      where: { id },
+      data: {
+        sectorId: sector!.id,
+        sectorName: sector!.name,
+        events: {
+          create: {
+            text: `Levado para o setor ${sector!.name}`,
+            byName: actor.name,
+          },
+        },
+      },
+    });
+    return this.lot(companyId, id);
+  }
+
+  private async sectorOf(
+    companyId: string,
+    row: LotRow,
+    sectorId?: string | null,
+  ) {
+    const id = sectorId || row.stockItem.material.sectorId;
+    if (!id) return null;
+    const sector = await this.prisma.companySector.findFirst({
+      where: { id, companyId },
+      select: { id: true, name: true },
+    });
+    if (sectorId && !sector)
+      throw new NotFoundException('Setor não encontrado');
+    return sector;
+  }
+
+  private parseUse(dto: {
+    length?: number;
+    quantity?: number;
+    remainingWidth?: number;
+    remainingLength?: number;
+  }): LotUse {
     const use: LotUse | null =
       dto.remainingWidth !== undefined && dto.remainingLength !== undefined
         ? {
@@ -272,42 +328,231 @@ export class StockLotService {
             ? { quantity: dto.quantity }
             : null;
     if (!use) bad('Informe o que saiu ou a sobra');
+    return use!;
+  }
+
+  /**
+   * A baixa no lote, que vale para o estoque (ES-16; Maicol, 22/11/2026):
+   * atualiza a sobra, registra no histórico do lote e tira do saldo pelo
+   * custo do próprio lote. Pela tarefa é consumo da venda; à mão, correção.
+   */
+  private async applyUse(
+    companyId: string,
+    row: LotRow,
+    use: LotUse,
+    entry: {
+      kind: 'CONSUMPTION' | 'ADJUSTMENT';
+      origin: string;
+      note?: string;
+      quotationId?: string | null;
+      taskId?: string | null;
+      replacesKey?: string | null;
+      prefix?: string;
+    },
+    actor: CashActor,
+  ) {
+    if (row.status === 'FINISHED' || row.status === 'CANCELED') {
+      bad('O lote está encerrado');
+    }
     let result: ReturnType<typeof useLot>;
     try {
-      result = useLot(row, use!);
+      result = useLot(row, use);
     } catch (error) {
       bad((error as Error).message);
     }
     const unit = UNIT_SYMBOL[row.stockItem.material.unit] ?? '';
     const finished = result!.currentQuantity <= 1e-6;
-    const text =
-      'remaining' in use!
+    const base =
+      'remaining' in use
         ? `Sobra medida: ${m(result!.currentWidth)} × ${m(result!.currentLength)} m`
-        : 'length' in use!
-          ? `Baixa de ${m(use.length)} m`
+        : 'length' in use
+          ? `Baixa de ${m(use.length)} m (${m(result!.used)} ${unit})`
           : `Baixa de ${m(result!.used)} ${unit}`;
-    await this.prisma.stockLot.update({
-      where: { id },
-      data: {
-        currentQuantity: Math.max(result!.currentQuantity, 0),
-        currentWidth: result!.currentWidth,
-        currentLength: result!.currentLength,
-        // A baixa abre o lote fechado; o que zera, finaliza
-        ...(row.status === 'CLOSED' && {
-          status: 'OPEN',
-          openedAt: new Date(),
-        }),
-        ...(finished && { status: 'FINISHED', finishedAt: new Date() }),
-        events: {
-          create: {
-            text: dto.note?.trim() ? `${text} — ${dto.note.trim()}` : text,
-            quantity: result!.used,
-            byName: actor.name,
+    const text = [entry.prefix, base, entry.note?.trim()]
+      .filter(Boolean)
+      .join(' — ');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.stockLot.update({
+        where: { id: row.id },
+        data: {
+          currentQuantity: Math.max(result!.currentQuantity, 0),
+          currentWidth: result!.currentWidth,
+          currentLength: result!.currentLength,
+          // A baixa abre o lote fechado; o que zera, finaliza
+          ...(row.status === 'CLOSED' && {
+            status: 'OPEN',
+            openedAt: new Date(),
+          }),
+          ...(finished && { status: 'FINISHED', finishedAt: new Date() }),
+          events: {
+            create: { text, quantity: result!.used, byName: actor.name },
           },
         },
-      },
+      });
+      if (result!.used > 1e-9) {
+        await tx.stockItem.update({
+          where: { id: row.stockItemId },
+          data: { quantity: { decrement: result!.used } },
+        });
+        await tx.stockMovement.create({
+          data: {
+            companyId,
+            stockItemId: row.stockItemId,
+            kind: entry.kind,
+            quantity: -result!.used,
+            unitCost: unitCostOf(row),
+            origin: entry.origin,
+            quotationId: entry.quotationId ?? null,
+            lotId: row.id,
+            taskId: entry.taskId ?? null,
+            replacesKey: entry.replacesKey ?? null,
+            date: new Date(),
+            createdById: actor.id,
+            createdByName: actor.name,
+          },
+        });
+      }
     });
+    return { used: result!.used, unit, text };
+  }
+
+  /** A baixa à mão, na tela de Lotes: corrige o saldo (a sobra medida). */
+  async use(companyId: string, id: string, dto: LotUseDto, actor: CashActor) {
+    const row = await this.row(companyId, id);
+    await this.applyUse(
+      companyId,
+      row,
+      this.parseUse(dto),
+      {
+        kind: 'ADJUSTMENT',
+        origin: `Lote L-${row.number} — baixa à mão`,
+        note: dto.note,
+      },
+      actor,
+    );
     return this.lot(companyId, id);
+  }
+
+  /**
+   * Os rolos para a tarefa da impressão: os lotes abertos no setor dela
+   * (e os abertos sem setor), primeiro os do material vendido; o material
+   * vendido da etapa; e as baixas já dadas na tarefa.
+   */
+  async forTask(companyId: string, task: LotTask) {
+    const sold = soldMaterials(task.consumption);
+    const soldKeys = new Set(sold.map((item) => item.key));
+    const [rows, uses] = await Promise.all([
+      this.prisma.stockLot.findMany({
+        where: {
+          companyId,
+          status: 'OPEN',
+          ...(task.sectorId && {
+            OR: [{ sectorId: task.sectorId }, { sectorId: null }],
+          }),
+        },
+        include: LOT_INCLUDE,
+        orderBy: { number: 'asc' },
+      }),
+      this.prisma.stockMovement.findMany({
+        where: { companyId, taskId: task.id, lotId: { not: null } },
+        orderBy: { date: 'asc' },
+        select: {
+          quantity: true,
+          origin: true,
+          date: true,
+          createdByName: true,
+          lotId: true,
+          replacesKey: true,
+          stockItem: { select: { material: { select: { unit: true } } } },
+        },
+      }),
+    ]);
+    const lots = rows
+      .map((row) => ({
+        ...this.view(row),
+        sold: soldKeys.has(
+          stockKey(row.stockItem.materialId, row.stockItem.variationId),
+        ),
+      }))
+      .sort((a, b) => Number(b.sold) - Number(a.sold));
+    const lotNumber = new Map(
+      (
+        await this.prisma.stockLot.findMany({
+          where: { id: { in: uses.map((use) => use.lotId!) } },
+          select: { id: true, number: true },
+        })
+      ).map((lot) => [lot.id, lot.number]),
+    );
+    return {
+      lots,
+      sold,
+      uses: uses.map((use) => ({
+        lot: `L-${lotNumber.get(use.lotId!) ?? '?'}`,
+        quantity: -use.quantity,
+        unit: UNIT_SYMBOL[use.stockItem.material.unit] ?? '',
+        replaces:
+          sold.find((item) => item.key === use.replacesKey)?.name ?? null,
+        byName: use.createdByName,
+        at: use.date.toISOString(),
+      })),
+    };
+  }
+
+  /**
+   * A baixa do impressor (ES-16): escolhe o rolo aberto e informa o
+   * comprimento (a largura é a do rolo) ou a quantidade. Vale para o
+   * estoque: a baixa da venda não tira de novo o material que ela
+   * substitui. Material diferente do vendido fica como troca (VS-1.1).
+   */
+  async useForTask(
+    companyId: string,
+    task: LotTask,
+    dto: TaskLotUseDto,
+    actor: CashActor,
+  ) {
+    const row = await this.row(companyId, dto.lotId);
+    if (row.status !== 'OPEN') bad('Abra o lote antes de dar baixa');
+    const sold = soldMaterials(task.consumption);
+    const lotKey = stockKey(
+      row.stockItem.materialId,
+      row.stockItem.variationId,
+    );
+    const replaces =
+      dto.replaces !== undefined
+        ? dto.replaces
+        : sold.some((item) => item.key === lotKey) || !sold.length
+          ? lotKey
+          : null;
+    if (
+      replaces &&
+      sold.length &&
+      !sold.some((item) => item.key === replaces)
+    ) {
+      bad('O material substituído não é desta etapa');
+    }
+    const swapped = replaces && replaces !== lotKey;
+    const replacedName = sold.find((item) => item.key === replaces)?.name;
+    const result = await this.applyUse(
+      companyId,
+      row,
+      dto.length
+        ? { length: dto.length }
+        : this.parseUse({ quantity: dto.quantity }),
+      {
+        kind: 'CONSUMPTION',
+        origin: `OS ${task.number} · ${task.stageName} — lote L-${row.number}`,
+        note: dto.note,
+        quotationId: task.quotationId,
+        taskId: task.id,
+        replacesKey: replaces,
+        prefix: `Tarefa ${task.code} (OS ${task.number})${swapped && replacedName ? `, no lugar de ${replacedName}` : ''}`,
+      },
+      actor,
+    );
+    const material = this.view(row).material;
+    return {
+      text: `Baixa no lote L-${row.number} (${material}): ${m(result.used)} ${result.unit}${dto.length ? ` (${m(dto.length)} m)` : ''}${swapped && replacedName ? `, no lugar de ${replacedName}` : ''}`,
+    };
   }
 
   /** Dividir o lote (ES-10): o pedaço vira um lote novo, rastreado. */

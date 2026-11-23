@@ -344,6 +344,11 @@ export class PayablesDto {
 /* ------------------------------------------------------------- lote */
 
 export class StockLotFilterDto {
+  @ApiPropertyOptional({ description: 'Os abertos num setor' })
+  @IsOptional()
+  @IsUUID('all')
+  sectorId?: string;
+
   @ApiPropertyOptional({ description: 'ativos, encerrados ou todos' })
   @IsOptional()
   @IsString()
@@ -474,4 +479,46 @@ export class LotSplitDto {
   @IsNumber()
   @Min(0.0001)
   quantity?: number;
+}
+
+export class LotOpenDto {
+  @ApiPropertyOptional({ description: 'Sem ele, o setor do material' })
+  @IsOptional()
+  @IsUUID('all', { message: 'Setor não encontrado' })
+  sectorId?: string | null;
+}
+
+/** A baixa do impressor na tarefa (ES-16). */
+export class TaskLotUseDto {
+  @ApiProperty()
+  @IsUUID('all', { message: 'Lote não encontrado' })
+  lotId: string;
+
+  @ApiPropertyOptional({ description: 'Rolo: metros (a largura é a do rolo)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  length?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0.0001)
+  quantity?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'O material vendido que a baixa substitui (material|variação); nulo, nenhum',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  replaces?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string;
 }

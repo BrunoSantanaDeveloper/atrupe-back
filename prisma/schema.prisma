@@ -5188,6 +5188,13 @@ model StockMovement {
   invoiceId     String?
   /// A venda da baixa por consumo (ES-7): uma baixa só por venda
   quotationId   String?
+  /// A baixa no lote (rolo, chapa), pela tarefa ou à mão (ES-16)
+  lotId         String?
+  /// A tarefa da produção em que o impressor deu a baixa
+  taskId        String?
+  /// O material vendido que esta baixa substitui (material|variação): a
+  /// baixa da venda não tira esse material de novo
+  replacesKey   String?
   date          DateTime
   createdById   String?
   createdByName String?
@@ -5197,6 +5204,7 @@ model StockMovement {
   @@index([companyId, date])
   @@index([invoiceId])
   @@index([quotationId])
+  @@index([lotId])
   @@map("stock_movements")
 }
 
@@ -5573,6 +5581,10 @@ model StockLot {
   currentWidth    Float?
   currentLength   Float?
   status          StockLotStatus  @default(CLOSED)
+  /// Aberto, o lote vai para um setor (a impressão) e fica disponível nas
+  /// tarefas dele
+  sectorId        String?
+  sectorName      String          @default("")
   openedAt        DateTime?
   finishedAt      DateTime?
   cancelReason    String?

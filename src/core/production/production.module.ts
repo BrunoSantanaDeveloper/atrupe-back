@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from 'nestjs-prisma';
 import { AuthModule } from '../auth/auth.module';
+import { StockModule } from '../stock/stock.module';
 import { ProductionStageModule } from '../sale/production-stage/production-stage.module';
 import { ProductionAccessService } from './production-access.service';
 import { ProductionBoardService } from './production-board.service';
@@ -27,7 +28,7 @@ import { ProductionStorageService } from './storage/production-storage.service';
 @Module({
   // AuthModule fornece o AbacService (guard e quem é gerente); o módulo da
   // agenda dá o recálculo da entrega quando as etapas espelhadas fecham
-  imports: [PrismaModule, AuthModule, ProductionStageModule],
+  imports: [PrismaModule, AuthModule, ProductionStageModule, StockModule],
   controllers: [
     ProductionConfigController,
     ProductionController,

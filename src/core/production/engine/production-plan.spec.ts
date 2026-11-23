@@ -140,11 +140,24 @@ describe('planTasks', () => {
         {
           kind: 'MACHINE',
           resource: 'Plotter Roland',
+          resourceId: null,
           quantity: 22.4,
           unit: 'min',
         },
-        { kind: 'MATERIAL', resource: 'Lona 440', quantity: 3.24, unit: 'm²' },
-        { kind: 'MATERIAL', resource: 'Ilhós', quantity: 12, unit: 'un' },
+        {
+          kind: 'MATERIAL',
+          resource: 'Lona 440',
+          resourceId: null,
+          quantity: 3.24,
+          unit: 'm²',
+        },
+        {
+          kind: 'MATERIAL',
+          resource: 'Ilhós',
+          resourceId: null,
+          quantity: 12,
+          unit: 'un',
+        },
       ],
       note: 'Cuidado com a cor',
     });

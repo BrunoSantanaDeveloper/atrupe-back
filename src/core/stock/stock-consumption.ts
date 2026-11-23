@@ -86,13 +86,24 @@ export async function consumeSale(
   });
   if (!quotation) return { consumed: 0 };
   const companyId = quotation.companyId;
-  const [uses, done] = await Promise.all([
+  // A baixa no lote pela tarefa (ES-16) não conta como a baixa da venda:
+  // só tira de novo o material que ela substituiu
+  const [uses, done, fromLots] = await Promise.all([
     prisma.stockItem.count({ where: { companyId } }),
     prisma.stockMovement.count({
-      where: { companyId, quotationId, kind: 'CONSUMPTION' },
+      where: { companyId, quotationId, kind: 'CONSUMPTION', lotId: null },
+    }),
+    prisma.stockMovement.findMany({
+      where: { companyId, quotationId, lotId: { not: null } },
+      select: { replacesKey: true },
     }),
   ]);
   if (!uses || done) return { consumed: 0 };
+  const replaced = new Set(
+    fromLots
+      .map((row) => row.replacesKey)
+      .filter((key): key is string => !!key),
+  );
 
   const total = new Map<
     string,
@@ -136,6 +147,8 @@ export async function consumeSale(
       for (const row of total.values()) {
         if (!known.has(row.materialId)) continue;
         const key = stockKey(row.materialId, row.variationId);
+        // O impressor já deu a baixa deste material no rolo
+        if (replaced.has(key)) continue;
         const stock = await tx.stockItem.upsert({
           where: { companyId_key: { companyId, key } },
           create: {

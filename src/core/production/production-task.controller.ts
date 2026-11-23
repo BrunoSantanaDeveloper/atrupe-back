@@ -56,6 +56,8 @@ import {
   ProductionTaskService,
 } from './production-task.service';
 import { ProductionCleanupService } from './storage/production-cleanup.service';
+import { StockLotService } from '../stock/purchasing/stock-lot.service';
+import { TaskLotUseDto } from '../stock/purchasing/purchasing.dto';
 
 // O teto do multer fica acima dos 20 MB: o serviço recusa com a mensagem
 const attachmentUpload = FileInterceptor('file', {
@@ -80,6 +82,7 @@ export class ProductionTaskController {
     private readonly access: ProductionAccessService,
     private readonly tasks: ProductionTaskService,
     private readonly cleanup: ProductionCleanupService,
+    private readonly lots_: StockLotService,
   ) {}
 
   @Get('storage')
@@ -162,6 +165,42 @@ export class ProductionTaskController {
   }
 
   // O comentário da equipe (VS-5; GP-47, item 3), no histórico da tarefa
+  /**
+   * Os rolos abertos no setor da tarefa, o material vendido e as baixas já
+   * dadas (ES-16, FULL: chave purchasing).
+   */
+  @Get(':id/lots')
+  @HasPermission('view', PRODUCTION)
+  @RequiresFeature('purchasing')
+  @ApiOperation({ summary: 'Os lotes abertos no setor da tarefa' })
+  async lots(@Req() req, @Param('id') id: string) {
+    const viewer = await this.access.viewer(req.user);
+    const task = await this.tasks.lotTask(viewer, id);
+    return this.lots_.forTask(viewer.companyId, task);
+  }
+
+  /**
+   * A baixa do impressor no rolo (ES-16): o comprimento (a largura é a do
+   * rolo) ou a quantidade; vale para o estoque e fica no histórico.
+   */
+  @Post(':id/lot-use')
+  @HasPermission('view', PRODUCTION)
+  @RequiresFeature('purchasing')
+  @ApiOperation({ summary: 'Dá baixa no lote pela tarefa' })
+  async lotUse(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: TaskLotUseDto,
+  ) {
+    const viewer = await this.access.viewer(req.user);
+    const task = await this.tasks.lotTask(viewer, id);
+    const { text } = await this.lots_.useForTask(viewer.companyId, task, dto, {
+      id: viewer.employeeId,
+      name: viewer.name,
+    });
+    return this.tasks.lotUsed(viewer, id, text);
+  }
+
   @Post(':id/comment')
   @HasPermission('view', PRODUCTION)
   @ApiOperation({ summary: 'Comenta a tarefa para a equipe' })

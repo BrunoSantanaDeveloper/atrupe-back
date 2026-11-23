@@ -24,6 +24,7 @@ import {
   CancelDto,
   CheckOrderDto,
   CloseOrderDto,
+  LotOpenDto,
   LotSplitDto,
   LotUseDto,
   PayablesDto,
@@ -283,9 +284,24 @@ export class StockLotController {
 
   @Post(':id/open')
   @HasPermission('edit', LOT)
-  @ApiOperation({ summary: 'Abre o lote' })
-  async open(@Req() req, @Param('id', UUID) id: string) {
-    return this.lots.open(req.user.companyId, id, await this.actor(req));
+  @ApiOperation({ summary: 'Abre o lote num setor (a impressão)' })
+  async open(
+    @Req() req,
+    @Param('id', UUID) id: string,
+    @Body() dto: LotOpenDto,
+  ) {
+    return this.lots.open(req.user.companyId, id, dto, await this.actor(req));
+  }
+
+  @Post(':id/move')
+  @HasPermission('edit', LOT)
+  @ApiOperation({ summary: 'Leva o lote aberto para outro setor' })
+  async move(
+    @Req() req,
+    @Param('id', UUID) id: string,
+    @Body() dto: LotOpenDto,
+  ) {
+    return this.lots.move(req.user.companyId, id, dto, await this.actor(req));
   }
 
   @Post(':id/use')
