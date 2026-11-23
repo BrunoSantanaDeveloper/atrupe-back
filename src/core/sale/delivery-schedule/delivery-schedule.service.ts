@@ -59,6 +59,7 @@ const itemsOf = (
     sectorId: string | null;
     sectorName: string;
     notes?: string | null;
+    prevStatus?: string | null;
   }[],
   editable = false,
 ) =>
@@ -76,6 +77,7 @@ const itemsOf = (
         sector: task.sectorName,
         status: task.status,
         notes: task.notes ?? null,
+        prevStatus: task.prevStatus ?? null,
         // A etapa do item que se troca na agenda (LITE): a rota é
         // sale/production-stage/item/:id
         editable,
@@ -219,6 +221,7 @@ export class DeliveryScheduleService {
                 id: true,
                 quotationProductId: true,
                 status: true,
+                prevStatus: true,
                 notes: true,
                 order: true,
                 stage: { select: { id: true, name: true } },
@@ -368,6 +371,7 @@ export class DeliveryScheduleService {
                     sectorId: stage.stage.id,
                     sectorName: stage.stage.name,
                     notes: stage.notes,
+                    prevStatus: stage.prevStatus,
                   })),
               // Sem gerenciador, a etapa do item se troca na agenda
               !delivery.order?.quotation?.productionProject,
