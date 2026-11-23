@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,9 +9,11 @@ import { PrismaService } from 'nestjs-prisma';
 import type { CashActor } from '../../financial/cash-control/cash-ledger';
 import { UNIT_SYMBOL } from '../../material/material-text';
 import { PricingParametersService } from '../../pricing/pricing-parameters.service';
+import { lockSale, reverseSaleConsumption } from '../stock-consumption';
 import { enterStock, stockKey } from '../stock-entry';
 import { LotTask, soldMaterials } from './lot-task';
 import { LotCut, LotUse, splitLot, unitCostOf, useLot } from './lot-math';
+import { lockNumbering } from './numbering';
 import {
   LotOpenDto,
   LotSplitDto,
@@ -24,6 +27,16 @@ const bad = (message: string): never => {
   throw new BadRequestException(message);
 };
 const LOT_NOT_FOUND = 'Lote não encontrado';
+const LOT_CHANGED =
+  'O lote mudou enquanto a operação era gravada: tente de novo';
+/** A conta do lote recusada (lot-math) vira o 400 com a mensagem dela. */
+const attempt = <T>(fn: () => T): T => {
+  try {
+    return fn();
+  } catch (error) {
+    throw new BadRequestException((error as Error).message);
+  }
+};
 const m = (value: number | null) =>
   value === null
     ? ''
@@ -206,6 +219,7 @@ export class StockLotService {
             },
             update: {},
           });
+      await lockNumbering(tx, 'stock_lots', companyId);
       const last = await tx.stockLot.aggregate({
         where: { companyId },
         _max: { number: true },
@@ -315,6 +329,17 @@ export class StockLotService {
     remainingWidth?: number;
     remainingLength?: number;
   }): LotUse {
+    const measured =
+      dto.remainingWidth !== undefined || dto.remainingLength !== undefined;
+    // A sobra 0 × 0 zeraria o lote: encerrar sem sobra é o Finalizar
+    if (
+      measured &&
+      !((dto.remainingWidth ?? 0) > 0 && (dto.remainingLength ?? 0) > 0)
+    ) {
+      bad(
+        'Informe a largura e o comprimento da sobra, maiores que zero (para encerrar o lote sem sobra, use Finalizar lote)',
+      );
+    }
     const use: LotUse | null =
       dto.remainingWidth !== undefined && dto.remainingLength !== undefined
         ? {
@@ -335,6 +360,10 @@ export class StockLotService {
    * A baixa no lote, que vale para o estoque (ES-16; Maicol, 22/11/2026):
    * atualiza a sobra, registra no histórico do lote e tira do saldo pelo
    * custo do próprio lote. Pela tarefa é consumo da venda; à mão, correção.
+   *
+   * O lote é relido dentro da transação e gravado só se não mudou desde a
+   * leitura: duas baixas ao mesmo tempo no mesmo rolo não se perdem (a
+   * segunda pede para tentar de novo).
    */
   private async applyUse(
     companyId: string,
@@ -348,62 +377,96 @@ export class StockLotService {
       taskId?: string | null;
       replacesKey?: string | null;
       prefix?: string;
+      /** A baixa do impressor: só no lote aberto, e no setor da tarefa */
+      task?: { sectorId: string | null };
+      /**
+       * A baixa pela tarefa depois da baixa da venda: estorna o que a venda
+       * tirou do material substituído (uma vez por material)
+       */
+      reverseSale?: { key: string; origin: string } | null;
     },
     actor: CashActor,
   ) {
-    if (row.status === 'FINISHED' || row.status === 'CANCELED') {
-      bad('O lote está encerrado');
-    }
-    let result: ReturnType<typeof useLot>;
-    try {
-      result = useLot(row, use);
-    } catch (error) {
-      bad((error as Error).message);
-    }
     const unit = UNIT_SYMBOL[row.stockItem.material.unit] ?? '';
-    const finished = result!.currentQuantity <= 1e-6;
-    const base =
-      'remaining' in use
-        ? `Sobra medida: ${m(result!.currentWidth)} × ${m(result!.currentLength)} m`
-        : 'length' in use
-          ? `Baixa de ${m(use.length)} m (${m(result!.used)} ${unit})`
-          : `Baixa de ${m(result!.used)} ${unit}`;
-    const text = [entry.prefix, base, entry.note?.trim()]
-      .filter(Boolean)
-      .join(' — ');
-    await this.prisma.$transaction(async (tx) => {
-      await tx.stockLot.update({
-        where: { id: row.id },
+    return this.prisma.$transaction(async (tx) => {
+      // A baixa do rolo e a da venda se enfileiram antes de qualquer outra
+      // trava (ver lockSale)
+      if (entry.reverseSale && entry.quotationId) {
+        await lockSale(tx, entry.quotationId);
+      }
+      const lot = await tx.stockLot.findFirst({
+        where: { id: row.id, companyId },
+      });
+      if (!lot) throw new NotFoundException(LOT_NOT_FOUND);
+      if (lot.status === 'FINISHED' || lot.status === 'CANCELED') {
+        bad('O lote está encerrado');
+      }
+      if (entry.task) {
+        if (lot.status !== 'OPEN') bad('Abra o lote antes de dar baixa');
+        // O impressor usa os rolos do setor da tarefa (e os sem setor)
+        if (
+          entry.task.sectorId &&
+          lot.sectorId &&
+          lot.sectorId !== entry.task.sectorId
+        ) {
+          bad(
+            `O lote L-${lot.number} está aberto em outro setor${lot.sectorName ? ` (${lot.sectorName})` : ''}: leve-o para o setor da tarefa antes de dar baixa`,
+          );
+        }
+      }
+      const result = attempt(() => useLot(lot, use));
+      const finished = result.currentQuantity <= 1e-6;
+      const base =
+        'remaining' in use
+          ? `Sobra medida: ${m(result.currentWidth)} × ${m(result.currentLength)} m`
+          : 'length' in use
+            ? `Baixa de ${m(use.length)} m (${m(result.used)} ${unit})`
+            : `Baixa de ${m(result.used)} ${unit}`;
+      const text = [entry.prefix, base, entry.note?.trim()]
+        .filter(Boolean)
+        .join(' — ');
+      const saved = await tx.stockLot.updateMany({
+        where: {
+          id: lot.id,
+          currentQuantity: lot.currentQuantity,
+          status: lot.status,
+        },
         data: {
-          currentQuantity: Math.max(result!.currentQuantity, 0),
-          currentWidth: result!.currentWidth,
-          currentLength: result!.currentLength,
+          currentQuantity: Math.max(result.currentQuantity, 0),
+          currentWidth: result.currentWidth,
+          currentLength: result.currentLength,
           // A baixa abre o lote fechado; o que zera, finaliza
-          ...(row.status === 'CLOSED' && {
+          ...(lot.status === 'CLOSED' && {
             status: 'OPEN',
             openedAt: new Date(),
           }),
           ...(finished && { status: 'FINISHED', finishedAt: new Date() }),
-          events: {
-            create: { text, quantity: result!.used, byName: actor.name },
-          },
         },
       });
-      if (result!.used > 1e-9) {
+      if (!saved.count) throw new ConflictException(LOT_CHANGED);
+      await tx.stockLotEvent.create({
+        data: {
+          lotId: lot.id,
+          text,
+          quantity: result.used,
+          byName: actor.name,
+        },
+      });
+      if (result.used > 1e-9) {
         await tx.stockItem.update({
-          where: { id: row.stockItemId },
-          data: { quantity: { decrement: result!.used } },
+          where: { id: lot.stockItemId },
+          data: { quantity: { decrement: result.used } },
         });
         await tx.stockMovement.create({
           data: {
             companyId,
-            stockItemId: row.stockItemId,
+            stockItemId: lot.stockItemId,
             kind: entry.kind,
-            quantity: -result!.used,
-            unitCost: unitCostOf(row),
+            quantity: -result.used,
+            unitCost: unitCostOf(lot),
             origin: entry.origin,
             quotationId: entry.quotationId ?? null,
-            lotId: row.id,
+            lotId: lot.id,
             taskId: entry.taskId ?? null,
             replacesKey: entry.replacesKey ?? null,
             date: new Date(),
@@ -412,8 +475,19 @@ export class StockLotService {
           },
         });
       }
+      const reversed =
+        entry.reverseSale && entry.quotationId && result.used > 1e-9
+          ? await reverseSaleConsumption(tx, {
+              companyId,
+              quotationId: entry.quotationId,
+              key: entry.reverseSale.key,
+              taskId: entry.taskId ?? null,
+              origin: entry.reverseSale.origin,
+              actor,
+            })
+          : 0;
+      return { used: result.used, unit, text, reversed };
     });
-    return { used: result!.used, unit, text };
   }
 
   /** A baixa à mão, na tela de Lotes: corrige o saldo (a sobra medida). */
@@ -499,10 +573,12 @@ export class StockLotService {
   }
 
   /**
-   * A baixa do impressor (ES-16): escolhe o rolo aberto e informa o
-   * comprimento (a largura é a do rolo) ou a quantidade. Vale para o
-   * estoque: a baixa da venda não tira de novo o material que ela
-   * substitui. Material diferente do vendido fica como troca (VS-1.1).
+   * A baixa do impressor (ES-16): escolhe o rolo aberto no setor da tarefa e
+   * informa o comprimento (a largura é a do rolo) ou a quantidade. Vale para
+   * o estoque: a baixa da venda não tira de novo o material que ela
+   * substitui, e, se a venda já tinha tirado (o projeto ou a entrega
+   * concluíram antes), o que ela tirou volta ao saldo. Material diferente do
+   * vendido fica como troca (VS-1.1).
    */
   async useForTask(
     companyId: string,
@@ -512,6 +588,11 @@ export class StockLotService {
   ) {
     const row = await this.row(companyId, dto.lotId);
     if (row.status !== 'OPEN') bad('Abra o lote antes de dar baixa');
+    if (task.sectorId && row.sectorId && row.sectorId !== task.sectorId) {
+      bad(
+        `O lote L-${row.number} está aberto em outro setor${row.sectorName ? ` (${row.sectorName})` : ''}: leve-o para o setor da tarefa antes de dar baixa`,
+      );
+    }
     const sold = soldMaterials(task.consumption);
     const lotKey = stockKey(
       row.stockItem.materialId,
@@ -531,7 +612,9 @@ export class StockLotService {
       bad('O material substituído não é desta etapa');
     }
     const swapped = replaces && replaces !== lotKey;
-    const replacedName = sold.find((item) => item.key === replaces)?.name;
+    const replaced = sold.find((item) => item.key === replaces);
+    const replacedName = replaced?.name;
+    const material = this.view(row).material;
     const result = await this.applyUse(
       companyId,
       row,
@@ -546,26 +629,35 @@ export class StockLotService {
         taskId: task.id,
         replacesKey: replaces,
         prefix: `Tarefa ${task.code} (OS ${task.number})${swapped && replacedName ? `, no lugar de ${replacedName}` : ''}`,
+        task: { sectorId: task.sectorId },
+        reverseSale: replaces
+          ? {
+              key: replaces,
+              origin: `OS ${task.number} — estorno da baixa da venda de ${replacedName || material}: o material saiu pelo lote L-${row.number} (tarefa ${task.code})`,
+            }
+          : null,
       },
       actor,
     );
-    const material = this.view(row).material;
+    const reversedText = result.reversed
+      ? `; a baixa da venda de ${m(result.reversed)} ${replaced?.unit || result.unit} de ${replacedName || material} voltou ao saldo`
+      : '';
     return {
-      text: `Baixa no lote L-${row.number} (${material}): ${m(result.used)} ${result.unit}${dto.length ? ` (${m(dto.length)} m)` : ''}${swapped && replacedName ? `, no lugar de ${replacedName}` : ''}`,
+      text: `Baixa no lote L-${row.number} (${material}): ${m(result.used)} ${result.unit}${dto.length ? ` (${m(dto.length)} m)` : ''}${swapped && replacedName ? `, no lugar de ${replacedName}` : ''}${reversedText}`,
     };
   }
 
-  /** Dividir o lote (ES-10): o pedaço vira um lote novo, rastreado. */
+  /**
+   * Dividir o lote (ES-10): o pedaço vira um lote novo, rastreado, no mesmo
+   * setor. Como a baixa, relê o lote na transação e grava só se não mudou.
+   */
   async split(
     companyId: string,
     id: string,
     dto: LotSplitDto,
     actor: CashActor,
   ) {
-    const row = await this.row(companyId, id);
-    if (row.status === 'FINISHED' || row.status === 'CANCELED') {
-      bad('O lote está encerrado');
-    }
+    await this.row(companyId, id);
     const cut: LotCut | null = dto.length
       ? { length: dto.length }
       : dto.width
@@ -574,13 +666,14 @@ export class StockLotService {
           ? { quantity: dto.quantity }
           : null;
     if (!cut) bad('Informe o tamanho do pedaço');
-    let result: ReturnType<typeof splitLot>;
-    try {
-      result = splitLot(row, cut!);
-    } catch (error) {
-      bad((error as Error).message);
-    }
     const pieceId = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.stockLot.findFirst({ where: { id, companyId } });
+      if (!row) throw new NotFoundException(LOT_NOT_FOUND);
+      if (row.status === 'FINISHED' || row.status === 'CANCELED') {
+        bad('O lote está encerrado');
+      }
+      const result = attempt(() => splitLot(row, cut!));
+      await lockNumbering(tx, 'stock_lots', companyId);
       const last = await tx.stockLot.aggregate({
         where: { companyId },
         _max: { number: true },
@@ -595,15 +688,17 @@ export class StockLotService {
           brand: row.brand,
           color: row.color,
           measure: row.measure,
-          cost: result!.piece.cost,
-          quantity: result!.piece.quantity,
-          width: result!.piece.width,
-          length: result!.piece.length,
-          currentQuantity: result!.piece.quantity,
-          currentWidth: result!.piece.width,
-          currentLength: result!.piece.length,
+          cost: result.piece.cost,
+          quantity: result.piece.quantity,
+          width: result.piece.width,
+          length: result.piece.length,
+          currentQuantity: result.piece.quantity,
+          currentWidth: result.piece.width,
+          currentLength: result.piece.length,
           status: row.status,
           openedAt: row.openedAt,
+          sectorId: row.sectorId,
+          sectorName: row.sectorName,
           parentId: row.id,
           orderId: row.orderId,
           invoiceId: row.invoiceId,
@@ -611,7 +706,7 @@ export class StockLotService {
           events: {
             create: {
               text: `Dividido do lote L-${row.number}`,
-              quantity: result!.piece.quantity,
+              quantity: result.piece.quantity,
               byName: actor.name,
             },
           },
@@ -620,23 +715,29 @@ export class StockLotService {
       // O lote de origem fica com o resto: a quantidade e o custo de entrada
       // diminuem na mesma proporção (o custo por unidade não muda), e o
       // comprimento de entrada acompanha, para a conta da área continuar
-      const quantity = row.quantity - result!.piece.quantity;
-      await tx.stockLot.update({
-        where: { id },
+      const quantity = row.quantity - result.piece.quantity;
+      const saved = await tx.stockLot.updateMany({
+        where: {
+          id,
+          currentQuantity: row.currentQuantity,
+          status: row.status,
+        },
         data: {
-          ...result!.rest,
+          ...result.rest,
           quantity,
-          cost: row.cost - result!.piece.cost,
+          cost: row.cost - result.piece.cost,
           ...(row.length !== null && {
             length: (row.length * quantity) / row.quantity,
           }),
-          events: {
-            create: {
-              text: `Dividido: o pedaço virou o lote L-${number}`,
-              quantity: result!.piece.quantity,
-              byName: actor.name,
-            },
-          },
+        },
+      });
+      if (!saved.count) throw new ConflictException(LOT_CHANGED);
+      await tx.stockLotEvent.create({
+        data: {
+          lotId: id,
+          text: `Dividido: o pedaço virou o lote L-${number}`,
+          quantity: result.piece.quantity,
+          byName: actor.name,
         },
       });
       return piece.id;

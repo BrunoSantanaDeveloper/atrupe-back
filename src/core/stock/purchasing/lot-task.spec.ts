@@ -36,10 +36,16 @@ describe('baixa do impressor no rolo (ES-16)', () => {
 
   it('a baixa da venda não tira de novo o que o rolo substituiu', async () => {
     const tx = {
+      $executeRaw: jest.fn(),
       stockItem: {
         upsert: jest.fn().mockResolvedValue({ id: 's', averageCost: 10 }),
       },
-      stockMovement: { create: jest.fn() },
+      stockMovement: {
+        create: jest.fn(),
+        // A baixa do rolo não conta como a baixa da venda
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([{ replacesKey: 'adesivo|' }]),
+      },
     };
     const prisma: any = {
       quotation: {
@@ -70,11 +76,6 @@ describe('baixa do impressor no rolo (ES-16)', () => {
         }),
       },
       stockItem: { count: jest.fn().mockResolvedValue(5) },
-      stockMovement: {
-        // A baixa do rolo não conta como a baixa da venda
-        count: jest.fn().mockResolvedValue(0),
-        findMany: jest.fn().mockResolvedValue([{ replacesKey: 'adesivo|' }]),
-      },
       material: {
         findMany: jest
           .fn()
@@ -88,7 +89,9 @@ describe('baixa do impressor no rolo (ES-16)', () => {
     expect(tx.stockItem.upsert.mock.calls[0][0].where.companyId_key.key).toBe(
       'ilhos|',
     );
-    expect(prisma.stockMovement.count).toHaveBeenCalledWith({
+    // As leituras vêm depois da trava da venda, na transação
+    expect(tx.$executeRaw).toHaveBeenCalled();
+    expect(tx.stockMovement.count).toHaveBeenCalledWith({
       where: {
         companyId: 'c1',
         quotationId: 'q1',

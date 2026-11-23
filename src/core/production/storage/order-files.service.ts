@@ -1,16 +1,24 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { AbacService } from '../../auth/abac/abac.service';
 import { ATTACHMENT_MAX_BYTES, nameOf } from '../production-task.service';
 import { ProductionFilesService, refusalOf } from './production-files.service';
 import { ProductionStorageService } from './production-storage.service';
+import {
+  claimStorageKey,
+  discardUnregistered,
+  isStorageKeyOf,
+  KEY_ALREADY_SAVED,
+  newStorageKey,
+  storageKeyRegistered,
+} from './storage-key';
 
 export const ORDER_NOT_FOUND = 'Ordem de serviço não encontrada';
 
@@ -34,7 +42,7 @@ type Upload = {
  * qualquer formato aceito (imagem, PDF, AI, CDR, TIFF, DXF, ZIP), com a
  * intenção maior de armazenar. Vê quem vê a O.S. (o vendedor sem acesso aos
  * outros só vê as suas); acrescenta e apaga quem edita a O.S. Contam no
- * espaço dos arquivos e entram na limpeza da O.S. concluída ou finalizada.
+ * espaço dos arquivos e entram na limpeza da O.S. entregue (finalizada).
  */
 @Injectable()
 export class OrderFilesService {
@@ -100,23 +108,32 @@ export class OrderFilesService {
     };
   }
 
-  private keyOf(user: User, orderId: string, safeName: string) {
-    return `orders/${user.companyId}/${orderId}/${randomUUID()}-${safeName}`;
+  private folderOf(user: User, orderId: string) {
+    return `orders/${user.companyId}/${orderId}`;
   }
 
+  private keyOf(user: User, orderId: string, safeName: string) {
+    return newStorageKey(this.folderOf(user, orderId), safeName);
+  }
+
+  /** Grava a linha com a chave travada: a mesma chave não entra duas vezes. */
   private async create(
     user: User,
     orderId: string,
     file: { fileName: string; mime: string; size: number; storageKey: string },
   ) {
-    await this.prisma.orderFile.create({
-      data: {
-        companyId: user.companyId,
-        orderId,
-        ...file,
-        uploadedById: user.userId ?? null,
-        uploadedBy: await this.uploaderName(user),
-      },
+    const uploadedBy = await this.uploaderName(user);
+    await this.prisma.$transaction(async (tx) => {
+      await claimStorageKey(tx, file.storageKey);
+      await tx.orderFile.create({
+        data: {
+          companyId: user.companyId,
+          orderId,
+          ...file,
+          uploadedById: user.userId ?? null,
+          uploadedBy,
+        },
+      });
     });
     return this.list(user, orderId);
   }
@@ -160,20 +177,34 @@ export class OrderFilesService {
       dto.size,
     );
     const key = this.keyOf(user, orderId, name.safeName);
-    return { key, url: this.storage.uploadUrl(key), mime: name.mime };
+    // O PUT precisa mandar este mime como Content-Type (vai na assinatura)
+    return {
+      key,
+      url: this.storage.uploadUrl(key, dto.size, name.mime),
+      mime: name.mime,
+    };
   }
 
-  /** O arquivo que o navegador enviou: confere a pasta, o tamanho e o espaço. */
+  /**
+   * O arquivo que o navegador enviou: confere a chave (o formato que o link
+   * gerou, desta O.S. e deste nome, ainda sem registro), o tamanho e o
+   * espaço. O tipo é o do link, que o armazenamento já exigiu no envio.
+   */
   async addDirect(
     user: User,
     orderId: string,
     dto: { key: string; fileName: string; mime?: string },
   ) {
     await this.order(user, orderId);
-    if (!dto.key.startsWith(`orders/${user.companyId}/${orderId}/`)) {
-      throw new BadRequestException('Arquivo de outra O.S.');
-    }
     const name = nameOf(dto.fileName);
+    if (!isStorageKeyOf(dto.key, this.folderOf(user, orderId), name.safeName)) {
+      throw new BadRequestException(
+        'Arquivo inválido para esta O.S. Envie de novo.',
+      );
+    }
+    if (await storageKeyRegistered(this.prisma, dto.key)) {
+      throw new ConflictException(KEY_ALREADY_SAVED);
+    }
     const size = await this.storage.sizeOf(dto.key);
     if (size === null) {
       throw new BadRequestException(
@@ -186,12 +217,14 @@ export class OrderFilesService {
     );
     const refusal = refusalOf(summary, size);
     if (refusal) {
-      await this.storage.remove(dto.key).catch(() => undefined);
+      await discardUnregistered(this.prisma, dto.key, (key) =>
+        this.storage.remove(key),
+      );
       throw new UnprocessableEntityException(refusal);
     }
     return this.create(user, orderId, {
       fileName: name.fileName,
-      mime: dto.mime?.trim() || name.mime,
+      mime: name.mime,
       size,
       storageKey: dto.key,
     });
@@ -205,7 +238,12 @@ export class OrderFilesService {
     });
     if (!row) throw new NotFoundException('Arquivo não encontrado');
     await this.prisma.orderFile.delete({ where: { id: row.id } });
-    if (!row.removedAt) {
+    // A chave que ainda está noutro registro (dado de antes da chave única)
+    // não perde o arquivo
+    if (
+      !row.removedAt &&
+      !(await storageKeyRegistered(this.prisma, row.storageKey))
+    ) {
       await this.storage
         .remove(row.storageKey)
         .catch((error) =>

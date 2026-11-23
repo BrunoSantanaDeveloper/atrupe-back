@@ -1,4 +1,15 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+
+type Tx = Prisma.TransactionClient;
+
+/**
+ * A baixa da venda e a baixa do rolo pela tarefa da mesma venda se
+ * enfileiram por esta trava: a que vem depois vê a outra e não tira o
+ * material duas vezes (nem a baixa da venda roda duas vezes, quando o
+ * projeto e a entrega concluem juntos).
+ */
+export const lockSale = (tx: Tx, quotationId: string) =>
+  tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`stock-sale:${quotationId}`}))`;
 
 /** As linhas de um retrato (ORC-10): o recurso e a quantidade usada. */
 type SnapshotStages = {
@@ -86,24 +97,8 @@ export async function consumeSale(
   });
   if (!quotation) return { consumed: 0 };
   const companyId = quotation.companyId;
-  // A baixa no lote pela tarefa (ES-16) não conta como a baixa da venda:
-  // só tira de novo o material que ela substituiu
-  const [uses, done, fromLots] = await Promise.all([
-    prisma.stockItem.count({ where: { companyId } }),
-    prisma.stockMovement.count({
-      where: { companyId, quotationId, kind: 'CONSUMPTION', lotId: null },
-    }),
-    prisma.stockMovement.findMany({
-      where: { companyId, quotationId, lotId: { not: null } },
-      select: { replacesKey: true },
-    }),
-  ]);
-  if (!uses || done) return { consumed: 0 };
-  const replaced = new Set(
-    fromLots
-      .map((row) => row.replacesKey)
-      .filter((key): key is string => !!key),
-  );
+  const uses = await prisma.stockItem.count({ where: { companyId } });
+  if (!uses) return { consumed: 0 };
 
   const total = new Map<
     string,
@@ -144,6 +139,23 @@ export async function consumeSale(
   let consumed = 0;
   await prisma.$transaction(
     async (tx) => {
+      await lockSale(tx, quotationId);
+      // Uma baixa só por venda. A baixa no lote pela tarefa (ES-16) não conta
+      // como a baixa da venda: só não tira de novo o material que ela
+      // substituiu. As duas leituras vêm depois da trava.
+      const done = await tx.stockMovement.count({
+        where: { companyId, quotationId, kind: 'CONSUMPTION', lotId: null },
+      });
+      if (done) return;
+      const fromLots = await tx.stockMovement.findMany({
+        where: { companyId, quotationId, lotId: { not: null } },
+        select: { replacesKey: true },
+      });
+      const replaced = new Set(
+        fromLots
+          .map((row) => row.replacesKey)
+          .filter((key): key is string => !!key),
+      );
       for (const row of total.values()) {
         if (!known.has(row.materialId)) continue;
         const key = stockKey(row.materialId, row.variationId);
@@ -179,4 +191,66 @@ export async function consumeSale(
     { timeout: 20000 },
   );
   return { consumed };
+}
+
+/**
+ * A baixa do rolo que chega depois da baixa da venda (ES-16): a venda já
+ * tirou o material pela previsão; o rolo tira o que saiu de fato. Devolve ao
+ * saldo, uma vez por material, o que a venda tirou, para ficar só a baixa do
+ * rolo (como quando o rolo vem antes e a venda pula o material). Roda na
+ * transação da baixa do rolo, depois de `lockSale`. Devolve a quantidade
+ * estornada (0 quando não havia o que estornar).
+ */
+export async function reverseSaleConsumption(
+  tx: Tx,
+  input: {
+    companyId: string;
+    quotationId: string;
+    /** material|variação do material vendido que o rolo substitui */
+    key: string;
+    taskId: string | null;
+    origin: string;
+    actor: { id: string | null; name: string };
+  },
+) {
+  const { companyId, quotationId, key } = input;
+  const item = await tx.stockItem.findUnique({
+    where: { companyId_key: { companyId, key } },
+    select: { id: true },
+  });
+  if (!item) return 0;
+  const where = { companyId, quotationId, stockItemId: item.id, lotId: null };
+  const reversed = await tx.stockMovement.count({
+    where: { ...where, kind: 'ADJUSTMENT', replacesKey: key },
+  });
+  if (reversed) return 0;
+  const sale = await tx.stockMovement.findMany({
+    where: { ...where, kind: 'CONSUMPTION' },
+    select: { quantity: true, unitCost: true },
+  });
+  const taken = -sale.reduce((sum, row) => sum + row.quantity, 0);
+  if (!(taken > 1e-9)) return 0;
+  await tx.stockItem.update({
+    where: { id: item.id },
+    data: { quantity: { increment: taken } },
+  });
+  await tx.stockMovement.create({
+    data: {
+      companyId,
+      stockItemId: item.id,
+      kind: 'ADJUSTMENT',
+      quantity: taken,
+      unitCost: sale[0]?.unitCost ?? null,
+      origin: input.origin,
+      quotationId,
+      // Sem lote: não é baixa de rolo, e a baixa da venda não a conta
+      lotId: null,
+      taskId: input.taskId,
+      replacesKey: key,
+      date: new Date(),
+      createdById: input.actor.id,
+      createdByName: input.actor.name,
+    },
+  });
+  return taken;
 }

@@ -147,6 +147,21 @@ export class EvolutionService {
                 price: { gt: 0 },
                 // O que o plano novo já inclui não vira módulo pago.
                 planFeatures: { none: { planId: dto.planId, isActive: true } },
+                // Fora do catálogo (a faixa de 1 TB), só o que a assinatura
+                // em curso já tem segue para o plano novo; o orçamento já
+                // recusou o resto
+                OR: [
+                  { listed: true },
+                  {
+                    subscriptionFeatures: {
+                      some: {
+                        subscriptionId: current.id,
+                        isActive: true,
+                        grantSource: null,
+                      },
+                    },
+                  },
+                ],
               },
             })
           : Promise.resolve([]),

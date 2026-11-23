@@ -289,4 +289,13 @@ export class CleanupAutoDto {
   @Min(50)
   @Max(100)
   threshold: number;
+
+  @ApiPropertyOptional({
+    example: 'APAGAR',
+    description:
+      'A confirmação digitada: obrigatória para ligar a automática (quando estava desligada)',
+  })
+  @IsOptional()
+  @IsString()
+  confirm?: string;
 }

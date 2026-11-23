@@ -20,11 +20,15 @@ import { ProductionCleanupService } from './storage/production-cleanup.service';
  * O armazenamento da empresa (GP-49), em todos os planos e só para o
  * administrador: o espaço, o que ocupa e a limpeza. As rotas da limpeza na
  * produção continuam para quem já as usa.
+ *
+ * O prefixo é `company-storage`, não `company/storage`: o `GET company/:id`
+ * do CompanyController é registrado antes e capturava o `GET company/storage`
+ * ("Empresa não encontrada").
  */
 @ApiTags('Armazenamento')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
-@Controller('company/storage')
+@Controller('company-storage')
 export class CompanyStorageController {
   constructor(
     private readonly overviewService: CompanyStorageService,
@@ -55,7 +59,7 @@ export class CompanyStorageController {
 
   @Post('cleanup')
   @ApiOperation({
-    summary: 'Apaga os arquivos mais antigos das O.S. concluídas',
+    summary: 'Apaga os arquivos mais antigos das O.S. entregues',
   })
   async run(@Req() req, @Body() dto: CleanupDto) {
     this.cleanup.assertAdmin(req.user);

@@ -55,6 +55,50 @@ describe('lote (ES-8 a ES-12)', () => {
     });
   });
 
+  it('dividir por quantidade: o pedaço sai do comprimento e o resto encolhe', () => {
+    // O rolo de 1,5 × 50 m = 75 m², separando 15 m²
+    const big = {
+      measure: 'ROLL' as const,
+      quantity: 75,
+      width: 1.5,
+      length: 50,
+      currentQuantity: 75,
+      currentWidth: 1.5,
+      currentLength: 50,
+      cost: 75000,
+    };
+    const { piece, rest } = splitLot(big, { quantity: 15 });
+    expect(piece).toEqual({
+      quantity: 15,
+      width: 1.5,
+      length: 10,
+      cost: 15000,
+    });
+    expect(rest).toEqual({
+      currentQuantity: 60,
+      currentWidth: 1.5,
+      currentLength: 40,
+    });
+  });
+
+  it('a sobra medida precisa das duas medidas maiores que zero', () => {
+    expect(() =>
+      useLot(roll, { width: 0, length: 0, remaining: true }),
+    ).toThrow('maiores que zero');
+    expect(() =>
+      useLot(roll, { width: 1, length: 0, remaining: true }),
+    ).toThrow('maiores que zero');
+  });
+
+  it('as parcelas não passam do total em centavos', () => {
+    expect(() => installmentsOf(2, 3, '2026-12-10')).toThrow(
+      'pelo menos um centavo',
+    );
+    expect(
+      installmentsOf(3, 3, '2026-12-10').map((part) => part.amount),
+    ).toEqual([1, 1, 1]);
+  });
+
   it('o custo por unidade do material', () => {
     expect(unitCostOf(roll)).toBe(383);
   });

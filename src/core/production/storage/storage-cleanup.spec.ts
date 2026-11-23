@@ -1,4 +1,9 @@
-import { autoCleanupDue, pickOldest } from './storage-cleanup';
+import {
+  autoCleanupDue,
+  autoCleanupSkip,
+  cleanupConfirmed,
+  pickOldest,
+} from './storage-cleanup';
 
 const MB = 1024 * 1024;
 const file = (id: string, day: string, mb: number, projectId = 'p1') => ({
@@ -58,5 +63,31 @@ describe('autoCleanupDue', () => {
     expect(autoCleanupDue({ usedBytes: 95, quotaBytes: 100 }, 90)).toBe(true);
     expect(autoCleanupDue({ usedBytes: 80, quotaBytes: 100 }, 90)).toBe(false);
     expect(autoCleanupDue({ usedBytes: 80, quotaBytes: null }, 90)).toBe(false);
+  });
+});
+
+describe('autoCleanupSkip', () => {
+  it('sem assinatura ativa ou com o teste vencido, o automático espera', () => {
+    expect(autoCleanupSkip(null)).toBe('sem assinatura ativa');
+    expect(autoCleanupSkip({ planType: 'TRIAL', isTrialActive: false })).toBe(
+      'teste grátis vencido',
+    );
+  });
+
+  it('com a assinatura ativa, roda', () => {
+    expect(autoCleanupSkip({ planType: 'PRO', isTrialActive: false })).toBe(
+      null,
+    );
+    expect(autoCleanupSkip({ planType: 'TRIAL', isTrialActive: true })).toBe(
+      null,
+    );
+  });
+});
+
+describe('cleanupConfirmed', () => {
+  it('aceita APAGAR digitado de qualquer jeito, e só ele', () => {
+    expect(cleanupConfirmed(' apagar ')).toBe(true);
+    expect(cleanupConfirmed('APAGA')).toBe(false);
+    expect(cleanupConfirmed(undefined)).toBe(false);
   });
 });

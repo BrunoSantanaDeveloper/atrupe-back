@@ -17,6 +17,7 @@ import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { HasAnyPermission } from '../auth/abac/has-any-permission.decorator';
 import { TenantGuard } from '../auth/guards/tenant.guard';
 import { TenantResource } from '../auth/guards/tenant-resource.decorator';
 import { SupplierFilterDTO } from './dto/filter.dto';
@@ -73,7 +74,11 @@ export class SupplierController {
   }
 
   @Get()
-  @HasPermission('view', 'register:supplier')
+  // As compras do FULL escolhem o fornecedor desta lista (cotação e pedido)
+  @HasAnyPermission(
+    { action: 'view', resource: 'register:supplier' },
+    { action: 'view', resource: 'stock:purchase' },
+  )
   @ApiOperation({ summary: 'Obtém a lista de todos os fornecedores' })
   @ApiResponse({
     status: 200,

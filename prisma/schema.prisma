@@ -4869,7 +4869,7 @@ model ProductionAttachmentVersion {
 
 /// O arquivo da O.S. (GP-49, 22/11/2026): guardado na O.S. geral, fora dos
 /// gerenciadores. Vê quem vê a O.S.; conta no espaço dos arquivos e entra na
-/// limpeza quando a O.S. está concluída ou finalizada.
+/// limpeza quando a O.S. está entregue (finalizada).
 model OrderFile {
   id           String    @id @default(uuid())
   companyId    String

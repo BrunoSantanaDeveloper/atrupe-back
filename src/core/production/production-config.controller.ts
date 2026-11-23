@@ -183,8 +183,14 @@ export class ProductionConfigController {
     return this.config.removeStep(req.user.companyId, id, stepId);
   }
 
-  /** Os feriados e os dias de trabalho, para a Agenda de entrega (GP-49) */
+  /**
+   * Os feriados e os dias de trabalho, para a Agenda de entrega (GP-49). A
+   * Agenda existe do Start em diante: a leitura não pede a produção do plano,
+   * só a permissão da Agenda e a empresa da sessão. Gravar continua da
+   * produção (PUT abaixo).
+   */
   @Get('calendar')
+  @RequiresFeature([])
   @HasPermission('view', 'production:delivery_schedule')
   @ApiOperation({ summary: 'O expediente da empresa, só leitura' })
   getCalendar(@Req() req) {

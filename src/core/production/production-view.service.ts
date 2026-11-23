@@ -77,6 +77,7 @@ const DETAIL_SELECT = {
   estimatedMinutes: true,
   setupMinutes: true,
   machine: true,
+  machineSetupId: true,
   machineQuality: true,
   baseTaskId: true,
   dependsOn: true,
@@ -492,6 +493,8 @@ export class ProductionViewService {
       estimatedMinutes: row.estimatedMinutes,
       setupMinutes: row.setupMinutes,
       machine: row.machine,
+      // A configuração vendida: a manutenção da máquina casa por ela
+      machineSetupId: row.machineSetupId,
       machineQuality: row.machineQuality,
       baseTaskId: row.baseTaskId,
       dependsOn: row.dependsOn,

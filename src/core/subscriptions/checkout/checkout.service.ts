@@ -119,6 +119,9 @@ export class CheckoutService {
               key: { in: dto.modules },
               isActive: true,
               price: { gt: 0 },
+              // Fora do catálogo (a faixa de 1 TB) não entra na contratação
+              // nova: o orçamento já recusou
+              listed: true,
             },
           })
         : Promise.resolve([]),

@@ -85,7 +85,7 @@ export class CompanyStorageService {
     return {
       storage: summary,
       byKind: { production, orders },
-      // O que a limpeza pode apagar: as O.S. concluídas ou finalizadas
+      // O que a limpeza pode apagar: as O.S. entregues (finalizadas)
       cleanableBytes: eligible.eligibleBytes,
       largest: top.map((row) => {
         const sale = saleOf.get(row.id);

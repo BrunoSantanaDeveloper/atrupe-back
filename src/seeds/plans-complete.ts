@@ -102,6 +102,8 @@ export const PLAN_CONFIGURATIONS = {
       max_companies: 1,
       // Cota de partida do assistente de IA (IA-6, 28/10/2026)
       ai_messages_month: 300,
+      // Espaço grátis dos arquivos de produção (GP-48 item 27)
+      production_storage_free_mb: 1024,
       trial_days: 7, // 7 dias de teste trial
     },
   },
@@ -191,6 +193,8 @@ export const PLAN_CONFIGURATIONS = {
       max_companies: 1,
       // Cota de partida do assistente de IA (IA-6, 28/10/2026)
       ai_messages_month: 300,
+      // Espaço grátis dos arquivos de produção (GP-48 item 27)
+      production_storage_free_mb: 1024,
       trial_days: 0,
     },
   },
@@ -328,6 +332,8 @@ export const PLAN_CONFIGURATIONS = {
       max_companies: 1,
       // Cota de partida do assistente de IA (IA-6, 28/10/2026)
       ai_messages_month: 1000,
+      // Espaço grátis dos arquivos de produção (GP-48 item 27)
+      production_storage_free_mb: 1024,
       trial_days: 0,
     },
   },
@@ -381,6 +387,8 @@ export const PLAN_CONFIGURATIONS = {
       max_companies: 1,
       // Cota de partida do assistente de IA (IA-6, 28/10/2026)
       ai_messages_month: 1000,
+      // Espaço grátis dos arquivos de produção (GP-48 item 27)
+      production_storage_free_mb: 1024,
       trial_days: 0,
     },
   },
@@ -444,6 +452,8 @@ export const PLAN_CONFIGURATIONS = {
       max_companies: 1,
       // Cota de partida do assistente de IA (IA-6, 28/10/2026)
       ai_messages_month: 1000,
+      // Espaço grátis dos arquivos de produção (GP-48 item 27)
+      production_storage_free_mb: 1024,
       trial_days: 0,
     },
   },
@@ -495,6 +505,8 @@ export const PLAN_CONFIGURATIONS = {
       max_companies: -1, // ilimitado
       // Cota de partida do assistente de IA (IA-6, 28/10/2026)
       ai_messages_month: 1000,
+      // Espaço grátis dos arquivos de produção (GP-48 item 27)
+      production_storage_free_mb: 1024,
       trial_days: 0,
     },
   },

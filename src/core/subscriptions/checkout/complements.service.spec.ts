@@ -565,6 +565,56 @@ describe('ComplementsService', () => {
         'production_storage_1000gb',
       ]);
     });
+
+    describe('o 1 TB pedido direto pela API', () => {
+      const pedir1TB = () =>
+        service.quote('company-1', {
+          modules: ['production_storage_1000gb'],
+        } as any);
+
+      beforeEach(() => prisma.feature.findMany.mockResolvedValue([T1TB]));
+
+      it('sem faixa contratada, é recusado como módulo indisponível', async () => {
+        used(900 * 1024 ** 2);
+        await expect(pedir1TB()).rejects.toMatchObject({
+          response: { code: 'MODULE_NOT_AVAILABLE' },
+        });
+      });
+
+      it('com a faixa abaixo de 80%, é recusado', async () => {
+        withSubscription(com200);
+        used(100 * GB);
+        await expect(pedir1TB()).rejects.toMatchObject({
+          response: { code: 'MODULE_NOT_AVAILABLE' },
+        });
+      });
+
+      it('na apply também: nada vai ao Asaas', async () => {
+        withSubscription(com200);
+        used(100 * GB);
+        await expect(
+          service.apply(
+            ADMIN,
+            {
+              modules: ['production_storage_1000gb'],
+              termsAcceptance: ACCEPT,
+            },
+            META,
+          ),
+        ).rejects.toMatchObject({
+          response: { code: 'MODULE_NOT_AVAILABLE' },
+        });
+        expect(gateway.updateAsaasSubscription).not.toHaveBeenCalled();
+      });
+
+      it('com a faixa passando de 80%, é contratado no lugar dela', async () => {
+        withSubscription(com200);
+        used(170 * GB);
+        const quote: any = await pedir1TB();
+        expect(quote.deltaCycleCents).toBe(30000);
+        expect(quote.recurringCents).toBe(54690);
+      });
+    });
   });
 
   describe('quando o gateway ou o banco falham', () => {

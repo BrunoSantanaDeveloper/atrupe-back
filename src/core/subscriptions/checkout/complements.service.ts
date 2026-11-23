@@ -179,15 +179,7 @@ export class ComplementsService {
       },
       availableModules: catalog
         .filter((f) => !unavailable.has(f.key))
-        // A faixa fora do catálogo (1 TB) aparece só para quem já tem uma
-        // faixa e passou de 80% do espaço
-        .filter(
-          (f) =>
-            f.listed !== false ||
-            (isStorageTier(f) &&
-              !!storage?.nearFull &&
-              f.storageGb! > storage.tierGb),
-        )
+        .filter((f) => this.offered(f, storage))
         .map((f) => ({
           key: f.key,
           name: f.name,
@@ -431,6 +423,11 @@ export class ComplementsService {
           where: { key: { in: addKeys }, isActive: true, price: { gt: 0 } },
         })
       : [];
+    // O que está fora do catálogo só é vendido quando a tela o oferece: pela
+    // API direta, com a mesma recusa do módulo indisponível
+    const storage = features.some((f) => f.listed === false)
+      ? await this.storageState(companyId, sub)
+      : null;
     for (const key of addKeys) {
       const alreadyContracted = contracted.find((sf) => sf.feature.key === key);
       if (alreadyContracted) {
@@ -445,7 +442,7 @@ export class ComplementsService {
           message: 'Este módulo já faz parte do seu plano.',
         });
       }
-      if (!features.some((f) => f.key === key)) {
+      if (!features.some((f) => f.key === key && this.offered(f, storage))) {
         throw new BadRequestException({
           code: 'MODULE_NOT_AVAILABLE',
           message: `Módulo indisponível para contratação: ${key}.`,
@@ -836,6 +833,23 @@ export class ComplementsService {
       ...[...sub.plan.planFeatures, ...modules].map(
         (item) => item.feature.storageGb ?? 0,
       ),
+    );
+  }
+
+  /**
+   * Se o complemento é oferecido à empresa. A faixa fora do catálogo (1 TB)
+   * aparece só para quem já tem uma faixa e passou de 80% do espaço; outro
+   * recurso fora do catálogo, nunca.
+   */
+  private offered(
+    feature: { listed?: boolean | null; storageGb?: number | null },
+    storage: { nearFull: boolean; tierGb: number } | null,
+  ) {
+    return (
+      feature.listed !== false ||
+      (isStorageTier(feature) &&
+        !!storage?.nearFull &&
+        feature.storageGb! > storage.tierGb)
     );
   }
 

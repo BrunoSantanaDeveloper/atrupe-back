@@ -1,4 +1,32 @@
+import { HAS_PERMISSION_KEY } from '../auth/abac/has-permission.decorator';
+import { REQUIRED_FEATURE_KEY } from '../plan/guards/feature.guard';
+import { ProductionConfigController } from './production-config.controller';
 import { hoursData } from './production-config.service';
+
+describe('o expediente da empresa na Agenda de entrega (GP-49)', () => {
+  const featureOf = (handler?: keyof ProductionConfigController) =>
+    Reflect.getMetadata(
+      REQUIRED_FEATURE_KEY,
+      handler
+        ? ProductionConfigController.prototype[handler]
+        : ProductionConfigController,
+    );
+
+  it('a leitura vale em todo plano com a Agenda, com a permissão dela', () => {
+    expect(featureOf('getCalendar')).toEqual([]);
+    expect(
+      Reflect.getMetadata(
+        HAS_PERMISSION_KEY,
+        ProductionConfigController.prototype.getCalendar,
+      ),
+    ).toEqual({ action: 'view', resource: 'production:delivery_schedule' });
+  });
+
+  it('gravar o expediente continua da produção', () => {
+    expect(featureOf('updateCalendar')).toBeUndefined();
+    expect(featureOf()).toEqual(['production_manager', 'sector_board']);
+  });
+});
 
 describe('o expediente do gerenciador (GP-48 item 19)', () => {
   it('sem horário, vale o da empresa', () => {

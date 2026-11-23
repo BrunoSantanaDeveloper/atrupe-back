@@ -8,15 +8,20 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma, ProductionAttachmentKind } from '@prisma/client';
-import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import {
   toProjectDateKey,
   toProjectTimeKey,
 } from '../fiscal/utils/project-date.util';
-import { rescheduleAfter, toMinutes } from './engine/live-schedule';
-import { isOpen } from './engine/production-chain';
+import {
+  liveHoursOf,
+  nextWorkDay,
+  rescheduleAfter,
+  toMinutes,
+} from './engine/live-schedule';
+import { maintenanceSpans } from './engine/maintenance';
+import { isOpen, WorkCalendar } from './engine/production-chain';
 import { planAction } from './engine/task-machine';
 import {
   AttachmentDto,
@@ -34,6 +39,7 @@ import {
   ProductionAccessService,
   ProductionViewer,
 } from './production-access.service';
+import { machineMaintenance } from './production-board.service';
 import { VEHICLE_NOT_FOUND } from './production-config.service';
 import { ProductionMirrorService } from './production-mirror.service';
 import { dateColumn } from './production-project.service';
@@ -49,6 +55,14 @@ import {
   refusalOf,
 } from './storage/production-files.service';
 import { ProductionStorageService } from './storage/production-storage.service';
+import {
+  claimStorageKey,
+  discardUnregistered,
+  isStorageKeyOf,
+  KEY_ALREADY_SAVED,
+  newStorageKey,
+  storageKeyRegistered,
+} from './storage/storage-key';
 
 /** Tamanho máximo do arquivo do anexo (D32, PO 13/10/2026). */
 export const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
@@ -303,7 +317,14 @@ export class ProductionTaskService {
       const managerId = this.view.stepOf(ctx, row).managerId;
       const manager = managerId ? ctx.managers.get(managerId) : undefined;
       if (manager?.liveSchedule === 'RESCHEDULE') {
-        await this.liveReschedule(viewer, id, manager, now);
+        // Fora do caminho: a ação já foi gravada, e uma falha da agenda viva
+        // fica no log em vez de virar erro para quem agiu
+        await this.liveReschedule(viewer, id, manager, now, ctx.calendar).catch(
+          (error) =>
+            this.logger.error(
+              `Agenda viva depois da tarefa ${id}: ${error.message}`,
+            ),
+        );
       }
     }
     // Iniciar ou continuar com quem faz liga o relógio dele (GP-43)
@@ -322,16 +343,20 @@ export class ProductionTaskService {
    * trabalhos de hoje na mesma máquina e no mesmo gerenciador, ainda não
    * iniciados, que já não cabem andam para depois deste, na sequência. Com
    * outro trabalho em andamento na máquina, espera: ele reagenda ao sair.
+   * Vale o expediente efetivo (o do gerenciador ou o da empresa), com o
+   * almoço e a manutenção da máquina; o que não começa mais hoje vai ao
+   * próximo dia útil, sem horário.
    */
   private async liveReschedule(
     viewer: ProductionViewer,
     id: string,
     manager: ManagerRow,
     now: Date,
+    calendar: WorkCalendar,
   ) {
     const task = await this.prisma.productionTask.findUnique({
       where: { id },
-      select: { machine: true },
+      select: { machine: true, machineSetupId: true },
     });
     if (!task?.machine) return;
     const steps = await this.prisma.productionTaskStep.findMany({
@@ -360,34 +385,47 @@ export class ProductionTaskService {
       },
     });
     if (others.some((item) => item.status === 'IN_PROGRESS')) return;
+    const tasks = others
+      .filter((item) => item.scheduleStart)
+      .map((item) => ({
+        id: item.id,
+        start: item.scheduleStart!,
+        minutes: item.scheduleMinutes || item.estimatedMinutes,
+      }));
+    if (!tasks.length) return;
+    // A manutenção da máquina hoje (GP-49 item 6), casada pela configuração
+    const blocks = maintenanceSpans(
+      await machineMaintenance(this.prisma, viewer.companyId, today, today),
+      task,
+      today,
+    );
     const moves = rescheduleAfter({
       freeAt: toMinutes(toProjectTimeKey(now)),
       intervalMinutes: manager.intervalMinutes,
-      hours: {
-        breakStart: manager.breakStart,
-        breakEnd: manager.breakEnd,
-        runsThroughBreak: manager.runsThroughBreak,
-      },
-      tasks: others
-        .filter((item) => item.scheduleStart)
-        .map((item) => ({
-          id: item.id,
-          start: item.scheduleStart!,
-          minutes: item.scheduleMinutes || item.estimatedMinutes,
-        })),
+      hours: liveHoursOf(manager, calendar),
+      blocks,
+      tasks,
     });
     if (!moves.length) return;
+    const nextDay = nextWorkDay(today, calendar);
     await this.prisma.$transaction(async (tx) => {
       for (const move of moves) {
         await tx.productionTask.update({
           where: { id: move.id },
-          data: { scheduleStart: move.to },
+          // Não começa mais hoje: o próximo dia útil, só com o dia (GP-49)
+          data: move.to
+            ? { scheduleStart: move.to }
+            : { scheduleDate: dateColumn(nextDay), scheduleStart: null },
         });
         await this.log(
           tx,
           viewer,
           move.id,
-          `Reagendada de ${move.from} para ${move.to}: o trabalho anterior na máquina atrasou (agenda viva)`,
+          !move.to
+            ? `Reagendada para ${brDate(nextDay)}, sem horário (estava hoje às ${move.from}): não começa mais no expediente de hoje (agenda viva)`
+            : move.maintenance
+              ? `Reagendada de ${move.from} para ${move.to}, depois da manutenção "${move.maintenance}" da máquina (agenda viva)`
+              : `Reagendada de ${move.from} para ${move.to}: o trabalho anterior na máquina atrasou (agenda viva)`,
         );
       }
     });
@@ -913,8 +951,12 @@ export class ProductionTaskService {
     };
   }
 
+  private folderOf(viewer: ProductionViewer, taskId: string) {
+    return `production/${viewer.companyId}/${taskId}`;
+  }
+
   private keyOf(viewer: ProductionViewer, taskId: string, safeName: string) {
-    return `production/${viewer.companyId}/${taskId}/${randomUUID()}-${safeName}`;
+    return newStorageKey(this.folderOf(viewer, taskId), safeName);
   }
 
   private async upload(
@@ -946,35 +988,47 @@ export class ProductionTaskService {
     const name = nameOf(dto.fileName);
     this.files.assertFits(await this.storageSummary(viewer), dto.size);
     const key = this.keyOf(viewer, id, name.safeName);
-    return { key, url: this.storage.uploadUrl(key), mime: name.mime };
+    // O PUT precisa mandar este mime como Content-Type (vai na assinatura)
+    return {
+      key,
+      url: this.storage.uploadUrl(key, dto.size, name.mime),
+      mime: name.mime,
+    };
   }
 
   /**
-   * O arquivo que o navegador enviou: a chave precisa ser da pasta da tarefa,
-   * e o tamanho vale o do armazenamento, não o que a tela disse. Sem espaço,
-   * o arquivo é apagado e a entrada recusada.
+   * O arquivo que o navegador enviou: a chave precisa ter o formato que o
+   * link gerou (desta tarefa e deste nome) e não estar registrada, e o
+   * tamanho vale o do armazenamento, não o que a tela disse. O tipo é o do
+   * link, que o armazenamento já exigiu no envio. Sem espaço, o arquivo é
+   * apagado (só o de chave sem registro) e a entrada recusada.
    */
   private async receivedFile(
     viewer: ProductionViewer,
     id: string,
     dto: DirectFileDto,
   ) {
-    if (!dto.key.startsWith(`production/${viewer.companyId}/${id}/`)) {
-      bad('Arquivo de outra tarefa');
-    }
     const name = nameOf(dto.fileName);
+    if (!isStorageKeyOf(dto.key, this.folderOf(viewer, id), name.safeName)) {
+      bad('Arquivo inválido para esta tarefa. Envie de novo.');
+    }
+    if (await storageKeyRegistered(this.prisma, dto.key)) {
+      throw new ConflictException(KEY_ALREADY_SAVED);
+    }
     const size = await this.storage.sizeOf(dto.key);
     if (size === null)
       bad('O arquivo não chegou ao armazenamento. Envie de novo.');
     const summary = await this.storageSummary(viewer);
     const refusal = refusalOf(summary, size!);
     if (refusal) {
-      await this.storage.remove(dto.key).catch(() => undefined);
+      await discardUnregistered(this.prisma, dto.key, (key) =>
+        this.storage.remove(key),
+      );
       throw new UnprocessableEntityException(refusal);
     }
     return {
       fileName: name.fileName,
-      mime: dto.mime?.trim() || name.mime,
+      mime: name.mime,
       size: size!,
       storageKey: dto.key,
     };
@@ -991,6 +1045,8 @@ export class ProductionTaskService {
       path.parse(file.fileName).name.trim() ||
       bad('Dê um nome ao anexo');
     const attachmentId = await this.prisma.$transaction(async (tx) => {
+      // A chave travada: o envio repetido não cria duas linhas
+      await claimStorageKey(tx, file.storageKey);
       const attachment = await tx.productionAttachment.create({
         data: {
           taskId: id,
@@ -1071,6 +1127,8 @@ export class ProductionTaskService {
     const version =
       Math.max(0, ...attachment.versions.map((item) => item.version)) + 1;
     await this.prisma.$transaction(async (tx) => {
+      // A chave travada: o envio repetido não cria duas linhas
+      await claimStorageKey(tx, file.storageKey);
       await tx.productionAttachmentVersion.updateMany({
         where: { attachmentId: attachment.id },
         data: { current: false },
@@ -1196,9 +1254,14 @@ export class ProductionTaskService {
     return this.attachmentView(attachmentId);
   }
 
-  /** O banco já soltou o arquivo: a falha no armazenamento só fica no log. */
+  /**
+   * O banco já soltou o arquivo: a falha no armazenamento só fica no log. A
+   * chave que ainda está noutro registro (dado de antes da chave única) não
+   * perde o arquivo.
+   */
   private async removeFiles(keys: string[]) {
     for (const key of keys) {
+      if (await storageKeyRegistered(this.prisma, key)) continue;
       await this.storage
         .remove(key)
         .catch((error) =>

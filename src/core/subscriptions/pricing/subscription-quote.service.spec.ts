@@ -50,6 +50,7 @@ describe('SubscriptionQuoteService', () => {
     subscription: { findFirst: jest.fn(), findUnique: jest.fn() },
     plan: { findFirst: jest.fn(), findMany: jest.fn() },
     feature: { findMany: jest.fn() },
+    subscriptionFeature: { findMany: jest.fn() },
   };
   const coupons = { validateCoupon: jest.fn() };
 
@@ -508,6 +509,76 @@ describe('SubscriptionQuoteService', () => {
 
       expect(result.quote.lines.map((l) => l.kind)).toEqual(['PLAN']);
       expect(result.quote.recurringCents).toBe(23000);
+    });
+
+    describe('a faixa fora do catálogo (1 TB, GP-48 item 27)', () => {
+      const T1TB = {
+        key: 'production_storage_1tb',
+        name: 'Arquivos de produção · 1 TB',
+        price: 39990,
+        storageGb: 1000,
+        listed: false,
+        planFeatures: [],
+      };
+
+      it('não entra na contratação nova', async () => {
+        withCatalog();
+        withSubscriptions(null, null);
+        prisma.feature.findMany.mockResolvedValue([T1TB]);
+
+        await expect(
+          service.quote(
+            'company-1',
+            { planId: 'plan-START', modules: ['production_storage_1tb'] },
+            AGORA,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.subscriptionFeature.findMany).not.toHaveBeenCalled();
+      });
+
+      it('na evolução, só segue a que a assinatura em curso já tem', async () => {
+        withCatalog(true);
+        withSubscriptions(subscription());
+        prisma.feature.findMany.mockResolvedValue([T1TB]);
+        prisma.subscriptionFeature.findMany.mockResolvedValue([
+          { feature: { key: 'production_storage_1tb' } },
+        ]);
+
+        const result = await service.quote(
+          'company-1',
+          { planId: 'plan-LITE', modules: ['production_storage_1tb'] },
+          AGORA,
+        );
+
+        expect(prisma.subscriptionFeature.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              subscriptionId: 'sub-1',
+              grantSource: null,
+            }),
+          }),
+        );
+        expect(result.quote.lines.map((l) => l.kind)).toEqual([
+          'PLAN',
+          'MODULE',
+        ]);
+        expect(result.quote.recurringCents).toBe(62990);
+      });
+
+      it('na evolução, pedir a que não está contratada é recusado', async () => {
+        withCatalog(true);
+        withSubscriptions(subscription());
+        prisma.feature.findMany.mockResolvedValue([T1TB]);
+        prisma.subscriptionFeature.findMany.mockResolvedValue([]);
+
+        await expect(
+          service.quote(
+            'company-1',
+            { planId: 'plan-LITE', modules: ['production_storage_1tb'] },
+            AGORA,
+          ),
+        ).rejects.toThrow(BadRequestException);
+      });
     });
 
     it('usuário sem empresa não tem orçamento', async () => {

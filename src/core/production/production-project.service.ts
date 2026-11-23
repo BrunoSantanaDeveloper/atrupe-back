@@ -391,15 +391,10 @@ export class ProductionProjectService {
     }
     const missing = [...sectors.keys()].filter((id) => !result.has(id));
     if (!missing.length) return result;
-    const [rows, managers, calendar] = await Promise.all([
+    const [rows, calendar] = await Promise.all([
       this.prisma.companySector.findMany({
         where: { id: { in: missing }, companyId },
         select: { id: true, name: true },
-      }),
-      this.prisma.productionManager.findMany({
-        where: { companyId, sectorId: { in: missing }, isActive: true },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true, sectorId: true },
       }),
       this.prisma.productionCalendar.findUnique({
         where: { companyId },
@@ -413,54 +408,79 @@ export class ProductionProjectService {
     ]);
     let flowId: string | null = null;
     for (const sector of rows) {
-      let managerId = managers.find((item) => item.sectorId === sector.id)?.id;
-      if (!managerId) {
-        flowId ??= await this.defaultFlowId(companyId);
-        managerId = (
-          await this.prisma.productionManager.create({
-            data: {
-              companyId,
-              name: sector.name,
-              sectorId: sector.id,
-              flowId,
-              timeMode: 'NONE',
-              workStart: calendar?.startTime ?? '08:00',
-              workEnd: calendar?.endTime ?? '18:00',
-              breakStart: calendar?.breakStart ?? null,
-              breakEnd: calendar?.breakEnd ?? null,
-            },
-            select: { id: true },
-          })
-        ).id;
-        this.logger.log(
-          `Tela do setor "${sector.name}" criada na empresa ${companyId}`,
-        );
-      }
-      const nameKey = SECTOR_TYPE_PREFIX + sector.id;
-      const type = await this.prisma.productionTaskType.upsert({
-        where: { companyId_nameKey: { companyId, nameKey } },
-        create: {
-          companyId,
-          name: sector.name,
-          nameKey,
-          release: 'AFTER_BASE',
-          timeControl: false,
-          steps: {
-            create: { name: sector.name, managerId, position: 0 },
-          },
-        },
-        update: {},
-        select: {
+      let created = false;
+      // Não há índice único de empresa e setor no gerenciador: duas
+      // primeiras vendas ao mesmo tempo se enfileiram nesta trava, e a
+      // segunda acha a tela e o tipo que a primeira criou
+      const type = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`production-sector:${companyId}:${sector.id}`}))`;
+        const nameKey = SECTOR_TYPE_PREFIX + sector.id;
+        const select = {
           id: true,
           name: true,
           release: true,
           steps: {
             select: { id: true },
-            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+            orderBy: [
+              { position: 'asc' as const },
+              { createdAt: 'asc' as const },
+            ],
             take: 1,
           },
-        },
+        };
+        const existing = await tx.productionTaskType.findUnique({
+          where: { companyId_nameKey: { companyId, nameKey } },
+          select,
+        });
+        if (existing?.steps[0]) return existing;
+        let managerId = (
+          await tx.productionManager.findFirst({
+            where: { companyId, sectorId: sector.id, isActive: true },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true },
+          })
+        )?.id;
+        if (!managerId) {
+          flowId ??= await this.defaultFlowId(companyId, tx);
+          managerId = (
+            await tx.productionManager.create({
+              data: {
+                companyId,
+                name: sector.name,
+                sectorId: sector.id,
+                flowId,
+                timeMode: 'NONE',
+                workStart: calendar?.startTime ?? '08:00',
+                workEnd: calendar?.endTime ?? '18:00',
+                breakStart: calendar?.breakStart ?? null,
+                breakEnd: calendar?.breakEnd ?? null,
+              },
+              select: { id: true },
+            })
+          ).id;
+          created = true;
+        }
+        return tx.productionTaskType.upsert({
+          where: { companyId_nameKey: { companyId, nameKey } },
+          create: {
+            companyId,
+            name: sector.name,
+            nameKey,
+            release: 'AFTER_BASE',
+            timeControl: false,
+            steps: {
+              create: { name: sector.name, managerId, position: 0 },
+            },
+          },
+          update: {},
+          select,
+        });
       });
+      if (created) {
+        this.logger.log(
+          `Tela do setor "${sector.name}" criada na empresa ${companyId}`,
+        );
+      }
       result.set(sector.id, {
         id: type.id,
         name: type.name,
@@ -471,15 +491,18 @@ export class ProductionProjectService {
     return result;
   }
 
-  private async defaultFlowId(companyId: string) {
-    const existing = await this.prisma.productionFlow.findFirst({
+  private async defaultFlowId(
+    companyId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const existing = await db.productionFlow.findFirst({
       where: { companyId },
       orderBy: { createdAt: 'asc' },
       select: { id: true },
     });
     if (existing) return existing.id;
     return (
-      await this.prisma.productionFlow.upsert({
+      await db.productionFlow.upsert({
         where: { companyId_name: { companyId, name: DEFAULT_FLOW } },
         create: { companyId, name: DEFAULT_FLOW },
         update: {},

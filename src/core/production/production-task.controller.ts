@@ -25,6 +25,7 @@ import {
 import { memoryStorage } from 'multer';
 import { HasAnyPermission } from '../auth/abac/has-any-permission.decorator';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { MoneyFields } from '../auth/abac/money-fields.decorator';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
@@ -172,6 +173,8 @@ export class ProductionTaskController {
   @Get(':id/lots')
   @HasPermission('view', PRODUCTION)
   @RequiresFeature('purchasing')
+  // O custo do lote, como na lista de Lotes: sai para quem não vê valores
+  @MoneyFields('cost', 'unitCost', 'currentValue')
   @ApiOperation({ summary: 'Os lotes abertos no setor da tarefa' })
   async lots(@Req() req, @Param('id') id: string) {
     const viewer = await this.access.viewer(req.user);
@@ -194,8 +197,9 @@ export class ProductionTaskController {
   ) {
     const viewer = await this.access.viewer(req.user);
     const task = await this.tasks.lotTask(viewer, id);
+    // Quem age no estoque é o usuário (createdById), como nas outras baixas
     const { text } = await this.lots_.useForTask(viewer.companyId, task, dto, {
-      id: viewer.employeeId,
+      id: viewer.userId,
       name: viewer.name,
     });
     return this.tasks.lotUsed(viewer, id, text);

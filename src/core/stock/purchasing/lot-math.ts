@@ -77,7 +77,12 @@ export function useLot(lot: LotShape, use: LotUse) {
   let nextWidth = width;
   let nextLength = length;
   if ('remaining' in use) {
-    if (use.width < 0 || use.length < 0) throw new Error('Medida inválida');
+    // A sobra 0 × 0 zeraria o lote: encerrar sem sobra é o Finalizar
+    if (!(use.width > 0) || !(use.length > 0)) {
+      throw new Error(
+        'Informe a largura e o comprimento da sobra, maiores que zero (para encerrar o lote sem sobra, use Finalizar lote)',
+      );
+    }
     if (use.width > width + 1e-9 || use.length > length + 1e-9) {
       throw new Error('A sobra não pode ser maior que o lote');
     }
@@ -117,17 +122,26 @@ export function splitLot(lot: LotShape, cut: LotCut) {
       throw new Error('O pedaço precisa ser menor que o lote');
     }
     const share = cut.quantity / lot.quantity;
+    const currentQuantity = round(lot.currentQuantity - cut.quantity);
+    // No rolo e na chapa, o pedaço sai do comprimento, na largura atual (como
+    // a baixa por quantidade): o resto encolhe na mesma razão
+    const length = hasArea(lot) ? lot.currentLength : null;
+    const width = lot.currentWidth ?? lot.width;
+    const restLength =
+      length !== null
+        ? round((length * currentQuantity) / lot.currentQuantity)
+        : null;
     return {
       piece: {
         quantity: round(cut.quantity),
-        width: null,
-        length: null,
+        width: length !== null ? width : null,
+        length: length !== null ? round(length - restLength!) : null,
         cost: Math.round(lot.cost * share),
       },
       rest: {
-        currentQuantity: round(lot.currentQuantity - cut.quantity),
+        currentQuantity,
         currentWidth: lot.currentWidth,
-        currentLength: lot.currentLength,
+        currentLength: length !== null ? restLength : lot.currentLength,
       },
     };
   }
@@ -168,7 +182,7 @@ export function splitLot(lot: LotShape, cut: LotCut) {
 /**
  * As parcelas da compra (ES-15): o total dividido, o resto do arredondamento
  * na primeira; a primeira na data informada e as outras de tantos em tantos
- * dias.
+ * dias. Cada parcela tem pelo menos um centavo.
  */
 export function installmentsOf(
   total: number,
@@ -177,6 +191,11 @@ export function installmentsOf(
   everyDays = 30,
 ) {
   const n = Math.max(1, Math.min(Math.round(count), 48));
+  if (n > total) {
+    throw new Error(
+      `O valor não dá ${n} parcelas: cada parcela precisa de pelo menos um centavo`,
+    );
+  }
   const base = Math.floor(total / n);
   const start = new Date(`${firstDue}T12:00:00.000Z`);
   return Array.from({ length: n }, (_, index) => {

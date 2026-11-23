@@ -57,6 +57,55 @@ const periodOf = (
 };
 
 /**
+ * As manutenções que bloqueiam a agenda (GP-49 item 6) entre from e to: o
+ * custo fixo do patrimônio com a última ocorrência e o bloqueio ligado. O
+ * bloqueio leva o bem e as configurações dele, para casar com a máquina da
+ * tarefa (blocksTask). A fila e a agenda viva leem daqui.
+ */
+export async function machineMaintenance(
+  prisma: PrismaService,
+  companyId: string,
+  from: string,
+  to: string,
+) {
+  const costs = await prisma.assetCost.findMany({
+    where: {
+      blocksSchedule: true,
+      lastOccurrence: { not: null },
+      blockStart: { not: null },
+      blockMinutes: { not: null },
+      asset: { companyId, inactivatedAt: null, soldAt: null },
+    },
+    select: {
+      id: true,
+      name: true,
+      yieldAmount: true,
+      lastOccurrence: true,
+      blockStart: true,
+      blockMinutes: true,
+      asset: {
+        select: { id: true, name: true, setups: { select: { id: true } } },
+      },
+    },
+  });
+  return maintenanceBlocks(
+    costs.map((cost) => ({
+      id: cost.id,
+      name: cost.name,
+      assetId: cost.asset.id,
+      machine: cost.asset.name,
+      setupIds: cost.asset.setups.map((setup) => setup.id),
+      lastOccurrence: cost.lastOccurrence!.toISOString().slice(0, 10),
+      everyMonths: cost.yieldAmount,
+      start: cost.blockStart!,
+      minutes: cost.blockMinutes!,
+    })),
+    from,
+    to,
+  );
+}
+
+/**
  * O que se lê da produção em conjunto (GP-11, §4.8, GP-30): as abas dos
  * gerenciadores com as contagens, o quadro de um gerenciador, a agenda viva
  * com a frota e a produtividade pelo tempo vendido.
@@ -99,44 +148,11 @@ export class ProductionBoardService {
       });
   }
 
-  /**
-   * As manutenções dos próximos 30 dias que bloqueiam a agenda: o custo
-   * fixo do patrimônio com a última ocorrência e o bloqueio ligado.
-   */
+  /** As manutenções dos próximos 30 dias que bloqueiam a agenda. */
   private async maintenance(companyId: string) {
-    const costs = await this.prisma.assetCost.findMany({
-      where: {
-        blocksSchedule: true,
-        lastOccurrence: { not: null },
-        blockStart: { not: null },
-        blockMinutes: { not: null },
-        asset: { companyId, inactivatedAt: null, soldAt: null },
-      },
-      select: {
-        id: true,
-        name: true,
-        yieldAmount: true,
-        lastOccurrence: true,
-        blockStart: true,
-        blockMinutes: true,
-        asset: { select: { name: true } },
-      },
-    });
     const today = toProjectDateKey(new Date());
-    const until = toProjectDateKey(new Date(Date.now() + 30 * 86400000));
-    return maintenanceBlocks(
-      costs.map((cost) => ({
-        id: cost.id,
-        name: cost.name,
-        machine: cost.asset.name,
-        lastOccurrence: cost.lastOccurrence!.toISOString().slice(0, 10),
-        everyMonths: cost.yieldAmount,
-        start: cost.blockStart!,
-        minutes: cost.blockMinutes!,
-      })),
-      today,
-      until,
-    );
+    const until = toProjectDateKey(new Date(Date.now() + 30 * DAY_MS));
+    return machineMaintenance(this.prisma, companyId, today, until);
   }
 
   /** O quadro: as tarefas cuja etapa atual está no gerenciador. */
@@ -265,21 +281,29 @@ export class ProductionBoardService {
       const occupies =
         detail.setupMinutes +
         Math.max(detail.estimatedMinutes - detail.setupMinutes, 0);
-      const start = minutesOf(task.schedule!.start);
+      // Só o dia (GP-49): sem a hora, não há horário para sobrepor
+      const start = task.schedule!.start
+        ? minutesOf(task.schedule!.start)
+        : null;
       return {
         row,
         task,
         detail,
         occupies,
         start,
-        end: start + Math.max(occupies, task.schedule!.minutes),
+        end:
+          start === null
+            ? null
+            : start + Math.max(occupies, task.schedule!.minutes),
       };
     });
     const machineConflict = (slot: (typeof slots)[number]) =>
       !!slot.detail.machine &&
+      slot.start !== null &&
       slots.some(
         (other) =>
           other !== slot &&
+          other.start !== null &&
           other.detail.machine === slot.detail.machine &&
           other.task.schedule!.date === slot.task.schedule!.date &&
           other.start < slot.end + intervalOf(slot.row) &&
@@ -310,7 +334,12 @@ export class ProductionBoardService {
       };
       entry.km += slot.detail.km ?? 0;
       entry.tasks.push(slot.row.id);
-      entry.spans.push([slot.start, slot.start + slot.task.schedule!.minutes]);
+      if (slot.start !== null) {
+        entry.spans.push([
+          slot.start,
+          slot.start + slot.task.schedule!.minutes,
+        ]);
+      }
       usage.set(key, entry);
     }
     const overlaps = (spans: [number, number][]) =>

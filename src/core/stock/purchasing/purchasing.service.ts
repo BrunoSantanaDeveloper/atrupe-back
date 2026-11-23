@@ -12,6 +12,7 @@ import { PricingParametersService } from '../../pricing/pricing-parameters.servi
 import { StockService } from '../stock.service';
 import { enterStock, stockKey } from '../stock-entry';
 import { installmentsOf } from './lot-math';
+import { lockNumbering } from './numbering';
 import {
   CheckOrderDto,
   CloseOrderDto,
@@ -191,6 +192,7 @@ export class PurchasingService {
     const description = material?.description || dto.description?.trim();
     if (!description) bad('Escolha o material ou descreva o que precisa');
     const id = await this.prisma.$transaction(async (tx) => {
+      await lockNumbering(tx, 'purchase_requests', companyId);
       const last = await tx.purchaseRequest.aggregate({
         where: { companyId },
         _max: { number: true },
@@ -361,6 +363,23 @@ export class PurchasingService {
       bySupplier.set(key, [...(bySupplier.get(key) ?? []), quote]);
     }
     const ids = await this.prisma.$transaction(async (tx) => {
+      // As solicitações saem do aberto aqui, antes do pedido: com dois
+      // "Fechar o pedido" ao mesmo tempo, o segundo encontra a solicitação
+      // já em pedido e é recusado (sem pedido em dobro)
+      const claimed = await tx.purchaseRequest.updateMany({
+        where: {
+          id: { in: [...requests] },
+          companyId,
+          status: { in: ['REQUESTED', 'QUOTING'] },
+        },
+        data: { status: 'ORDERED' },
+      });
+      if (claimed.count !== requests.size) {
+        throw new ConflictException(
+          'Uma das solicitações já virou pedido ou foi cancelada: atualize a tela',
+        );
+      }
+      await lockNumbering(tx, 'purchase_orders', companyId);
       const created: string[] = [];
       for (const group of bySupplier.values()) {
         const last = await tx.purchaseOrder.aggregate({
@@ -541,6 +560,7 @@ export class PurchasingService {
       });
     }
     const id = await this.prisma.$transaction(async (tx) => {
+      await lockNumbering(tx, 'purchase_orders', companyId);
       const last = await tx.purchaseOrder.aggregate({
         where: { companyId },
         _max: { number: true },
@@ -724,6 +744,7 @@ export class PurchasingService {
         if (!claimed.count) {
           throw new ConflictException('O pedido já foi lançado no estoque');
         }
+        if (dto.lots?.length) await lockNumbering(tx, 'stock_lots', companyId);
         let lotNumber =
           (
             await tx.stockLot.aggregate({
@@ -832,11 +853,34 @@ export class PurchasingService {
     if (row.status === 'CANCELED') return this.orderView(row);
     const text = reason?.trim() || bad('Informe o motivo');
     await this.prisma.$transaction(async (tx) => {
-      await tx.purchaseOrder.update({
-        where: { id },
+      // Só cancela o pedido como foi lido: o lançamento no estoque ou as
+      // contas a pagar gerados no meio tempo recusam o cancelamento
+      const claimed = await tx.purchaseOrder.updateMany({
+        where: {
+          id,
+          companyId,
+          status: { in: ['PENDING_DELIVERY', 'CHECKING'] },
+          payableId: row.payableId,
+        },
         data: { status: 'CANCELED', cancelReason: text },
       });
-      await this.log(tx, companyId, row, `Cancelado: ${text}`, actor);
+      if (!claimed.count) {
+        throw new ConflictException(
+          'O pedido mudou enquanto era cancelado (entrou no estoque ou ganhou contas a pagar): atualize a tela e tente de novo',
+        );
+      }
+      if (row.payableId) {
+        await this.cancelPayable(tx, companyId, row, text, actor);
+      }
+      await this.log(
+        tx,
+        companyId,
+        row,
+        row.payableId
+          ? `Cancelado, com as contas a pagar: ${text}`
+          : `Cancelado: ${text}`,
+        actor,
+      );
       // As solicitações voltam a esperar a cotação
       const requestIds = row.items
         .map((item) => item.requestId)
@@ -856,8 +900,122 @@ export class PurchasingService {
   }
 
   /**
+   * O cancelamento do pedido leva as contas a pagar dele, como o Cancelar do
+   * Financeiro: o título e as parcelas em aberto ficam CANCELED, com o
+   * histórico. Com parcela paga (ou com pagamento), recusa: o pagamento se
+   * desfaz no Financeiro antes.
+   */
+  private async cancelPayable(
+    tx: Prisma.TransactionClient,
+    companyId: string,
+    order: OrderRow,
+    reason: string,
+    actor: CashActor,
+  ) {
+    const payable = await tx.payable.findFirst({
+      where: { id: order.payableId!, companyId },
+      select: {
+        id: true,
+        status: true,
+        installments: {
+          select: {
+            id: true,
+            installmentNumber: true,
+            status: true,
+            paidAmount: true,
+            transactionId: true,
+          },
+          orderBy: { installmentNumber: 'asc' },
+        },
+      },
+    });
+    if (!payable || payable.status === 'CANCELED') return;
+    const paid = payable.installments.filter(
+      (installment) =>
+        installment.status === 'PAID' ||
+        installment.status === 'PROVISIONED' ||
+        (installment.paidAmount ?? 0) > 0 ||
+        !!installment.transactionId,
+    );
+    if (paid.length) {
+      bad(
+        `O pedido tem contas a pagar com parcela paga (${paid.map((installment) => installment.installmentNumber).join(', ')}): desfaça o pagamento no Financeiro antes de cancelar o pedido`,
+      );
+    }
+    const open = payable.installments
+      .filter((installment) => installment.status !== 'CANCELED')
+      .map((installment) => installment.id);
+    if (open.length) {
+      const canceled = await tx.payableInstallment.updateMany({
+        where: {
+          id: { in: open },
+          status: { in: ['PENDING', 'OVERDUE'] },
+          OR: [{ paidAmount: null }, { paidAmount: { lte: 0 } }],
+          transactionId: null,
+        },
+        data: { status: 'CANCELED' },
+      });
+      // Uma parcela paga no meio tempo desfaz tudo
+      if (canceled.count !== open.length) {
+        throw new ConflictException(
+          'Uma parcela das contas a pagar do pedido foi paga agora: atualize a tela',
+        );
+      }
+    }
+    const cancelReason = `Pedido de compra ${order.number} cancelado: ${reason}`;
+    await tx.payable.update({
+      where: { id: payable.id },
+      data: { status: 'CANCELED', cancelReason },
+    });
+    if (actor.id) {
+      await tx.payableHistory.create({
+        data: {
+          payableId: payable.id,
+          action: 'CANCEL',
+          description: `Título cancelado: ${cancelReason}`,
+          metadata: { cancelReason, purchaseOrderId: order.id },
+          createdBy: actor.id,
+          createdByName: actor.name,
+        },
+      });
+    }
+  }
+
+  /**
+   * A natureza e a subcategoria da compra de material: Operacional › Matéria
+   * Prima, do plano de contas da empresa (natures-base), quando existem.
+   */
+  private async rawMaterialCategories(companyId: string) {
+    const nature = await this.prisma.nature.findFirst({
+      where: {
+        companyId,
+        isActive: true,
+        description: { equals: 'Operacional', mode: 'insensitive' },
+      },
+      select: { id: true },
+    });
+    if (!nature) return { natureId: null, subCategoryId: null };
+    const subCategory = await this.prisma.subCategory.findFirst({
+      where: {
+        companyId,
+        isActive: true,
+        natureId: nature.id,
+        OR: [
+          { description: { equals: 'Matéria Prima', mode: 'insensitive' } },
+          { description: { equals: 'Matéria-Prima', mode: 'insensitive' } },
+          { description: { equals: 'Materia Prima', mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+    });
+    return { natureId: nature.id, subCategoryId: subCategory?.id ?? null };
+  }
+
+  /**
    * As contas a pagar do pedido (ES-15): o total em parcelas, para o
-   * fornecedor. Uma vez por pedido.
+   * fornecedor, em Operacional › Matéria Prima. Uma vez por pedido: a marca
+   * no pedido é gravada na mesma transação, só se ainda não havia, e o
+   * segundo pedido simultâneo desfaz o que criou.
    */
   async payables(
     companyId: string,
@@ -869,16 +1027,25 @@ export class PurchasingService {
     if (row.status === 'CANCELED') bad('O pedido está cancelado');
     if (row.payableId) bad('As contas a pagar deste pedido já foram geradas');
     if (!(row.total > 0)) bad('O pedido não tem valor');
-    const parts = installmentsOf(
-      row.total,
-      dto.installments,
-      dto.firstDue,
-      dto.everyDays ?? 30,
-    );
-    const bankAccount = await this.prisma.bankAccount.findFirst({
-      where: { companyId, isActive: true },
-      select: { id: true },
-    });
+    let parts: ReturnType<typeof installmentsOf> = [];
+    try {
+      parts = installmentsOf(
+        row.total,
+        dto.installments,
+        dto.firstDue,
+        dto.everyDays ?? 30,
+      );
+    } catch (error) {
+      bad((error as Error).message);
+    }
+    const [bankAccount, categories] = await Promise.all([
+      this.prisma.bankAccount.findFirst({
+        where: { companyId, isActive: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      }),
+      this.rawMaterialCategories(companyId),
+    ]);
     await this.prisma.$transaction(async (tx) => {
       const payable = await tx.payable.create({
         data: {
@@ -890,6 +1057,8 @@ export class PurchasingService {
           installmentQty: parts.length,
           status: 'PENDING',
           supplierId: row.supplierId,
+          natureId: categories.natureId,
+          subCategoryId: categories.subCategoryId,
           companyId,
         },
       });
@@ -908,10 +1077,39 @@ export class PurchasingService {
           },
         });
       }
-      await tx.purchaseOrder.update({
-        where: { id },
+      const claimed = await tx.purchaseOrder.updateMany({
+        where: {
+          id,
+          companyId,
+          payableId: null,
+          status: { not: 'CANCELED' },
+        },
         data: { payableId: payable.id },
       });
+      if (!claimed.count) {
+        throw new ConflictException(
+          'As contas a pagar deste pedido já foram geradas (ou o pedido foi cancelado): atualize a tela',
+        );
+      }
+      // O histórico do título, como o Financeiro grava ao criar
+      if (actor.id) {
+        await tx.payableHistory.create({
+          data: {
+            payableId: payable.id,
+            action: 'CREATE',
+            description: 'Título criado',
+            metadata: {
+              totalAmount: row.total,
+              installmentQty: parts.length,
+              supplierName: row.supplierName,
+              expenseSource: 'SUPPLIER',
+              purchaseOrderId: row.id,
+            },
+            createdBy: actor.id,
+            createdByName: actor.name,
+          },
+        });
+      }
       await this.log(
         tx,
         companyId,

@@ -1,12 +1,19 @@
 import type { S3Client } from '@aws-sdk/client-s3';
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { presignGetUrl, presignPutUrl } from './s3-presign';
 
 /** O link de leitura vale 15 minutos e é refeito a cada leitura (GP-27). */
 export const LINK_SECONDS = 15 * 60;
 
-/** O link de envio direto vale 1 hora: o arquivo pesado demora a subir. */
-export const UPLOAD_LINK_SECONDS = 60 * 60;
+/**
+ * O link de envio direto vale 15 minutos para começar o PUT; ele só aceita
+ * o tamanho e o tipo declarados ao pedir o link.
+ */
+export const UPLOAD_LINK_SECONDS = 15 * 60;
 
 /**
  * O armazenamento dos anexos da produção: arte de cliente, então privado.
@@ -16,6 +23,7 @@ export const UPLOAD_LINK_SECONDS = 60 * 60;
  */
 @Injectable()
 export class ProductionStorageService {
+  private readonly logger = new Logger(ProductionStorageService.name);
   private client: S3Client | null = null;
 
   private get settings() {
@@ -64,18 +72,28 @@ export class ProductionStorageService {
     );
   }
 
-  /** O link para o navegador enviar o arquivo direto ao armazenamento. */
-  uploadUrl(key: string, now = new Date()) {
+  /**
+   * O link para o navegador enviar o arquivo direto ao armazenamento. O
+   * tamanho e o tipo entram na assinatura: o PUT precisa mandar o
+   * Content-Type igual ao `mime` (o navegador põe o Content-Length).
+   */
+  uploadUrl(key: string, size: number, mime: string, now = new Date()) {
     this.assertConfigured();
     return presignPutUrl({
       ...this.settings,
       key,
+      contentLength: size,
+      contentType: mime,
       expiresSeconds: UPLOAD_LINK_SECONDS,
       now,
     });
   }
 
-  /** O tamanho real do arquivo enviado; nulo quando ele não chegou. */
+  /**
+   * O tamanho real do arquivo enviado; nulo quando ele não chegou. Sem a
+   * permissão s3:ListBucket, o S3 responde 403 (e não 404) ao arquivo que
+   * não existe: os dois valem "não chegou".
+   */
   async sizeOf(key: string): Promise<number | null> {
     const { sdk, client } = await this.sdk();
     try {
@@ -86,7 +104,13 @@ export class ProductionStorageService {
     } catch (error) {
       const status = (error as { $metadata?: { httpStatusCode?: number } })
         .$metadata?.httpStatusCode;
-      if (status === 404 || (error as Error).name === 'NotFound') return null;
+      const name = (error as Error).name;
+      if (status === 404 || name === 'NotFound') return null;
+      if (status === 403 || name === 'Forbidden') {
+        // Também é o 403 da credencial errada: fica no log para a operação
+        this.logger.warn(`Consulta do arquivo ${key} respondeu 403`);
+        return null;
+      }
       throw error;
     }
   }

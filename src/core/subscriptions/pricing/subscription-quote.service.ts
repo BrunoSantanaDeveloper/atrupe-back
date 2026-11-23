@@ -289,7 +289,11 @@ export class SubscriptionQuoteService {
     // Plano não liberado: nem o preço é revelado.
     if (!plan.isActive) return response(false, null, 'NOT_RELEASED');
 
-    const modules = await this.loadModules(dto.modules ?? [], plan.id);
+    const modules = await this.loadModules(
+      dto.modules ?? [],
+      plan.id,
+      ctx.current?.id ?? null,
+    );
     const { coupon, couponFailure } = await this.loadCoupon(
       dto.couponCode,
       companyId,
@@ -356,7 +360,11 @@ export class SubscriptionQuoteService {
     return undefined;
   }
 
-  private async loadModules(keys: string[], planId: string) {
+  private async loadModules(
+    keys: string[],
+    planId: string,
+    currentSubscriptionId: string | null,
+  ) {
     if (keys.length === 0) return [];
     const unique = [...new Set(keys)];
     const features = await this.prisma.feature.findMany({
@@ -369,7 +377,13 @@ export class SubscriptionQuoteService {
       },
     });
     assertSingleStorageTier(features);
-    const missing = unique.filter((k) => !features.some((f) => f.key === k));
+    const carried = await this.carriedUnlisted(features, currentSubscriptionId);
+    const missing = unique.filter(
+      (k) =>
+        !features.some(
+          (f) => f.key === k && (f.listed !== false || carried.has(k)),
+        ),
+    );
     if (missing.length > 0) {
       throw new BadRequestException(
         `Módulo indisponível para contratação: ${missing.join(', ')}.`,
@@ -384,6 +398,31 @@ export class SubscriptionQuoteService {
         name: f.name,
         priceCents: Math.round(f.price),
       }));
+  }
+
+  /**
+   * O que está fora do catálogo (a faixa de 1 TB) não se contrata no plano:
+   * só nos complementos, quando a tela o oferece. Na evolução, o que a
+   * assinatura em curso já tem contratado segue para o plano novo.
+   */
+  private async carriedUnlisted(
+    features: { key: string; listed?: boolean | null }[],
+    currentSubscriptionId: string | null,
+  ): Promise<Set<string>> {
+    const unlisted = features
+      .filter((f) => f.listed === false)
+      .map((f) => f.key);
+    if (!unlisted.length || !currentSubscriptionId) return new Set();
+    const contracted = await this.prisma.subscriptionFeature.findMany({
+      where: {
+        subscriptionId: currentSubscriptionId,
+        isActive: true,
+        grantSource: null,
+        feature: { key: { in: unlisted } },
+      },
+      select: { feature: { select: { key: true } } },
+    });
+    return new Set(contracted.map((sf) => sf.feature.key));
   }
 
   /**

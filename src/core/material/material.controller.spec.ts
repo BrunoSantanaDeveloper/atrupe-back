@@ -96,10 +96,29 @@ describe('MaterialController', () => {
           permissions: [
             'product_settings:products:view',
             'stock:invoice_entry:view',
+            'stock:purchase_request:view',
+            'stock:purchase:view',
+            'stock:lot:view',
           ],
         },
       });
       expect(materialService.findAll).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      'stock:purchase_request:view',
+      'stock:purchase:view',
+      'stock:lot:view',
+    ])('as telas de compras leem a lista (%s)', async (permission) => {
+      granted = new Set([permission]);
+
+      await controller.findAll(request(), {});
+
+      expect(materialService.findAll).toHaveBeenCalledWith(
+        'c-1',
+        {},
+        { values: false, directSale: false },
+      );
     });
 
     it('quem só tem o orçamento alcança a busca de venda direta', async () => {

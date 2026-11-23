@@ -47,6 +47,17 @@ import { MaterialImportService } from './material-import.service';
 import { MaterialService } from './material.service';
 
 const PRODUCTS = 'product_settings:products';
+/**
+ * Quem lê a lista inteira: a tela de Materiais, a entrada de nota e as
+ * telas de compras do FULL (solicitação, pedido e lote escolhem o material).
+ */
+const READS_REGISTRY = [
+  { action: 'view', resource: PRODUCTS },
+  { action: 'view', resource: 'stock:invoice_entry' },
+  { action: 'view', resource: 'stock:purchase_request' },
+  { action: 'view', resource: 'stock:purchase' },
+  { action: 'view', resource: 'stock:lot' },
+];
 const FEATURE = 'cost_base';
 // Papéis no LITE (13/10/2026): o papel sem custo, sem a base de custos
 const PAPER_FEATURE = 'paper_register';
@@ -108,8 +119,7 @@ export class MaterialController {
 
   @Get()
   @HasAnyPermission(
-    { action: 'view', resource: PRODUCTS },
-    { action: 'view', resource: 'stock:invoice_entry' },
+    ...READS_REGISTRY,
     { action: 'create', resource: 'sale:quotation' },
     { action: 'edit', resource: 'sale:quotation' },
   )
@@ -124,13 +134,15 @@ export class MaterialController {
       filter.directSale === true && filter.active !== false;
 
     // O orçamento só alcança os materiais pela busca de venda direta; a tela
-    // de materiais e a entrada de nota leem a lista inteira
-    const readsRegistry = await this.abacService.hasAnyPermission(user, [
-      { action: 'view', resource: PRODUCTS },
-      { action: 'view', resource: 'stock:invoice_entry' },
-    ]);
+    // de materiais, a entrada de nota e as compras leem a lista inteira
+    const readsRegistry = await this.abacService.hasAnyPermission(
+      user,
+      READS_REGISTRY,
+    );
     if (!readsRegistry && !directSaleSearch) {
-      throw permissionDenied([`${PRODUCTS}:view`, 'stock:invoice_entry:view']);
+      throw permissionDenied(
+        READS_REGISTRY.map((item) => `${item.resource}:${item.action}`),
+      );
     }
 
     const full = await this.planControlService.hasFeature(

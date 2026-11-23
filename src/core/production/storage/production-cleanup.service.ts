@@ -1,24 +1,47 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import { PlanControlService } from '../../plan/plan-control.service';
 import { ProductionFilesService } from './production-files.service';
 import { ProductionStorageService } from './production-storage.service';
 import {
   CLEANUP_DEFAULT_PERCENT,
   CLEANUP_DEFAULT_THRESHOLD,
+  CleanupCandidate,
   autoCleanupDue,
+  autoCleanupSkip,
+  cleanupConfirmed,
   pickOldest,
 } from './storage-cleanup';
 
 type Who = { companyId: string; userId: string | null; name: string };
+type Db = Prisma.TransactionClient;
+type CleanupFile = CleanupCandidate & { storageKey: string };
 
 const brDay = (date: Date) =>
   date.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+/**
+ * A O.S. entregue: a finalizada, que passou pela entrega. A concluída
+ * (COMPLETED) ainda conta como em andamento, e o projeto concluído (DONE) só
+ * diz que a produção acabou.
+ */
+const DELIVERED = { status: 'FINISHED' } as const;
+
+const NOTHING_TO_CLEAN = 'Não há arquivos de O.S. entregues para apagar.';
+
+/**
+ * A transação da limpeza espera a vez na trava da empresa, planeja e marca
+ * milhares de arquivos de uma vez: os 5 s padrão do Prisma não bastam.
+ */
+const CLEANUP_TX = { maxWait: 10_000, timeout: 60_000 };
 
 /**
  * A limpeza do espaço dos arquivos de produção (GP-49): a prévia, a
@@ -33,6 +56,7 @@ export class ProductionCleanupService {
     private readonly prisma: PrismaService,
     private readonly files: ProductionFilesService,
     private readonly storage: ProductionStorageService,
+    private readonly plans: PlanControlService,
   ) {}
 
   /** Só o administrador apaga: não tem volta. */
@@ -45,17 +69,20 @@ export class ProductionCleanupService {
   }
 
   /**
-   * O que pode sair: as versões dos anexos das tarefas de projetos
-   * concluídos e os arquivos das O.S. concluídas ou finalizadas. A O.S. é
-   * contada pela venda (a mesma no projeto e na O.S.).
+   * O que pode sair: as versões dos anexos das tarefas e os arquivos das
+   * O.S., só das O.S. entregues. O anexo chega à O.S. pela tarefa, o projeto
+   * e a venda; a O.S. é contada pela venda (a mesma no projeto e na O.S.).
    */
-  private async candidates(companyId: string) {
+  private async candidates(companyId: string, db: Db): Promise<CleanupFile[]> {
     const [versions, orderFiles] = await Promise.all([
-      this.prisma.productionAttachmentVersion.findMany({
+      db.productionAttachmentVersion.findMany({
         where: {
           removedAt: null,
           attachment: {
-            task: { companyId, project: { status: 'DONE' } },
+            task: {
+              companyId,
+              project: { quotation: { order: DELIVERED } },
+            },
           },
         },
         select: {
@@ -71,12 +98,8 @@ export class ProductionCleanupService {
           },
         },
       }),
-      this.prisma.orderFile.findMany({
-        where: {
-          companyId,
-          removedAt: null,
-          order: { status: { in: ['COMPLETED', 'FINISHED'] } },
-        },
+      db.orderFile.findMany({
+        where: { companyId, removedAt: null, order: DELIVERED },
         select: {
           id: true,
           size: true,
@@ -106,19 +129,20 @@ export class ProductionCleanupService {
     ];
   }
 
-  private async plan(companyId: string, percent: number) {
-    const summary = await this.files.summary(companyId, false);
-    const candidates = await this.candidates(companyId);
+  private async plan(companyId: string, percent: number, db: Db) {
+    const [summary, candidates] = await Promise.all([
+      this.files.summary(companyId, false),
+      this.candidates(companyId, db),
+    ]);
     return {
       summary,
-      candidates,
       pick: pickOldest(candidates, summary.usedBytes, percent),
     };
   }
 
   /** O que a limpeza apagaria, sem apagar nada. */
   async preview(companyId: string, percent: number) {
-    const { summary, pick } = await this.plan(companyId, percent);
+    const { summary, pick } = await this.plan(companyId, percent, this.prisma);
     return {
       usedBytes: summary.usedBytes,
       quotaBytes: summary.quotaBytes,
@@ -133,48 +157,61 @@ export class ProductionCleanupService {
     };
   }
 
-  /** Apaga: marca as versões, registra na tarefa e na empresa, e remove. */
+  /**
+   * Apaga: marca as versões, registra na tarefa e na empresa e, gravado
+   * isso, remove do armazenamento.
+   *
+   * Duas limpezas da mesma empresa (duplo clique, a manual junto com a
+   * automática) se enfileiram na trava, e a segunda planeja sobre o que a
+   * primeira deixou. Conta só o que esta limpeza marcou: o arquivo apagado à
+   * mão no meio do caminho não entra no histórico.
+   */
   async run(who: Who, percent: number, automatic = false) {
-    const { candidates, pick } = await this.plan(who.companyId, percent);
-    if (!pick.picked.length) {
-      throw new UnprocessableEntityException(
-        'Não há arquivos de O.S. entregues e concluídas para apagar.',
-      );
-    }
     const now = new Date();
-    const ids = pick.picked.map((file) => file.id);
-    const keys = new Map(candidates.map((file) => [file.id, file.storageKey]));
-    const perTask = new Map<string, number>();
-    for (const file of pick.picked) {
-      if (!file.taskId) continue;
-      perTask.set(file.taskId, (perTask.get(file.taskId) ?? 0) + 1);
-    }
-    const versionIds = pick.picked
-      .filter((file) => file.taskId)
-      .map((file) => file.id);
-    const orderFileIds = pick.picked
-      .filter((file) => !file.taskId)
-      .map((file) => file.id);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.productionAttachmentVersion.updateMany({
-        where: { id: { in: versionIds } },
+    const done = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`storage-cleanup:${who.companyId}`}))`;
+
+      const { pick } = await this.plan(who.companyId, percent, tx);
+      if (!pick.picked.length) {
+        throw new UnprocessableEntityException(NOTHING_TO_CLEAN);
+      }
+      const idsOf = (fromTask: boolean) =>
+        pick.picked
+          .filter((file) => !!file.taskId === fromTask)
+          .map((file) => file.id);
+      const versions = await tx.productionAttachmentVersion.updateMany({
+        where: { id: { in: idsOf(true) }, removedAt: null },
         data: { removedAt: now },
       });
-      await tx.orderFile.updateMany({
-        where: { id: { in: orderFileIds } },
+      const orderFiles = await tx.orderFile.updateMany({
+        where: { id: { in: idsOf(false) }, removedAt: null },
         data: { removedAt: now },
       });
-      for (const [taskId, count] of perTask) {
-        await tx.productionTaskHistory.create({
-          data: {
+      const count = versions.count + orderFiles.count;
+      if (!count) throw new UnprocessableEntityException(NOTHING_TO_CLEAN);
+      const marked =
+        count === pick.picked.length
+          ? pick.picked
+          : await this.markedAt(tx, pick.picked, now);
+
+      const perTask = new Map<string, number>();
+      for (const file of marked) {
+        if (!file.taskId) continue;
+        perTask.set(file.taskId, (perTask.get(file.taskId) ?? 0) + 1);
+      }
+      if (perTask.size) {
+        await tx.productionTaskHistory.createMany({
+          data: [...perTask].map(([taskId, files]) => ({
             taskId,
+            at: now,
             byUserId: who.userId,
             byName: who.name,
-            text: `${count === 1 ? '1 arquivo removido' : `${count} arquivos removidos`} na limpeza do espaço de ${brDay(now)}${automatic ? ' (automática)' : ''}`,
+            text: `${files === 1 ? '1 arquivo removido' : `${files} arquivos removidos`} na limpeza do espaço de ${brDay(now)}${automatic ? ' (automática)' : ''}`,
             affects: [],
-          },
+          })),
         });
       }
+      const bytes = marked.reduce((sum, file) => sum + file.size, 0);
       await tx.productionStorageCleanup.create({
         data: {
           companyId: who.companyId,
@@ -183,21 +220,48 @@ export class ProductionCleanupService {
           byName: who.name,
           automatic,
           percent,
-          files: ids.length,
-          bytes: pick.bytes,
+          files: count,
+          bytes,
         },
       });
-    });
-    for (const id of ids) {
-      const key = keys.get(id);
-      if (!key) continue;
+      return {
+        marked,
+        bytes,
+        projects: new Set(marked.map((file) => file.projectId)).size,
+      };
+    }, CLEANUP_TX);
+
+    for (const file of done.marked) {
       await this.storage
-        .remove(key)
+        .remove(file.storageKey)
         .catch((error) =>
-          this.logger.warn(`Arquivo não apagado (${key}): ${error.message}`),
+          this.logger.warn(
+            `Arquivo não apagado (${file.storageKey}): ${error.message}`,
+          ),
         );
     }
-    return { files: ids.length, bytes: pick.bytes, projects: pick.projects };
+    return {
+      files: done.marked.length,
+      bytes: done.bytes,
+      projects: done.projects,
+    };
+  }
+
+  /** Dos escolhidos, os que esta limpeza marcou (os de agora). */
+  private async markedAt(tx: Db, picked: CleanupFile[], at: Date) {
+    const ids = picked.map((file) => file.id);
+    const [versions, orderFiles] = await Promise.all([
+      tx.productionAttachmentVersion.findMany({
+        where: { id: { in: ids }, removedAt: at },
+        select: { id: true },
+      }),
+      tx.orderFile.findMany({
+        where: { id: { in: ids }, removedAt: at },
+        select: { id: true },
+      }),
+    ]);
+    const marked = new Set([...versions, ...orderFiles].map((row) => row.id));
+    return picked.filter((file) => marked.has(file.id));
   }
 
   async history(companyId: string) {
@@ -227,10 +291,30 @@ export class ProductionCleanupService {
     };
   }
 
+  /**
+   * Liga, desliga ou ajusta a automática. Ligar pede o APAGAR digitado, como
+   * a limpeza manual: dali em diante ela apaga sem perguntar.
+   */
   async saveAuto(
     companyId: string,
-    dto: { enabled: boolean; percent: number; threshold: number },
+    dto: {
+      enabled: boolean;
+      percent: number;
+      threshold: number;
+      confirm?: string;
+    },
   ) {
+    if (dto.enabled && !cleanupConfirmed(dto.confirm)) {
+      const current = await this.prisma.productionStorageAuto.findUnique({
+        where: { companyId },
+        select: { enabled: true },
+      });
+      if (!current?.enabled) {
+        throw new BadRequestException(
+          'Digite APAGAR para ligar a limpeza automática',
+        );
+      }
+    }
     const data = {
       enabled: dto.enabled,
       percent: dto.percent,
@@ -245,13 +329,25 @@ export class ProductionCleanupService {
   }
 
   /** A automática, de madrugada, só para quem ligou. */
-  @Cron('40 3 * * *', { name: 'production-storage-auto-cleanup' })
+  @Cron('40 3 * * *', {
+    name: 'production-storage-auto-cleanup',
+    timeZone: 'America/Sao_Paulo',
+  })
   async runAutomatic() {
     const rows = await this.prisma.productionStorageAuto.findMany({
       where: { enabled: true },
     });
     for (const row of rows) {
       try {
+        const skip = autoCleanupSkip(
+          await this.plans.getCompanyPlanInfo(row.companyId),
+        );
+        if (skip) {
+          this.logger.log(
+            `Limpeza automática pulada (${row.companyId}): ${skip}; sem ela a cota cai para a grátis.`,
+          );
+          continue;
+        }
         const summary = await this.files.summary(row.companyId, false);
         if (!autoCleanupDue(summary, row.threshold)) continue;
         await this.run(
