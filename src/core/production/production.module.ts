@@ -18,6 +18,7 @@ import { ProductionCleanupService } from './storage/production-cleanup.service';
 import { OrderFilesService } from './storage/order-files.service';
 import { OrderFilesController } from './order-files.controller';
 import { CompanyStorageController } from './company-storage.controller';
+import { ProductionOccupancyService } from './production-occupancy.service';
 import { CompanyStorageService } from './storage/company-storage.service';
 import { ProductionStorageService } from './storage/production-storage.service';
 
@@ -49,6 +50,7 @@ import { ProductionStorageService } from './storage/production-storage.service';
     ProductionCleanupService,
     OrderFilesService,
     CompanyStorageService,
+    ProductionOccupancyService,
   ],
   exports: [ProductionProjectService],
 })

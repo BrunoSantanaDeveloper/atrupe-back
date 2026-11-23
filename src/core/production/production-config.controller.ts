@@ -1,4 +1,5 @@
 import {
+  Query,
   Body,
   Controller,
   Delete,
@@ -12,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
+import { HasAnyPermission } from '../auth/abac/has-any-permission.decorator';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
@@ -30,6 +32,7 @@ import {
 } from './dto/production-config.dto';
 import { PRODUCTION } from './production-access.service';
 import { ProductionConfigService } from './production-config.service';
+import { ProductionOccupancyService } from './production-occupancy.service';
 
 /**
  * Configurações › Produção (módulo 3, ELITE): gerenciadores, acesso e
@@ -42,7 +45,10 @@ import { ProductionConfigService } from './production-config.service';
 @RequiresFeature(['production_manager', 'sector_board'])
 @Controller('production')
 export class ProductionConfigController {
-  constructor(private readonly config: ProductionConfigService) {}
+  constructor(
+    private readonly config: ProductionConfigService,
+    private readonly occupancyService: ProductionOccupancyService,
+  ) {}
 
   @Get('config')
   @HasPermission('view', PRODUCTION)
@@ -195,6 +201,22 @@ export class ProductionConfigController {
   @ApiOperation({ summary: 'O expediente da empresa, só leitura' })
   getCalendar(@Req() req) {
     return this.config.calendar(req.user.companyId);
+  }
+
+  /**
+   * O mapa de ocupação (GP-50): os minutos agendados por setor e por dia, só
+   * os totais. ELITE; vê quem vê a produção ou a Agenda de entrega (o
+   * vendedor, para saber para quando prometer).
+   */
+  @Get('occupancy')
+  @RequiresFeature('production_manager')
+  @HasAnyPermission(
+    { action: 'view', resource: PRODUCTION },
+    { action: 'view', resource: 'production:delivery_schedule' },
+  )
+  @ApiOperation({ summary: 'A ocupação por setor e por dia' })
+  occupancy(@Req() req, @Query('from') from: string, @Query('to') to: string) {
+    return this.occupancyService.occupancy(req.user.companyId, from, to);
   }
 
   @Put('calendar')
