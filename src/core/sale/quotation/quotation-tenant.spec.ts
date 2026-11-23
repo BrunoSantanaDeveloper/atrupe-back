@@ -285,11 +285,13 @@ describe('Orçamento: outra empresa', () => {
     });
 
     it('a empresa do corpo é a emissora: grava a principal e a filial, como na criação', async () => {
+      // A empresa só muda em digitação (Lista Lite 19/11, item 6)
       prisma.quotation.findUnique.mockResolvedValue({
         id: 'orcamento-a',
         companyId: 'empresa-a',
         seriesId: 'serie-a',
         series: { code: 'V1' },
+        status: 'OPEN',
       });
       prisma.quotation.update.mockResolvedValue({ id: 'orcamento-a' });
 
