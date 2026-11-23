@@ -104,6 +104,12 @@ export const RESET_STEPS: ResetStep[] = [
     where: (companyId) => ({ companyId }),
   },
   {
+    // Os blocos de agenda da tarefa (GP-52)
+    model: 'ProductionTaskSlot',
+    group: 'documents',
+    where: (companyId) => ({ companyId }),
+  },
+  {
     model: 'ProductionTask',
     group: 'documents',
     where: (companyId) => ({ companyId }),

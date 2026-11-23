@@ -43,6 +43,8 @@ import {
   TaskActionDto,
   TaskScheduleDto,
   TimeEntryDto,
+  TaskSlotDto,
+  SplitTaskDto,
   UpdateTaskDto,
   UploadLinkDto,
   WorkStartDto,
@@ -237,6 +239,43 @@ export class ProductionTaskController {
     @Body() dto: TaskScheduleDto,
   ) {
     return this.tasks.schedule(await this.access.viewer(req.user), id, dto);
+  }
+
+  // Os blocos de agenda (GP-52, ELITE): dividir em dois dias e acrescentar
+  @Post(':id/slot')
+  @RequiresFeature('production_manager')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({ summary: 'Acrescenta um bloco de agenda (GP-52)' })
+  async addSlot(@Req() req, @Param('id') id: string, @Body() dto: TaskSlotDto) {
+    return this.tasks.addSlot(await this.access.viewer(req.user), id, dto);
+  }
+
+  @Post(':id/split')
+  @RequiresFeature('production_manager')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({ summary: 'Divide a tarefa em dois dias (GP-52)' })
+  async split(@Req() req, @Param('id') id: string, @Body() dto: SplitTaskDto) {
+    return this.tasks.split(await this.access.viewer(req.user), id, dto);
+  }
+
+  @Delete(':id/slot/:slotId')
+  @RequiresFeature('production_manager')
+  // Linha de dentro da tarefa: aceita edit (regra delete × edit)
+  @HasAnyPermission(
+    { action: 'view', resource: PRODUCTION },
+    { action: 'edit', resource: PRODUCTION },
+  )
+  @ApiOperation({ summary: 'Tira um bloco de agenda (GP-52)' })
+  async removeSlot(
+    @Req() req,
+    @Param('id') id: string,
+    @Param('slotId') slotId: string,
+  ) {
+    return this.tasks.removeSlot(
+      await this.access.viewer(req.user),
+      id,
+      slotId,
+    );
   }
 
   @Patch(':id')

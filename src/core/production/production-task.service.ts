@@ -31,6 +31,8 @@ import {
   TaskActionDto,
   TaskScheduleDto,
   TimeEntryDto,
+  TaskSlotDto,
+  SplitTaskDto,
   UpdateTaskDto,
   UploadLinkDto,
   WorkStartDto,
@@ -118,6 +120,12 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
 const secondsBetween = (start: Date, end: Date) =>
   Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
 const brDate = (day: string) => day.split('-').reverse().join('/');
+/** "1h30" (GP-52) */
+const hmText = (minutes: number) => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h ? (m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`) : `${m} min`;
+};
 
 type UploadedFile = {
   originalname: string;
@@ -551,6 +559,113 @@ export class ProductionTaskService {
     return this.respond(viewer, id, 'Tirou da agenda');
   }
 
+  /**
+   * Acrescentar um bloco de agenda (GP-52; Maicol, 23/11/2026, ELITE): o
+   * tempo extra, com motivo (ajuste, retrabalho, falta de material), ou mais
+   * um bloco do trabalho. O tempo extra fica fora do vendido.
+   */
+  async addSlot(viewer: ProductionViewer, id: string, dto: TaskSlotDto) {
+    await this.load(viewer, id);
+    const reason = dto.reason?.trim() || null;
+    if (dto.kind === 'EXTRA' && !reason) bad('Diga o motivo do tempo extra');
+    const message =
+      dto.kind === 'EXTRA'
+        ? `Acrescentou ${hmText(dto.minutes)} em ${brDate(dto.date)} (${reason})`
+        : `Agendou mais ${hmText(dto.minutes)} em ${brDate(dto.date)}`;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productionTaskSlot.create({
+        data: {
+          companyId: viewer.companyId,
+          taskId: id,
+          date: dateColumn(dto.date),
+          start: dto.start || null,
+          minutes: dto.minutes,
+          kind: dto.kind,
+          reason,
+          byName: viewer.name,
+        },
+      });
+      await this.log(tx, viewer, id, message);
+    });
+    return this.respond(viewer, id, message);
+  }
+
+  /**
+   * Dividir em dois dias (GP-52): o bloco 1 fica com os minutos escolhidos e
+   * o resto do agendado vai para outro dia, num bloco novo.
+   */
+  async split(viewer: ProductionViewer, id: string, dto: SplitTaskDto) {
+    await this.load(viewer, id);
+    const task = await this.prisma.productionTask.findUnique({
+      where: { id },
+      select: {
+        scheduleDate: true,
+        scheduleMinutes: true,
+        estimatedMinutes: true,
+      },
+    });
+    if (!task?.scheduleDate) bad('Agende a tarefa antes de dividir');
+    const total = task!.scheduleMinutes || task!.estimatedMinutes;
+    if (!(total > 1)) bad('Informe a duração da tarefa antes de dividir');
+    if (!(dto.keepMinutes < total)) {
+      bad('O que fica no primeiro dia precisa ser menor que o total');
+    }
+    const rest = total - dto.keepMinutes;
+    const message = `Dividiu em dois dias: ${hmText(dto.keepMinutes)} no primeiro e ${hmText(rest)} em ${brDate(dto.date)}`;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productionTask.update({
+        where: { id },
+        data: { scheduleMinutes: dto.keepMinutes },
+      });
+      await tx.productionTaskSlot.create({
+        data: {
+          companyId: viewer.companyId,
+          taskId: id,
+          date: dateColumn(dto.date),
+          start: dto.start || null,
+          minutes: rest,
+          kind: 'NORMAL',
+          byName: viewer.name,
+        },
+      });
+      await this.log(tx, viewer, id, message);
+    });
+    return this.respond(viewer, id, message);
+  }
+
+  /**
+   * Tirar um bloco (GP-52). O bloco do resto de um trabalho dividido devolve
+   * os minutos ao bloco 1; o tempo já lançado nele volta para o bloco 1.
+   */
+  async removeSlot(viewer: ProductionViewer, id: string, slotId: string) {
+    await this.load(viewer, id);
+    const slot = await this.prisma.productionTaskSlot.findFirst({
+      where: { id: slotId, taskId: id },
+    });
+    if (!slot) throw new NotFoundException('Bloco não encontrado');
+    const message =
+      slot.kind === 'EXTRA'
+        ? `Tirou o tempo extra de ${hmText(slot.minutes)}`
+        : `Juntou de volta ${hmText(slot.minutes)} ao primeiro dia`;
+    await this.prisma.$transaction(async (tx) => {
+      if (slot.kind === 'NORMAL') {
+        const task = await tx.productionTask.findUnique({
+          where: { id },
+          select: { scheduleMinutes: true },
+        });
+        if (task?.scheduleMinutes) {
+          await tx.productionTask.update({
+            where: { id },
+            data: { scheduleMinutes: task.scheduleMinutes + slot.minutes },
+          });
+        }
+      }
+      await tx.productionTaskSlot.delete({ where: { id: slotId } });
+      await this.log(tx, viewer, id, message);
+    });
+    return this.respond(viewer, id, message);
+  }
+
   /** Quem faz, e o veículo com os km (VS-7). */
   async update(viewer: ProductionViewer, id: string, dto: UpdateTaskDto) {
     await this.load(viewer, id);
@@ -709,6 +824,16 @@ export class ProductionTaskService {
             [target.id],
           );
         }
+        // O relógio do dia vai para o bloco agendado para hoje (GP-52);
+        // sem bloco hoje, é o bloco 1
+        const todaySlot = await tx.productionTaskSlot.findFirst({
+          where: {
+            taskId: id,
+            date: dateColumn(now.toISOString().slice(0, 10)),
+          },
+          select: { id: true },
+          orderBy: { createdAt: 'asc' },
+        });
         await tx.productionTimeEntry.create({
           data: {
             companyId: viewer.companyId,
@@ -716,6 +841,7 @@ export class ProductionTaskService {
             employeeId: target.id,
             start: now,
             source,
+            slotId: todaySlot?.id ?? null,
           },
         });
         const task = await tx.productionTask.findUnique({
@@ -861,11 +987,21 @@ export class ProductionTaskService {
     const now = new Date();
     const seconds = Math.round(dto.minutes * 60);
     const minutes = round1(dto.minutes);
+    // Quem e quanto em cada bloco (GP-52): o bloco precisa ser da tarefa
+    const slotId = dto.slotId
+      ? ((
+          await this.prisma.productionTaskSlot.findFirst({
+            where: { id: dto.slotId, taskId: id },
+            select: { id: true },
+          })
+        )?.id ?? bad('Bloco não encontrado'))
+      : null;
     await this.prisma.$transaction(async (tx) => {
       const entry = await tx.productionTimeEntry.create({
         data: {
           companyId: viewer.companyId,
           taskId: id,
+          slotId,
           employeeId: person.id,
           start: new Date(now.getTime() - seconds * 1000),
           end: now,

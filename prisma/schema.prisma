@@ -4787,6 +4787,7 @@ model ProductionTask {
   currentStep        ProductionTaskStep?        @relation(fields: [currentStepId], references: [id], onDelete: SetNull)
   assignee           Employee?                  @relation("ProductionTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   vehicle            ProductionVehicle?         @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  slots              ProductionTaskSlot[]
   timeEntries        ProductionTimeEntry[]
   corrections        ProductionTimeCorrection[]
   attachments        ProductionAttachment[]
@@ -4812,13 +4813,44 @@ model ProductionTimeEntry {
   source     ProductionTimeSource @default(CLOCK)
   note       String?
   createdAt  DateTime             @default(now())
+  /// O bloco de agenda em que o tempo foi feito (GP-52); nulo = o bloco 1
+  slotId     String?
   task       ProductionTask       @relation(fields: [taskId], references: [id], onDelete: Cascade)
   employee   Employee             @relation(fields: [employeeId], references: [id])
+  slot       ProductionTaskSlot?  @relation(fields: [slotId], references: [id], onDelete: SetNull)
 
   @@index([taskId])
   @@index([employeeId, end])
   @@index([companyId, end])
   @@map("production_time_entries")
+}
+
+/// Os blocos de agenda da tarefa (GP-52; Maicol, 23/11/2026, ELITE). O
+/// agendamento da tarefa (scheduleDate, scheduleStart, scheduleMinutes) é o
+/// bloco 1; aqui ficam os outros: o resto de um trabalho dividido em dois
+/// dias (NORMAL) e o tempo acrescentado com motivo (EXTRA).
+model ProductionTaskSlot {
+  id        String                @id @default(uuid())
+  companyId String
+  taskId    String
+  date      DateTime              @db.Date
+  start     String?
+  minutes   Int
+  kind      ProductionSlotKind    @default(NORMAL)
+  reason    String?
+  byName    String                @default("")
+  createdAt DateTime              @default(now())
+  task      ProductionTask        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  entries   ProductionTimeEntry[]
+
+  @@index([taskId])
+  @@index([companyId, date])
+  @@map("production_task_slots")
+}
+
+enum ProductionSlotKind {
+  NORMAL
+  EXTRA
 }
 
 /// A correção ou o lançamento de um trecho pelo gerente, com o antes e o

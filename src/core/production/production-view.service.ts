@@ -99,8 +99,22 @@ const DETAIL_SELECT = {
   vehicleId: true,
   km: true,
   priority: true,
+  // Os blocos de agenda (GP-52)
+  slots: {
+    select: {
+      id: true,
+      date: true,
+      start: true,
+      minutes: true,
+      kind: true,
+      reason: true,
+      byName: true,
+    },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+  },
   timeEntries: {
     select: {
+      slotId: true,
       id: true,
       employeeId: true,
       start: true,
@@ -521,6 +535,17 @@ export class ProductionViewService {
         minutes: round1(entryMinutes(entry, now)),
         source: entry.source,
         note: entry.note,
+        slotId: entry.slotId,
+      })),
+      // Os blocos além do agendamento da tarefa (o bloco 1), GP-52
+      slots: row.slots.map((slot) => ({
+        id: slot.id,
+        date: slot.date.toISOString().slice(0, 10),
+        start: slot.start,
+        minutes: slot.minutes,
+        kind: slot.kind,
+        reason: slot.reason,
+        by: slot.byName,
       })),
       corrections: row.corrections.map((correction) => ({
         id: correction.id,

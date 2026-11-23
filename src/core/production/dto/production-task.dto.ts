@@ -136,6 +136,12 @@ export class TimeEntryDto {
   @IsNumber({}, { message: 'Informe o tempo' })
   minutes: number;
 
+  /** O bloco de agenda em que o tempo foi feito (GP-52); sem ele, o bloco 1 */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  slotId?: string | null;
+
   @ApiProperty()
   @IsString()
   collaboratorId: string;
@@ -298,4 +304,53 @@ export class CleanupAutoDto {
   @IsOptional()
   @IsString()
   confirm?: string;
+}
+
+const SLOT_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const SLOT_HOUR = /^\d{2}:\d{2}$/;
+
+/** Um bloco de agenda a mais (GP-52): o resto de um trabalho ou o extra. */
+export class TaskSlotDto {
+  @ApiProperty({ example: '2026-11-25' })
+  @Matches(SLOT_DAY, { message: 'Data inválida' })
+  date: string;
+
+  @ApiPropertyOptional({ example: '08:00' })
+  @IsOptional()
+  @Matches(SLOT_HOUR, { message: 'Hora inválida' })
+  start?: string | null;
+
+  @ApiProperty({ example: 60 })
+  @IsInt({ message: 'Informe os minutos' })
+  @Min(1, { message: 'Informe os minutos' })
+  @Max(24 * 60 * 7)
+  minutes: number;
+
+  @ApiProperty({ enum: ['NORMAL', 'EXTRA'] })
+  @IsIn(['NORMAL', 'EXTRA'])
+  kind: 'NORMAL' | 'EXTRA';
+
+  /** O motivo do tempo extra (ajuste, retrabalho, falta de material) */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  reason?: string;
+}
+
+/** Dividir em dois dias (GP-52): o que fica no bloco 1 e o dia do resto. */
+export class SplitTaskDto {
+  @ApiProperty({ example: '2026-11-25' })
+  @Matches(SLOT_DAY, { message: 'Data inválida' })
+  date: string;
+
+  @ApiPropertyOptional({ example: '08:00' })
+  @IsOptional()
+  @Matches(SLOT_HOUR, { message: 'Hora inválida' })
+  start?: string | null;
+
+  @ApiProperty({ example: 120, description: 'Os minutos que ficam no bloco 1' })
+  @IsInt({ message: 'Informe os minutos' })
+  @Min(1, { message: 'Informe os minutos' })
+  keepMinutes: number;
 }

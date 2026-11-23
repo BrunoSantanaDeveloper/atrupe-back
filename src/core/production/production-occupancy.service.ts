@@ -92,7 +92,7 @@ export class ProductionOccupancyService {
     if (span > MAX_DAYS) {
       throw new BadRequestException(`O período vai até ${MAX_DAYS} dias.`);
     }
-    const [managers, steps, tasks, calendar] = await Promise.all([
+    const [managers, steps, tasks, calendar, slots] = await Promise.all([
       this.prisma.productionManager.findMany({
         where: { companyId, isActive: true },
         select: {
@@ -131,7 +131,32 @@ export class ProductionOccupancyService {
         },
       }),
       this.config.calendar(companyId),
+      // Os outros blocos de agenda (GP-52): o resto de um trabalho dividido
+      // e o tempo extra ocupam o dia deles
+      this.prisma.productionTaskSlot.findMany({
+        where: {
+          companyId,
+          date: {
+            gte: new Date(`${from}T00:00:00Z`),
+            lte: new Date(`${to}T00:00:00Z`),
+          },
+          task: { status: { notIn: ['DONE', 'CANCELED'] } },
+        },
+        select: {
+          date: true,
+          minutes: true,
+          task: { select: { currentStepId: true, taskTypeId: true } },
+        },
+      }),
     ]);
+    const slotTasks: OccupancyTask[] = slots.map((slot) => ({
+      scheduleDate: slot.date,
+      scheduleMinutes: slot.minutes,
+      estimatedMinutes: 0,
+      setupMinutes: 0,
+      currentStepId: slot.task.currentStepId,
+      taskTypeId: slot.task.taskTypeId,
+    }));
     return {
       from,
       to,
@@ -148,7 +173,7 @@ export class ProductionOccupancyService {
           runsThroughBreak: manager.runsThroughBreak,
         },
       })),
-      days: occupancyOf(tasks, steps),
+      days: occupancyOf([...tasks, ...slotTasks], steps),
     };
   }
 }
