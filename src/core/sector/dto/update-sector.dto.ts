@@ -1,6 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -12,6 +15,7 @@ import {
   Min,
 } from 'class-validator';
 import { SectorNature, SectorSaleUnit } from '@prisma/client';
+import { PRODUCTIONS } from '../productions';
 import {
   SECTOR_COLOR_MESSAGE,
   SECTOR_COLOR_PATTERN,
@@ -119,5 +123,17 @@ export class UpdateSectorDto {
     nullable: true,
     required: false,
   })
+  // O que o setor produz (PS-1; Maicol, 23/11/2026): as produções da lista
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(PRODUCTIONS.length)
+  @IsIn(PRODUCTIONS, { each: true, message: 'Produção desconhecida' })
+  @ApiProperty({
+    description: 'O que o setor produz (impressao_solvente, serralheria…)',
+    type: [String],
+    required: false,
+  })
+  productions?: string[];
+
   hourSale?: number | null;
 }

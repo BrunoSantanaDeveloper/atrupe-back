@@ -212,6 +212,9 @@ model CompanySector {
   saleUnit                    SectorSaleUnit             @default(HOUR)
   /// #RRGGBB em maiúsculas; nulo = padrão do ícone, resolvido na tela
   color                       String?
+  /// O que o setor produz (PS-1; Maicol, 23/11/2026): as produções da
+  /// lista (src/core/sector/productions.ts), ligadas à mão pela empresa
+  productions                 String[]                   @default([])
   /// Produtivo ou administrativo na base de custos
   nature                      SectorNature               @default(PRODUCTIVE)
   /// Rateio entre os equipamentos do setor: só muda por /cost-base/sector/:id/allocation
