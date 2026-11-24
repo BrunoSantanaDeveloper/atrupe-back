@@ -292,6 +292,17 @@ export class ComplementsDto extends ComplementsQuoteDto {
   termsAcceptance: CheckoutTermsDto;
 }
 
+/** Retirada de usuários adicionais: a quantidade que a assinatura passa a ter. */
+export class RemoveAdditionalUsersDto {
+  @ApiProperty({
+    description:
+      'Quantos usuários adicionais a assinatura passa a ter (menos que hoje; 0 retira todos)',
+  })
+  @IsInt()
+  @Min(0)
+  additionalUsers: number;
+}
+
 export class RepresentativeCheckDto {
   @ApiProperty()
   @IsCnpj({ message: 'CNPJ inválido.' })

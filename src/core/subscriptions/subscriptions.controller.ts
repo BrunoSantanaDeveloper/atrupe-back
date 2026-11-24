@@ -36,6 +36,7 @@ import { DeleteAccountDto } from './dto/delete-account.dto';
 import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { ChangePlanAdminDto } from './dto/change-plan-admin.dto';
 import { QuoteSubscriptionDto } from './dto/quote-subscription.dto';
+import { RemoveAdditionalUsersDto } from './dto/checkout.dto';
 import { SubscriptionQuoteService } from './pricing/subscription-quote.service';
 import { ComplementsService } from './checkout/complements.service';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
@@ -506,6 +507,26 @@ export class SubscriptionsController {
       this.contractingUser(req),
       subscriptionId,
       moduleId,
+    );
+  }
+
+  @Patch(':id/additional-users')
+  @ApiOperation({
+    summary: 'Retira usuários adicionais da assinatura',
+    description:
+      'A quantidade nova vale na hora e o valor sai das mensalidades ainda não pagas. Os usuários ativos precisam caber no plano com a quantidade nova.',
+  })
+  @ApiParam({ name: 'id', description: 'Subscription ID' })
+  @ApiBody({ type: RemoveAdditionalUsersDto })
+  async removeAdditionalUsers(
+    @Param('id') subscriptionId: string,
+    @Body() dto: RemoveAdditionalUsersDto,
+    @Req() req,
+  ) {
+    return await this.complementsService.removeAdditionalUsers(
+      this.contractingUser(req),
+      subscriptionId,
+      dto.additionalUsers,
     );
   }
 

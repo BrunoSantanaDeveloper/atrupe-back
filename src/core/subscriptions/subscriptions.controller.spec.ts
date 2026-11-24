@@ -12,6 +12,7 @@ describe('SubscriptionsController', () => {
   let controller: SubscriptionsController;
   const complements = {
     removeModule: jest.fn(),
+    removeAdditionalUsers: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -94,6 +95,23 @@ describe('SubscriptionsController', () => {
       user,
       'sub-1',
       'nota_fiscal',
+    );
+  });
+
+  it('retirar usuários adicionais passa pela regra dos complementos', async () => {
+    const req = {
+      user: { userId: 'user-1', companyId: 'company-1', isAdmin: true },
+    };
+    await controller.removeAdditionalUsers(
+      'sub-1',
+      { additionalUsers: 0 },
+      req,
+    );
+
+    expect(complements.removeAdditionalUsers).toHaveBeenCalledWith(
+      { userId: 'user-1', companyId: 'company-1', isAdmin: true },
+      'sub-1',
+      0,
     );
   });
 });

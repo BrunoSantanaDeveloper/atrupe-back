@@ -89,6 +89,8 @@ describe('ComplementsService', () => {
     contractAcceptance: { findFirst: jest.fn() },
     user: { findUniqueOrThrow: jest.fn() },
     company: { findUnique: jest.fn() },
+    employee: { count: jest.fn() },
+    planLimit: { findFirst: jest.fn() },
   };
   const gateway = {
     getAsaasSubscription: jest.fn(),
@@ -133,6 +135,9 @@ describe('ComplementsService', () => {
     prisma.feature.findMany.mockResolvedValue([NOTA_FISCAL]);
     // O ADMIN é o administrador principal da conta (Usuário nº 1).
     prisma.company.findUnique.mockResolvedValue({ ownerUserId: 'user-1' });
+    // O Start inclui 3 usuários; a empresa usa 2.
+    prisma.planLimit.findFirst.mockResolvedValue({ value: 3 });
+    prisma.employee.count.mockResolvedValue(2);
     prisma.contractAcceptance.findFirst.mockResolvedValue(LAST_ACCEPTANCE);
     prisma.user.findUniqueOrThrow.mockResolvedValue({
       id: 'user-1',
@@ -208,6 +213,8 @@ describe('ComplementsService', () => {
           nextChargeDate: PROXIMA_RENOVACAO.toISOString(),
           modules: [{ key: 'nota_fiscal', priceCents: 7000 }],
           additionalUserPriceCents: 1500,
+          includedUsers: 3,
+          usersInUse: 2,
         },
         contractor: { type: 'PJ', name: 'STUDIO NORTE ARQUITETURA LTDA' },
         terms: { id: 'contract-2', version: 2 },
@@ -569,6 +576,161 @@ describe('ComplementsService', () => {
           'nota_fiscal',
         ),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('retirar usuários adicionais', () => {
+    // Start com 4 usuários adicionais: 147 + 4 × 15 = 207 por mês.
+    const comQuatroUsuarios = { value: 207, recurringValueCents: 20700 };
+
+    beforeEach(() => {
+      withSubscription(
+        startSubscription({ ...comQuatroUsuarios, additionalUsers: 4 }),
+      );
+      withGatewayPayments([
+        // A mensalidade que o Asaas já gerou com os 4 adicionais.
+        {
+          id: 'pay_next',
+          value: 207,
+          dueDate: '2099-01-15',
+          status: 'PENDING',
+        },
+        {
+          id: 'pay_paid',
+          value: 207,
+          dueDate: '2000-01-15',
+          status: 'RECEIVED',
+        },
+      ]);
+    });
+
+    it('volta aos usuários do plano: a assinatura e a mensalidade já gerada deixam de cobrá-los', async () => {
+      await service.removeAdditionalUsers(ADMIN, 'sub-1', 0);
+
+      expect(gateway.updateAsaasSubscription).toHaveBeenCalledWith('sub_1', {
+        value: 147,
+        updatePendingPayments: false,
+      });
+      expect(gateway.updateAsaasPayment).toHaveBeenCalledTimes(1);
+      expect(gateway.updateAsaasPayment).toHaveBeenCalledWith('pay_next', {
+        value: 147,
+      });
+      expect(tx.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            additionalUsers: 0,
+            value: 147,
+            recurringValueCents: 14700,
+          }),
+        }),
+      );
+      expect(tx.payment.updateMany).toHaveBeenCalledWith({
+        where: { asaasPaymentId: 'pay_next' },
+        data: { value: 147 },
+      });
+      expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'USERS_REMOVED',
+          description: '4 usuários adicionais retirados (de 4 para 0).',
+        }),
+      });
+      // Retirar não é contratar: sem aceite dos Termos.
+      expect(acceptance.record).not.toHaveBeenCalled();
+    });
+
+    it('retira só parte: fica com os que sobram', async () => {
+      await service.removeAdditionalUsers(ADMIN, 'sub-1', 1);
+
+      expect(gateway.updateAsaasSubscription).toHaveBeenCalledWith('sub_1', {
+        value: 162,
+        updatePendingPayments: false,
+      });
+      expect(tx.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ additionalUsers: 1, value: 162 }),
+        }),
+      );
+    });
+
+    it('mais usuários ativos do que o plano passa a permitir: recusa sem mexer no Asaas', async () => {
+      // 3 do plano + 4 adicionais, todos em uso; com 1 adicional cabem 4.
+      prisma.employee.count.mockResolvedValue(6);
+
+      await expect(
+        service.removeAdditionalUsers(ADMIN, 'sub-1', 1),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'USERS_IN_USE',
+          usersInUse: 6,
+          allowedUsers: 4,
+          message: expect.stringContaining('Desative 2 usuários'),
+        },
+      });
+      expect(gateway.updateAsaasSubscription).not.toHaveBeenCalled();
+      expect(tx.subscription.update).not.toHaveBeenCalled();
+    });
+
+    it('plano sem limite de usuários: não confere os ativos', async () => {
+      prisma.planLimit.findFirst.mockResolvedValue({ value: -1 });
+      prisma.employee.count.mockResolvedValue(50);
+
+      await service.removeAdditionalUsers(ADMIN, 'sub-1', 0);
+
+      expect(gateway.updateAsaasSubscription).toHaveBeenCalled();
+    });
+
+    it('com cobrança vencida é permitido e não mexe na vencida', async () => {
+      withSubscription(
+        startSubscription({ ...comQuatroUsuarios, additionalUsers: 4 }),
+        { intent: 'REGULARIZATION', hasOpenCharge: true },
+      );
+      withGatewayPayments([
+        { id: 'pay_due', value: 207, dueDate: '2000-01-15', status: 'OVERDUE' },
+      ]);
+
+      await service.removeAdditionalUsers(ADMIN, 'sub-1', 0);
+
+      expect(gateway.updateAsaasSubscription).toHaveBeenCalledWith('sub_1', {
+        value: 147,
+        updatePendingPayments: false,
+      });
+      expect(gateway.updateAsaasPayment).not.toHaveBeenCalled();
+    });
+
+    it('quantidade igual ou maior que a atual não é retirada', async () => {
+      await expect(
+        service.removeAdditionalUsers(ADMIN, 'sub-1', 4),
+      ).rejects.toMatchObject({ response: { code: 'NOTHING_TO_CHANGE' } });
+      await expect(
+        service.removeAdditionalUsers(ADMIN, 'sub-1', 6),
+      ).rejects.toMatchObject({ response: { code: 'NOTHING_TO_CHANGE' } });
+      expect(gateway.updateAsaasSubscription).not.toHaveBeenCalled();
+    });
+
+    it('é do Usuário nº 1: outro administrador é recusado (contrato, 4.2)', async () => {
+      await expect(
+        service.removeAdditionalUsers(
+          { ...ADMIN, userId: 'outro-admin' },
+          'sub-1',
+          0,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'OWNER_ONLY' } });
+      expect(gateway.updateAsaasSubscription).not.toHaveBeenCalled();
+    });
+
+    it('plano anual: ainda não disponível', async () => {
+      withSubscription(
+        startSubscription({
+          ...comQuatroUsuarios,
+          additionalUsers: 4,
+          cycle: 'YEARLY',
+        }),
+      );
+      await expect(
+        service.removeAdditionalUsers(ADMIN, 'sub-1', 0),
+      ).rejects.toMatchObject({
+        response: { code: 'COMPLEMENTS_NOT_AVAILABLE' },
+      });
     });
   });
 });

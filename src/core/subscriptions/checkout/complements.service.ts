@@ -44,6 +44,11 @@ interface ChangeRequest {
   removeModules: string[];
   /** Quantos usuários adicionais a assinatura passa a ter. */
   additionalUsers?: number;
+  /**
+   * Só a retirada de usuários reduz a quantidade: na contratação de
+   * complementos, um número menor que o atual é recusado.
+   */
+  reduceUsers?: boolean;
 }
 
 interface Actor {
@@ -116,18 +121,22 @@ export class ComplementsService {
       return { intent: ctx.intent, restriction: null, subscription: null };
     }
 
-    const [sub, catalog, lastAcceptance, terms] = await Promise.all([
-      this.loadSubscription(ctx.current.id),
-      this.prisma.feature.findMany({
-        where: { isActive: true, price: { gt: 0 } },
-        orderBy: { name: 'asc' },
-      }),
-      this.prisma.contractAcceptance.findFirst({
-        where: { companyId },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.acceptance.currentTerms().catch(() => null),
-    ]);
+    const [sub, catalog, lastAcceptance, terms, usersInUse] = await Promise.all(
+      [
+        this.loadSubscription(ctx.current.id),
+        this.prisma.feature.findMany({
+          where: { isActive: true, price: { gt: 0 } },
+          orderBy: { name: 'asc' },
+        }),
+        this.prisma.contractAcceptance.findFirst({
+          where: { companyId },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.acceptance.currentTerms().catch(() => null),
+        this.activeUserCount(companyId),
+      ],
+    );
+    const includedUsers = await this.includedUsers(sub.planId);
 
     const contracted = this.contractedModules(sub);
     const unavailable = new Set([
@@ -156,6 +165,10 @@ export class ComplementsService {
         additionalUsers: sub.additionalUsers,
         additionalUserPriceCents: Math.round(sub.plan.additionalUserPrice ?? 0),
         maxAdditionalUsers: MAX_ADDITIONAL_USERS,
+        // Para retirar usuários adicionais: os que o plano inclui (null = sem
+        // limite) e os ativos hoje, que a quantidade nova precisa comportar.
+        includedUsers,
+        usersInUse,
         modules: sellable.map((sf) => ({
           key: sf.feature.key,
           name: sf.feature.name,
@@ -275,6 +288,43 @@ export class ComplementsService {
     const { subscription } = await this.change(
       user,
       { addModules: [], removeModules: [moduleKey] },
+      { subscriptionId, requireNoOpenCharge: false, actor },
+    );
+    return subscription;
+  }
+
+  /**
+   * Retirar usuários adicionais: a quantidade nova vale na hora e o valor sai
+   * das mensalidades ainda não pagas, como na retirada de módulo — inclusive
+   * a que o Asaas já gerou e ainda não venceu. Com cobrança em aberto também
+   * é permitido: a vencida não é alterada.
+   *
+   * A empresa não pode ficar com mais usuários ativos do que o plano passa a
+   * permitir: quem sobra é desativado antes, na tela de usuários.
+   */
+  async removeAdditionalUsers(
+    user: ContractingUser,
+    subscriptionId: string,
+    additionalUsers: number,
+  ) {
+    assertCanContract(
+      user,
+      'Somente administradores da empresa podem retirar usuários adicionais.',
+    );
+    await assertPrincipalAdmin(
+      this.prisma,
+      user,
+      'Somente o administrador principal da conta (Usuário nº 1) pode retirar usuários adicionais.',
+    );
+    const actor = await this.actor(user.userId);
+    const { subscription } = await this.change(
+      user,
+      {
+        addModules: [],
+        removeModules: [],
+        additionalUsers,
+        reduceUsers: true,
+      },
       { subscriptionId, requireNoOpenCharge: false, actor },
     );
     return subscription;
@@ -446,10 +496,27 @@ export class ComplementsService {
     });
 
     const targetUsers = request.additionalUsers ?? sub.additionalUsers;
-    if (targetUsers < sub.additionalUsers) {
+    if (request.reduceUsers) {
+      if (!Number.isInteger(targetUsers) || targetUsers < 0) {
+        throw new BadRequestException(
+          'Informe quantos usuários adicionais a assinatura passa a ter.',
+        );
+      }
+      if (targetUsers >= sub.additionalUsers) {
+        throw new UnprocessableEntityException({
+          code: 'NOTHING_TO_CHANGE',
+          message:
+            sub.additionalUsers === 0
+              ? 'Esta assinatura não tem usuários adicionais.'
+              : `Escolha menos que os ${sub.additionalUsers} usuários adicionais contratados.`,
+        });
+      }
+      await this.assertUsersFit(companyId, sub, targetUsers);
+    } else if (targetUsers < sub.additionalUsers) {
       throw new UnprocessableEntityException({
         code: 'USERS_REDUCTION_NOT_AVAILABLE',
-        message: 'Para reduzir usuários adicionais, fale com a Atrupe.',
+        message:
+          'Para reduzir usuários adicionais, use a página Assinatura, nas configurações da empresa.',
       });
     }
     if (
@@ -668,13 +735,17 @@ export class ComplementsService {
       ...before.filter((key) => !removed.includes(key)),
       ...features.map((f) => f.key),
     ];
-    const onlyRemoval =
-      features.length === 0 && targetUsers === sub.additionalUsers;
+    const action =
+      features.length > 0 || targetUsers > sub.additionalUsers
+        ? 'COMPLEMENTS_ADDED'
+        : targetUsers < sub.additionalUsers
+          ? 'USERS_REMOVED'
+          : 'MODULE_REMOVED';
 
     await tx.subscriptionHistory.create({
       data: {
         subscriptionId: sub.id,
-        action: onlyRemoval ? 'MODULE_REMOVED' : 'COMPLEMENTS_ADDED',
+        action,
         description: this.describe(prepared),
         changes: {
           before: {
@@ -726,6 +797,12 @@ export class ComplementsService {
     if (removing.length > 0) {
       texts.push(
         `Módulo ${removing.map((sf) => sf.feature.name).join(', ')} retirado.`,
+      );
+    }
+    if (newUsers < 0) {
+      const removed = -newUsers;
+      texts.push(
+        `${removed === 1 ? '1 usuário adicional retirado' : `${removed} usuários adicionais retirados`} (de ${sub.additionalUsers} para ${targetUsers}).`,
       );
     }
     return texts.join(' ');
@@ -786,6 +863,55 @@ export class ComplementsService {
     return sub.subscriptionFeatures.filter(
       (sf) => sf.isActive !== false && !!sf.feature?.key && !sf.grantSource,
     );
+  }
+
+  /**
+   * Usuários ativos da empresa: a mesma conta do limite de usuários
+   * (PlanControlService.getCurrentUserCount) — colaborador ativo com usuário
+   * ativo.
+   */
+  private activeUserCount(companyId: string): Promise<number> {
+    return this.prisma.employee.count({
+      where: {
+        companyId,
+        isActive: true,
+        userId: { not: null },
+        user: { isActive: true },
+      },
+    });
+  }
+
+  /** Usuários que o plano inclui; null quando o plano não tem limite. */
+  private async includedUsers(planId: string): Promise<number | null> {
+    const limit = await this.prisma.planLimit.findFirst({
+      where: { planId, isActive: true, limit: { key: 'max_users' } },
+      select: { value: true },
+    });
+    if (!limit || limit.value === -1) return null;
+    return limit.value;
+  }
+
+  /**
+   * A quantidade nova precisa comportar os usuários ativos: sem isso a
+   * empresa ficaria acima do limite e não poderia nem reativar ninguém.
+   */
+  private async assertUsersFit(
+    companyId: string,
+    sub: LoadedSubscription,
+    targetUsers: number,
+  ) {
+    const included = await this.includedUsers(sub.planId);
+    if (included == null) return;
+    const allowed = included + targetUsers;
+    const inUse = await this.activeUserCount(companyId);
+    if (inUse <= allowed) return;
+    const excess = inUse - allowed;
+    throw new UnprocessableEntityException({
+      code: 'USERS_IN_USE',
+      message: `A empresa tem ${inUse} usuários ativos e, com ${targetUsers} adicionais, o plano permite ${allowed}. Desative ${excess === 1 ? '1 usuário' : `${excess} usuários`} antes de reduzir.`,
+      usersInUse: inUse,
+      allowedUsers: allowed,
+    });
   }
 
   private planFeatureKeys(sub: LoadedSubscription): string[] {
