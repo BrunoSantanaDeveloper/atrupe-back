@@ -19,6 +19,8 @@ import { OrderFilesService } from './storage/order-files.service';
 import { OrderFilesController } from './order-files.controller';
 import { CompanyStorageController } from './company-storage.controller';
 import { ProductionOccupancyService } from './production-occupancy.service';
+import { ProductionTripController } from './production-trip.controller';
+import { ProductionTripService } from './production-trip.service';
 import { CompanyStorageService } from './storage/company-storage.service';
 import { ProductionStorageService } from './storage/production-storage.service';
 
@@ -36,6 +38,7 @@ import { ProductionStorageService } from './storage/production-storage.service';
     ProductionTaskController,
     OrderFilesController,
     CompanyStorageController,
+    ProductionTripController,
   ],
   providers: [
     ProductionAccessService,
@@ -51,6 +54,7 @@ import { ProductionStorageService } from './storage/production-storage.service';
     OrderFilesService,
     CompanyStorageService,
     ProductionOccupancyService,
+    ProductionTripService,
   ],
   exports: [ProductionProjectService],
 })

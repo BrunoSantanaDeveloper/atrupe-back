@@ -49,6 +49,8 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
     'production',
     'delivery_schedule',
     'delivery_schedule_finish_all',
+    // Agendar, fechar e cancelar as saídas dos veículos (fase 1)
+    'vehicle_schedule',
     'time_entry',
     'productivity',
   ],

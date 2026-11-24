@@ -524,6 +524,8 @@ model Employee {
   productionManagerUsers ProductionManagerUser[]
   productionTimeEntries  ProductionTimeEntry[]
   productionTasks        ProductionTask[]        @relation("ProductionTaskAssignee")
+  /// As saídas em que dirige (veículos, fase 1)
+  drivenTrips            ProductionTrip[]
 
   @@unique([companyId, legacyId])
   @@map("employees")
@@ -4678,6 +4680,7 @@ model ProductionVehicle {
   updatedAt DateTime         @updatedAt
   company   Company          @relation(fields: [companyId], references: [id])
   tasks     ProductionTask[]
+  trips     ProductionTrip[]
 
   @@index([companyId])
   @@map("production_vehicles")
@@ -4787,6 +4790,7 @@ model ProductionTask {
   currentStep        ProductionTaskStep?        @relation(fields: [currentStepId], references: [id], onDelete: SetNull)
   assignee           Employee?                  @relation("ProductionTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   vehicle            ProductionVehicle?         @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  tripStops          ProductionTripStop[]
   slots              ProductionTaskSlot[]
   timeEntries        ProductionTimeEntry[]
   corrections        ProductionTimeCorrection[]
@@ -5681,4 +5685,109 @@ model StockLotEvent {
 
   @@index([lotId])
   @@map("stock_lot_events")
+}
+
+/// A saída do veículo (veículos, fase 1; Maicol, 23/11/2026, ELITE): o
+/// veículo, quem dirige, a equipe, a partida e a volta (podem ser dias
+/// diferentes) e as paradas. Fecha-se na volta, com o km.
+model ProductionTrip {
+  id            String               @id @default(uuid())
+  companyId     String
+  number        Int
+  vehicleId     String
+  driverId      String?
+  teamIds       String[]
+  departAt      DateTime
+  returnAt      DateTime
+  status        ProductionTripStatus @default(SCHEDULED)
+  startedAt     DateTime?
+  odometerStart Float?
+  finishedAt    DateTime?
+  odometerEnd   Float?
+  km            Float?
+  note          String?
+  cancelReason  String?
+  createdByName String               @default("")
+  closedByName  String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  vehicle       ProductionVehicle    @relation(fields: [vehicleId], references: [id])
+  driver        Employee?            @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  stops         ProductionTripStop[]
+
+  @@unique([companyId, number])
+  @@index([companyId, departAt])
+  @@index([vehicleId])
+  @@map("production_trips")
+}
+
+/// A parada da saída: de trabalho (uma tarefa da produção, com os km
+/// previstos dela) ou livre (banco, cartório, buscar material, levar
+/// alguém), com o setor que pediu.
+model ProductionTripStop {
+  id          String               @id @default(uuid())
+  tripId      String
+  position    Int                  @default(0)
+  kind        ProductionStopKind   @default(WORK)
+  taskId      String?
+  description String
+  address     String               @default("")
+  sectorId    String?
+  sectorName  String               @default("")
+  plannedKm   Float?
+  km          Float?
+  status      ProductionStopStatus @default(PENDING)
+  reason      String?
+  doneAt      DateTime?
+  doneByName  String?
+  trip        ProductionTrip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  task        ProductionTask?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([tripId])
+  @@index([taskId])
+  @@map("production_trip_stops")
+}
+
+/// Pedir veículo: qualquer setor pede (motivo, destino, dia); quem cuida da
+/// frota agenda, encaixando numa saída ou criando uma nova.
+model ProductionVehicleRequest {
+  id              String                         @id @default(uuid())
+  companyId       String
+  requestedById   String
+  requestedByName String
+  sectorId        String?
+  sectorName      String                         @default("")
+  reason          String
+  destination     String                         @default("")
+  date            DateTime                       @db.Date
+  status          ProductionVehicleRequestStatus @default(OPEN)
+  tripId          String?
+  createdAt       DateTime                       @default(now())
+
+  @@index([companyId, status])
+  @@map("production_vehicle_requests")
+}
+
+enum ProductionTripStatus {
+  SCHEDULED
+  ON_ROUTE
+  DONE
+  CANCELED
+}
+
+enum ProductionStopKind {
+  WORK
+  FREE
+}
+
+enum ProductionStopStatus {
+  PENDING
+  DONE
+  NOT_DONE
+}
+
+enum ProductionVehicleRequestStatus {
+  OPEN
+  SCHEDULED
+  CANCELED
 }
