@@ -194,6 +194,13 @@ export class ProductionTaskController {
    * área de cada trabalho; acabando o rolo, o segundo rolo leva o resto. A
    * configuração produtiva usada pode ser trocada (o tempo não muda).
    */
+  @Get(':id/setups')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({ summary: 'As configurações produtivas da máquina da tarefa' })
+  async setups(@Req() req, @Param('id') id: string) {
+    return this.tasks.setupsFor(await this.access.viewer(req.user), id);
+  }
+
   @Post('lot-use-batch')
   @HasPermission('view', PRODUCTION)
   @RequiresFeature('purchasing')

@@ -196,6 +196,45 @@ export class ProductionTaskService {
 
   /** Registra a baixa no histórico da tarefa e devolve a tarefa. */
   /**
+   * As configurações produtivas da máquina da tarefa (para o apontamento):
+   * a do bem da configuração vendida, ou o bem com o nome da máquina.
+   */
+  async setupsFor(viewer: ProductionViewer, id: string) {
+    await this.load(viewer, id);
+    const task = await this.prisma.productionTask.findUnique({
+      where: { id },
+      select: { machine: true, machineSetupId: true },
+    });
+    const sold = task?.machineSetupId
+      ? await this.prisma.assetSetup.findFirst({
+          where: {
+            id: task.machineSetupId,
+            asset: { companyId: viewer.companyId },
+          },
+          select: { assetId: true },
+        })
+      : null;
+    const asset = sold
+      ? { id: sold.assetId }
+      : task?.machine
+        ? await this.prisma.asset.findFirst({
+            where: {
+              companyId: viewer.companyId,
+              name: { equals: task.machine, mode: 'insensitive' },
+            },
+            select: { id: true },
+          })
+        : null;
+    if (!asset) return { current: task?.machineSetupId ?? null, setups: [] };
+    const setups = await this.prisma.assetSetup.findMany({
+      where: { assetId: asset.id },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    return { current: task?.machineSetupId ?? null, setups };
+  }
+
+  /**
    * A configuração produtiva usada na impressão (item 10 do GP-48): o
    * impressor pode trocar no apontamento; o tempo estimado não muda (vem da
    * venda). Usa as configurações do patrimônio (AssetSetup).
