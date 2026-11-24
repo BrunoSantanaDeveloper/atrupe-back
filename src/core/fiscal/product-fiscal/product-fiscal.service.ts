@@ -32,6 +32,7 @@ import {
   validarCstIcmsParaRegime,
 } from '../utils/icms-cst.util';
 import { normalizarUf } from '../utils/icms-aliquota-interna.util';
+import { normalizeUnitCode } from '../utils/commercial-quantity.util';
 import { IcmsAliquotaInternaService } from '../shared/icms-aliquota-interna.service';
 import { buildProductListWhere } from '../../product/product-list-where.util';
 
@@ -43,6 +44,7 @@ import { buildProductListWhere } from '../../product/product-list-where.util';
  * acrescentar um campo aqui sem passar pela validação.
  */
 export interface CamposTributacaoEmMassa {
+  commercialUnit?: string;
   icmsCst?: string;
   icmsRate?: number;
   icmsReducao?: number;
@@ -808,6 +810,20 @@ export class ProductFiscalService {
       dados.icmsOrigin = origem;
     }
 
+    if (dto.commercialUnit !== undefined) {
+      // Normaliza como o uCom da nota: ASCII maiúsculo, até 6 caracteres,
+      // "m²" vira "M2". Guardar o que o usuário digitou faria a nota procurar
+      // uma unidade que o cálculo de quantidade não reconhece.
+      const unidade = normalizeUnitCode(dto.commercialUnit);
+      if (!unidade) {
+        throw new BadRequestException(
+          'A unidade comercial deve ter de 1 a 6 letras ou números ' +
+            '(ex.: UN, M2, KG).',
+        );
+      }
+      dados.commercialUnit = unidade;
+    }
+
     for (const campo of ['cfopInState', 'cfopOutState'] as const) {
       const valor = dto[campo];
       if (valor === undefined) continue;
@@ -822,8 +838,8 @@ export class ProductFiscalService {
 
     if (Object.keys(dados).length === 0) {
       throw new BadRequestException(
-        'Informe pelo menos um campo para corrigir: CST de ICMS, alíquota, ' +
-          'redução da base, origem da mercadoria ou CFOP.',
+        'Informe pelo menos um campo para corrigir: unidade comercial, CST ' +
+          'de ICMS, alíquota, redução da base, origem da mercadoria ou CFOP.',
       );
     }
 
