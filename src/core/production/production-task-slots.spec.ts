@@ -31,6 +31,7 @@ const setup = () => {
         scheduleDate: new Date('2026-11-24T00:00:00Z'),
         scheduleMinutes: 360,
         estimatedMinutes: 360,
+        status: 'NOT_STARTED',
       }),
       update: jest.fn().mockResolvedValue({}),
       findMany: jest.fn().mockResolvedValue([]),
@@ -67,6 +68,7 @@ const setup = () => {
     mirror as never,
     {} as never,
     {} as never,
+    { after: jest.fn() } as never,
   );
   Object.assign(service, {
     load: jest.fn().mockResolvedValue({}),
@@ -368,82 +370,18 @@ describe('ProductionTaskService: blocos de agenda (GP-52)', () => {
     );
   });
 
-  it('a agenda viva conta o bloco de hoje com os minutos dele e o empurra', async () => {
-    const { service, prisma, mirror } = setup();
+  it('depois de começar, os blocos não se juntam mais', async () => {
+    const { service, prisma } = setup();
+    prisma.productionTaskSlot.findFirst.mockResolvedValue({
+      id: 'sl1',
+      kind: 'NORMAL',
+      minutes: 120,
+    });
     prisma.productionTask.findUnique.mockResolvedValue({
-      machine: 'Plotter',
-      machineSetupId: null,
+      status: 'IN_PROGRESS',
     });
-    prisma.productionTaskStep.findMany.mockResolvedValue([{ id: 'st1' }]);
-    // Às 10:00 a máquina ficou livre. O resto de um trabalho dividido (bloco
-    // de 60 min às 09:30) anda para 10:00 e empurra o das 10:30 para 11:00
-    prisma.productionTask.findMany.mockResolvedValue([
-      {
-        id: 'tC',
-        projectId: 'p2',
-        status: 'NOT_STARTED',
-        scheduleStart: '10:30',
-        scheduleMinutes: 30,
-        estimatedMinutes: 480,
-      },
-    ]);
-    prisma.productionTaskSlot.findMany.mockResolvedValue([
-      {
-        id: 'sl-B',
-        taskId: 'tB',
-        start: '09:30',
-        minutes: 60,
-        task: { projectId: 'p1' },
-      },
-    ]);
-    await (
-      service as unknown as {
-        liveReschedule: (...args: unknown[]) => Promise<void>;
-      }
-    ).liveReschedule(
-      VIEWER,
-      't0',
-      {
-        id: 'm1',
-        intervalMinutes: 0,
-        workStart: '08:00',
-        workEnd: '18:00',
-        breakStart: null,
-        breakEnd: null,
-        runsThroughBreak: false,
-      },
-      new Date('2026-11-24T13:00:00Z'),
-      {
-        workDays: [1, 2, 3, 4, 5],
-        startTime: '08:00',
-        endTime: '18:00',
-        holidays: [],
-      },
+    await expect(service.removeSlot(VIEWER, 't1', 'sl1')).rejects.toThrow(
+      'já começou',
     );
-    expect(prisma.productionTaskSlot.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          date: new Date('2026-11-24T00:00:00Z'),
-        }),
-      }),
-    );
-    expect(prisma.productionTaskSlot.update).toHaveBeenCalledWith({
-      where: { id: 'sl-B' },
-      data: { start: '10:00' },
-    });
-    expect(prisma.productionTask.update).toHaveBeenCalledWith({
-      where: { id: 'tC' },
-      data: { scheduleStart: '11:00' },
-    });
-    expect(prisma.productionTaskHistory.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        taskId: 'tB',
-        text: 'O bloco de hoje passou de 09:30 para 10:00: o trabalho anterior na máquina atrasou (agenda viva)',
-      }),
-    });
-    expect(mirror.sync.mock.calls.map(([id]) => id).sort()).toEqual([
-      'p1',
-      'p2',
-    ]);
   });
 });

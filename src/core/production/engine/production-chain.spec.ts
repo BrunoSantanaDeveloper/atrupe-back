@@ -35,6 +35,46 @@ const chainOf = (tasks: ChainTask[], project: Partial<ChainProject> = {}) =>
   );
 
 describe('ProductionChain', () => {
+  describe('o cadeado na agenda (24/11/2026)', () => {
+    it('travada: a anterior que não termina a tempo acende o alerta, e a cadeia herda', () => {
+      const chain = chainOf([
+        task({
+          id: 'impressao',
+          stageName: 'Impressão',
+          status: 'IN_PROGRESS',
+          estimatedMinutes: 300,
+        }),
+        task({
+          id: 'instalacao',
+          dependsOn: ['impressao'],
+          locked: true,
+          schedule: { date: '2026-10-07', start: '11:00', minutes: 60 },
+        }),
+        task({ id: 'entrega', dependsOn: ['instalacao'] }),
+      ]);
+      expect(chain.alert(chain.task('instalacao')!)).toMatchObject({
+        kind: 'LATE_PREDECESSOR',
+        text: expect.stringContaining('Travada na agenda'),
+      });
+      expect(chain.alert(chain.task('entrega')!)?.kind).toBe(
+        'LATE_PREDECESSOR',
+      );
+    });
+
+    it('travada com a anterior a tempo: sem alerta', () => {
+      const chain = chainOf([
+        task({ id: 'impressao', status: 'IN_PROGRESS', estimatedMinutes: 30 }),
+        task({
+          id: 'instalacao',
+          dependsOn: ['impressao'],
+          locked: true,
+          schedule: { date: '2026-10-07', start: '14:00', minutes: 60 },
+        }),
+      ]);
+      expect(chain.alert(chain.task('instalacao')!)).toBeNull();
+    });
+  });
+
   describe('bloqueio (PR-2, FL-13)', () => {
     it('trava a que não começou enquanto a anterior está aberta', () => {
       const base = task({ id: 'impressao' });

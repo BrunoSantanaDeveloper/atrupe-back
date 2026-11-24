@@ -78,6 +78,7 @@ const setup = () => {
     {} as never,
     storage as never,
     files as never,
+    { after: jest.fn() } as never,
   );
   // A tarefa visível ao usuário (o load tem o próprio teste de acesso)
   Object.assign(service, { load: jest.fn().mockResolvedValue({}) });

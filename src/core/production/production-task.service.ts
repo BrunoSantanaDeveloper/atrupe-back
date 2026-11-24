@@ -10,18 +10,7 @@ import {
 import { Prisma, ProductionAttachmentKind } from '@prisma/client';
 import * as path from 'path';
 import { PrismaService } from 'src/config/prisma/prisma.service';
-import {
-  toProjectDateKey,
-  toProjectTimeKey,
-} from '../fiscal/utils/project-date.util';
-import {
-  liveHoursOf,
-  nextWorkDay,
-  rescheduleAfter,
-  toMinutes,
-} from './engine/live-schedule';
-import { maintenanceSpans } from './engine/maintenance';
-import { isOpen, WorkCalendar } from './engine/production-chain';
+import { isOpen } from './engine/production-chain';
 import { planAction } from './engine/task-machine';
 import {
   AttachmentDto,
@@ -41,13 +30,12 @@ import {
   ProductionAccessService,
   ProductionViewer,
 } from './production-access.service';
-import { machineMaintenance } from './production-board.service';
 import { VEHICLE_NOT_FOUND } from './production-config.service';
+import { ProductionLiveService } from './production-live.service';
 import { ProductionMirrorService } from './production-mirror.service';
 import { dateColumn } from './production-project.service';
 import {
   ChainRow,
-  ManagerRow,
   ProductionContext,
   ProductionViewService,
   TASK_NOT_FOUND,
@@ -166,6 +154,7 @@ export class ProductionTaskService {
     private readonly mirror: ProductionMirrorService,
     private readonly storage: ProductionStorageService,
     private readonly files: ProductionFilesService,
+    private readonly live: ProductionLiveService,
   ) {}
 
   /* ------------------------------------------------------------ apoio */
@@ -435,22 +424,6 @@ export class ProductionTaskService {
       }
       for (const text of plan.history) await this.log(tx, viewer, id, text);
     });
-    // A máquina ficou livre: a agenda viva grava o horário novo dos
-    // seguintes que já não cabem (GP-48 item 20)
-    if (plan.complete || plan.advanceStep) {
-      const managerId = this.view.stepOf(ctx, row).managerId;
-      const manager = managerId ? ctx.managers.get(managerId) : undefined;
-      if (manager?.liveSchedule === 'RESCHEDULE') {
-        // Fora do caminho: a ação já foi gravada, e uma falha da agenda viva
-        // fica no log em vez de virar erro para quem agiu
-        await this.liveReschedule(viewer, id, manager, now, ctx.calendar).catch(
-          (error) =>
-            this.logger.error(
-              `Agenda viva depois da tarefa ${id}: ${error.message}`,
-            ),
-        );
-      }
-    }
     // Iniciar ou continuar com quem faz liga o relógio dele (GP-43)
     if (plan.mayOpenClock && dto.collaboratorId) {
       const type = ctx.types.get(row.taskTypeId);
@@ -459,162 +432,9 @@ export class ProductionTaskService {
       }
     }
     await this.mirror.sync(row.projectId);
+    // A agenda viva da cadeia (24/11/2026): a ação muda a cadeia
+    await this.live.after(viewer.companyId);
     return this.respond(viewer, id, plan.message);
-  }
-
-  /**
-   * "Reagenda e avisa" gravado (GP-48 item 20; Maicol, 22/11/2026): os
-   * trabalhos de hoje na mesma máquina e no mesmo gerenciador, ainda não
-   * iniciados, que já não cabem andam para depois deste, na sequência. Com
-   * outro trabalho em andamento na máquina, espera: ele reagenda ao sair.
-   * Vale o expediente efetivo (o do gerenciador ou o da empresa), com o
-   * almoço e a manutenção da máquina; o que não começa mais hoje vai ao
-   * próximo dia útil, sem horário.
-   */
-  private async liveReschedule(
-    viewer: ProductionViewer,
-    id: string,
-    manager: ManagerRow,
-    now: Date,
-    calendar: WorkCalendar,
-  ) {
-    const task = await this.prisma.productionTask.findUnique({
-      where: { id },
-      select: { machine: true, machineSetupId: true },
-    });
-    if (!task?.machine) return;
-    const steps = await this.prisma.productionTaskStep.findMany({
-      where: { managerId: manager.id },
-      select: { id: true },
-    });
-    const today = toProjectDateKey(now);
-    const others = await this.prisma.productionTask.findMany({
-      where: {
-        companyId: viewer.companyId,
-        id: { not: id },
-        machine: task.machine,
-        currentStepId: { in: steps.map((step) => step.id) },
-        OR: [
-          { status: 'IN_PROGRESS' },
-          { status: 'NOT_STARTED', scheduleDate: dateColumn(today) },
-        ],
-      },
-      select: {
-        id: true,
-        projectId: true,
-        status: true,
-        scheduleStart: true,
-        scheduleMinutes: true,
-        estimatedMinutes: true,
-      },
-    });
-    if (others.some((item) => item.status === 'IN_PROGRESS')) return;
-    // Os outros blocos de hoje (GP-52) entram na sequência com os minutos
-    // deles: o resto de um trabalho dividido (a tarefa pode estar pausada
-    // desde o bloco 1) e o tempo extra. O bloco 1 já conta só o que ficou
-    // nele (scheduleMinutes)
-    const slots = await this.prisma.productionTaskSlot.findMany({
-      where: {
-        companyId: viewer.companyId,
-        date: dateColumn(today),
-        start: { not: null },
-        task: {
-          id: { not: id },
-          machine: task.machine,
-          currentStepId: { in: steps.map((step) => step.id) },
-          status: { in: ['NOT_STARTED', 'PAUSED'] },
-          scheduleDate: { not: null },
-        },
-      },
-      select: {
-        id: true,
-        taskId: true,
-        start: true,
-        minutes: true,
-        task: { select: { projectId: true } },
-      },
-    });
-    const slotById = new Map(slots.map((slot) => [slot.id, slot]));
-    const tasks = [
-      ...others
-        .filter((item) => item.scheduleStart)
-        .map((item) => ({
-          id: item.id,
-          start: item.scheduleStart!,
-          minutes: item.scheduleMinutes || item.estimatedMinutes,
-        })),
-      ...slots.map((slot) => ({
-        id: slot.id,
-        start: slot.start!,
-        minutes: slot.minutes,
-      })),
-    ];
-    if (!tasks.length) return;
-    // A manutenção da máquina hoje (GP-49 item 6), casada pela configuração
-    const blocks = maintenanceSpans(
-      await machineMaintenance(this.prisma, viewer.companyId, today, today),
-      task,
-      today,
-    );
-    const moves = rescheduleAfter({
-      freeAt: toMinutes(toProjectTimeKey(now)),
-      intervalMinutes: manager.intervalMinutes,
-      hours: liveHoursOf(manager, calendar),
-      blocks,
-      tasks,
-    });
-    if (!moves.length) return;
-    const nextDay = nextWorkDay(today, calendar);
-    await this.prisma.$transaction(async (tx) => {
-      for (const move of moves) {
-        const slot = slotById.get(move.id);
-        if (slot) {
-          await tx.productionTaskSlot.update({
-            where: { id: slot.id },
-            data: move.to
-              ? { start: move.to }
-              : { date: dateColumn(nextDay), start: null },
-          });
-          await this.log(
-            tx,
-            viewer,
-            slot.taskId,
-            !move.to
-              ? `O bloco de hoje às ${move.from} passou para ${brDate(nextDay)}, sem horário: não começa mais no expediente de hoje (agenda viva)`
-              : move.maintenance
-                ? `O bloco de hoje passou de ${move.from} para ${move.to}, depois da manutenção "${move.maintenance}" da máquina (agenda viva)`
-                : `O bloco de hoje passou de ${move.from} para ${move.to}: o trabalho anterior na máquina atrasou (agenda viva)`,
-          );
-          continue;
-        }
-        await tx.productionTask.update({
-          where: { id: move.id },
-          // Não começa mais hoje: o próximo dia útil, só com o dia (GP-49)
-          data: move.to
-            ? { scheduleStart: move.to }
-            : { scheduleDate: dateColumn(nextDay), scheduleStart: null },
-        });
-        await this.log(
-          tx,
-          viewer,
-          move.id,
-          !move.to
-            ? `Reagendada para ${brDate(nextDay)}, sem horário (estava hoje às ${move.from}): não começa mais no expediente de hoje (agenda viva)`
-            : move.maintenance
-              ? `Reagendada de ${move.from} para ${move.to}, depois da manutenção "${move.maintenance}" da máquina (agenda viva)`
-              : `Reagendada de ${move.from} para ${move.to}: o trabalho anterior na máquina atrasou (agenda viva)`,
-        );
-      }
-    });
-    const projects = new Set([
-      ...others
-        .filter((item) => moves.some((move) => move.id === item.id))
-        .map((item) => item.projectId),
-      ...slots
-        .filter((slot) => moves.some((move) => move.id === slot.id))
-        .map((slot) => slot.task.projectId),
-    ]);
-    for (const projectId of projects) await this.mirror.sync(projectId);
   }
 
   /** O impedimento descrito: a tarefa fica pendente e os relógios param. */
@@ -638,6 +458,7 @@ export class ProductionTaskService {
       await this.log(tx, viewer, id, `Adicionou pendência: ${description}`);
     });
     await this.mirror.sync(row.projectId);
+    await this.live.after(viewer.companyId);
     return this.respond(viewer, id, 'Pendência registrada');
   }
 
@@ -679,6 +500,7 @@ export class ProductionTaskService {
           : 'Liberou a próxima etapa antes de concluir',
       );
     });
+    await this.live.after(viewer.companyId);
     return this.respond(
       viewer,
       id,
@@ -738,6 +560,7 @@ export class ProductionTaskService {
         });
         await this.log(tx, viewer, id, message);
       });
+      await this.live.after(viewer.companyId);
       return this.respond(viewer, id, message);
     }
     let message = 'Tirou da agenda';
@@ -748,6 +571,7 @@ export class ProductionTaskService {
           scheduleDate: null,
           scheduleStart: null,
           scheduleMinutes: null,
+          scheduleLocked: false,
         },
       });
       // Sem o bloco 1, os outros blocos não têm de quem ser o resto: saem
@@ -773,6 +597,28 @@ export class ProductionTaskService {
       select: { scheduleDate: true },
     });
     return task?.scheduleDate?.toISOString().slice(0, 10) ?? null;
+  }
+
+  /**
+   * O cadeado (Maicol, 24/11/2026): "um simples cadeado que não deixa
+   * atrasar nem adiantar". Travada, fica no horário; se a cadeia atrasar,
+   * acende o alerta. Destravada, a agenda viva volta a mexer nela.
+   */
+  async lock(viewer: ProductionViewer, id: string, locked: boolean) {
+    const { row } = await this.load(viewer, id);
+    if (locked && !row.scheduleDate) bad('Agende a tarefa antes de travar');
+    const message = locked
+      ? 'Travou na agenda: a agenda viva não adianta nem atrasa'
+      : 'Destravou na agenda: a agenda viva volta a reagendar';
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productionTask.update({
+        where: { id },
+        data: { scheduleLocked: locked },
+      });
+      await this.log(tx, viewer, id, message);
+    });
+    await this.live.after(viewer.companyId);
+    return this.respond(viewer, id, message);
   }
 
   /**
@@ -872,6 +718,16 @@ export class ProductionTaskService {
       where: { id: slotId, taskId: id },
     });
     if (!slot) throw new NotFoundException('Bloco não encontrado');
+    // Juntar os blocos de volta só antes de começar (24/11/2026)
+    if (slot.kind === 'NORMAL') {
+      const task = await this.prisma.productionTask.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      if (task?.status !== 'NOT_STARTED') {
+        bad('A tarefa já começou: os blocos não se juntam mais');
+      }
+    }
     const message =
       slot.kind === 'EXTRA'
         ? `Tirou o tempo extra de ${hmText(slot.minutes)}`
@@ -1007,6 +863,7 @@ export class ProductionTaskService {
         select: { projectId: true },
       }))!.projectId,
     );
+    await this.live.after(viewer.companyId);
     return this.respond(viewer, id, 'Colaborador na tarefa: o relógio começou');
   }
 
@@ -1135,6 +992,7 @@ export class ProductionTaskService {
         [target.id],
       );
     });
+    await this.live.after(viewer.companyId);
     return this.respond(viewer, id, 'Relógio parado');
   }
 

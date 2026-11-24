@@ -52,6 +52,7 @@ const CHAIN_SELECT = {
   scheduleDate: true,
   scheduleStart: true,
   scheduleMinutes: true,
+  scheduleLocked: true,
   assigneeId: true,
   currentStepId: true,
   taskTypeId: true,
@@ -406,6 +407,10 @@ export class ProductionViewService {
       estimatedMinutes: row.estimatedMinutes,
       dependsOn: row.dependsOn,
       released: !!row.releasedNext,
+      // O cadeado (agenda viva da cadeia): a cadeia não move o trabalho
+      locked: row.scheduleLocked,
+      // O bloco 1 (só o dia, GP-49, sem a hora) e os outros blocos (GP-52),
+      // cada um com os minutos dele, pela regra única de engine/task-blocks
       schedule: first ? schedule(first) : null,
       slots: others.map(schedule),
       entries: row.timeEntries,
@@ -605,6 +610,8 @@ export class ProductionViewService {
       managerId,
       blocked,
       blockedBy,
+      // O cadeado: travada na agenda (24/11/2026)
+      locked: chainRow.scheduleLocked,
       assignee: this.person(ctx, row.assigneeId),
       workers: this.workerIds(chainRow)
         .map((id) => this.person(ctx, id))

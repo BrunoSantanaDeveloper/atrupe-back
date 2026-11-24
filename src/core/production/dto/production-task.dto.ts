@@ -89,6 +89,13 @@ export class TaskScheduleDto {
   schedule: TaskScheduleValueDto | null;
 }
 
+/** O cadeado na agenda (24/11/2026): travada, a agenda viva não mexe */
+export class TaskLockDto {
+  @ApiProperty({ example: true })
+  @IsBoolean({ message: 'Informe se a tarefa fica travada' })
+  locked: boolean;
+}
+
 /** Atribuir e reservar veículo; null tira. Os campos são parciais. */
 export class UpdateTaskDto {
   @ApiPropertyOptional({ nullable: true })

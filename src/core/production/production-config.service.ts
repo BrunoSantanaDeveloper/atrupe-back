@@ -222,9 +222,10 @@ export class ProductionConfigService {
         holidays: true,
         breakStart: true,
         breakEnd: true,
+        liveSchedule: true,
       },
     });
-    return row ?? { ...DEFAULT_CALENDAR };
+    return row ?? { ...DEFAULT_CALENDAR, liveSchedule: 'WARN' as const };
   }
 
   async updateCalendar(companyId: string, dto: CalendarDto) {
@@ -245,6 +246,8 @@ export class ProductionConfigService {
       breakStart: hours.breakStart,
       breakEnd: hours.breakEnd,
       holidays: [...new Set(dto.holidays ?? [])].sort(),
+      // A agenda viva da cadeia (24/11/2026): sem o campo, fica como está
+      ...(dto.liveSchedule ? { liveSchedule: dto.liveSchedule } : {}),
     };
     await this.prisma.productionCalendar.upsert({
       where: { companyId },

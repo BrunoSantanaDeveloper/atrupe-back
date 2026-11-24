@@ -212,6 +212,15 @@ export class CalendarDto {
     message: 'Fim do intervalo inválido',
   })
   breakEnd?: string | null;
+
+  @ApiPropertyOptional({
+    enum: LIVE_SCHEDULES,
+    description:
+      'Quando uma etapa atrasa: WARN avisa toda a cadeia; RESCHEDULE avisa e reagenda (agenda viva)',
+  })
+  @IsOptional()
+  @IsIn(LIVE_SCHEDULES, { message: 'Escolha como a agenda reage ao atraso' })
+  liveSchedule?: (typeof LIVE_SCHEDULES)[number];
 }
 
 export class VehicleDto {

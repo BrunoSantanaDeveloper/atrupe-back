@@ -183,6 +183,8 @@ export class ProductionBoardService {
     return {
       manager: {
         ...this.view.managerSummaryView(row),
+        // A agenda viva é da empresa, não do gerenciador (24/11/2026)
+        liveSchedule: ctx.calendar.liveSchedule ?? 'WARN',
         flowId: row.flowId,
         // O expediente da empresa: o padrão do gerenciador sem expediente e
         // os dias que não são de trabalho (feriado fica em vermelho, GP-49)

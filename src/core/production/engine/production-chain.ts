@@ -29,6 +29,8 @@ export type ChainTask = {
   dependsOn: string[];
   /** Liberou a próxima etapa antes de concluir (FL-13) */
   released: boolean;
+  /** O cadeado na agenda (24/11/2026): não anda; a cadeia avisa se não chega */
+  locked?: boolean;
   /**
    * A espera depois de concluir antes da etapa seguinte (ex.: secagem), do
    * gerenciador onde a tarefa termina (GP-48 item 21)
@@ -94,6 +96,11 @@ export type WorkCalendar = {
   /** O intervalo (almoço), opcional: o gerenciador novo copia (GP-49) */
   breakStart?: string | null;
   breakEnd?: string | null;
+  /**
+   * Quando uma etapa atrasa (24/11/2026): só avisar a cadeia, ou avisar e
+   * reagendar (a agenda viva, chain-replan.ts)
+   */
+  liveSchedule?: 'WARN' | 'RESCHEDULE';
 };
 
 /** O expediente de referência até existir calendário (§4.8): 8h às 18h. */
@@ -242,6 +249,18 @@ export class ProductionChain {
     );
   }
 
+  /**
+   * Quando a etapa deve terminar: o fim agendado, ou agora mais o que falta,
+   * o que vier depois
+   */
+  private expectedEnd(task: ChainTask) {
+    const end = this.scheduleEnd(task);
+    const left = Math.max(0, task.estimatedMinutes - this.actualMinutes(task));
+    const fromNow = new Date(this.clock.now.getTime() + left * 60000);
+    if (!end) return task.status === 'NOT_STARTED' ? null : fromNow;
+    return end.getTime() > fromNow.getTime() ? end : fromNow;
+  }
+
   /** Passou do horário planejado sem terminar. */
   overdue(task: ChainTask) {
     const end = this.scheduleEnd(task);
@@ -368,6 +387,26 @@ export class ProductionChain {
         kind: 'OVERDUE',
         text: 'Passou do horário planejado sem terminar. Reagende ou recupere o atraso: as etapas seguintes estão avisadas.',
       };
+    }
+    // Travada (o cadeado): a etapa anterior que não termina antes do horário
+    // travado acende o alerta, e a cadeia depois dela herda
+    if (task.locked && task.schedule && task.status === 'NOT_STARTED') {
+      const lockedAt = task.schedule.start
+        ? this.clock.at(task.schedule.date, task.schedule.start)
+        : this.clock.at(task.schedule.date, this.hoursOf(task).startTime);
+      for (const id of task.dependsOn) {
+        const dependency = this.byId.get(id);
+        if (!dependency || !isOpen(dependency.status) || dependency.released) {
+          continue;
+        }
+        const end = this.expectedEnd(dependency);
+        if (end && end.getTime() > lockedAt.getTime()) {
+          return {
+            kind: 'LATE_PREDECESSOR',
+            text: `Travada na agenda, mas ${dependency.stageName} não termina a tempo. Destrave para a agenda viva reagendar, ou recupere o atraso.`,
+          };
+        }
+      }
     }
     // O aviso só some quando a anterior termina ou é reagendada de um jeito
     // que a cadeia volta a caber (§12.2)

@@ -42,6 +42,7 @@ import {
   ReleaseNextDto,
   TaskActionDto,
   TaskScheduleDto,
+  TaskLockDto,
   TimeEntryDto,
   TaskSlotDto,
   SplitTaskDto,
@@ -312,6 +313,17 @@ export class ProductionTaskController {
     @Body() dto: TaskScheduleDto,
   ) {
     return this.tasks.schedule(await this.access.viewer(req.user), id, dto);
+  }
+
+  @Put(':id/lock')
+  @RequiresFeature('production_manager')
+  @HasPermission('view', PRODUCTION)
+  @ApiOperation({
+    summary:
+      'O cadeado na agenda: travada, a agenda viva não adianta nem atrasa',
+  })
+  async lock(@Req() req, @Param('id') id: string, @Body() dto: TaskLockDto) {
+    return this.tasks.lock(await this.access.viewer(req.user), id, dto.locked);
   }
 
   // Os blocos de agenda (GP-52, ELITE): dividir em dois dias e acrescentar

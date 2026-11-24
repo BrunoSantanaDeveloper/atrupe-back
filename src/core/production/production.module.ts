@@ -20,6 +20,7 @@ import { OrderFilesController } from './order-files.controller';
 import { CompanyStorageController } from './company-storage.controller';
 import { ProductionOccupancyService } from './production-occupancy.service';
 import { ProductionTripController } from './production-trip.controller';
+import { ProductionLiveService } from './production-live.service';
 import { ProductionTripService } from './production-trip.service';
 import { CompanyStorageService } from './storage/company-storage.service';
 import { ProductionStorageService } from './storage/production-storage.service';
@@ -55,6 +56,7 @@ import { ProductionStorageService } from './storage/production-storage.service';
     CompanyStorageService,
     ProductionOccupancyService,
     ProductionTripService,
+    ProductionLiveService,
   ],
   exports: [ProductionProjectService],
 })

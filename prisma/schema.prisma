@@ -4666,6 +4666,10 @@ model ProductionCalendar {
   breakEnd   String?
   /// YYYY-MM-DD
   holidays   String[]
+  /// Quando uma etapa atrasa (Maicol, 24/11/2026): só avisar toda a cadeia
+  /// (WARN) ou avisar e reagendar (RESCHEDULE, a agenda viva), que refaz a
+  /// agenda de todas as máquinas pela cadeia. Vale para a empresa inteira.
+  liveSchedule ProductionLiveSchedule @default(WARN)
   updatedAt  DateTime @updatedAt
   company    Company  @relation(fields: [companyId], references: [id])
 
@@ -4776,6 +4780,9 @@ model ProductionTask {
   scheduleDate       DateTime?                  @db.Date
   scheduleStart      String?
   scheduleMinutes    Int?
+  /// O cadeado (Maicol, 24/11/2026): travada na agenda, a agenda viva não
+  /// adianta nem atrasa; se a cadeia não chegar a tempo, acende o alerta
+  scheduleLocked     Boolean                    @default(false)
   assigneeId         String?
   pendencyText       String?
   pendencyAt         DateTime?
