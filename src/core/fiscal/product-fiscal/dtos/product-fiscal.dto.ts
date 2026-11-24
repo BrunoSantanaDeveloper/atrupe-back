@@ -481,6 +481,15 @@ export class BulkUpdateTributacaoDto {
   @IsString()
   @IsOptional()
   cfopOutState?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Unidade comercial (uCom da nota): UN, M2, M, KG, L, KM, H. É ela que ' +
+      'decide se a linha da nota sai em peças ou na medida do item.',
+  })
+  @IsString()
+  @IsOptional()
+  commercialUnit?: string;
 }
 
 export class UpdateProductFiscalDataDto {

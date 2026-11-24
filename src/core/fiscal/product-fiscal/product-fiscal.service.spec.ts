@@ -765,6 +765,68 @@ describe('ProductFiscalService', () => {
       }
     });
 
+    /**
+     * A unidade comercial decide se a linha da nota sai em peças ou na medida
+     * do item: produto de área cadastrado como UN emite "1 UN x R$ 13.220" no
+     * lugar de "32,2 M2 x R$ 369,50". Sem correção em massa, arrumar isso
+     * numa base inteira é produto a produto.
+     */
+    describe('unidade comercial', () => {
+      it('grava a unidade normalizada como uCom', async () => {
+        mockEmissor(SIMPLES);
+        mockProdutos([{ id: 'p-1', hasFiscal: true }]);
+
+        await service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          commercialUnit: 'm²',
+        });
+
+        expect(prisma.productFiscalData.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({ data: { commercialUnit: 'M2' } }),
+        );
+      });
+
+      it('aceita a unidade como único campo da correção', async () => {
+        mockEmissor(SIMPLES);
+        mockProdutos([{ id: 'p-1', hasFiscal: true }]);
+
+        const result = await service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          commercialUnit: 'UN',
+        });
+
+        expect(result.total).toBe(1);
+      });
+
+      it('recusa unidade sem caractere aproveitável', async () => {
+        mockEmissor(SIMPLES);
+
+        await expect(
+          service.bulkUpdateTributacao(COMPANY, {
+            productIds: ['p-1'],
+            commercialUnit: '   ',
+          }),
+        ).rejects.toThrow(/unidade comercial/);
+
+        expect(prisma.productFiscalData.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('cadastro criado nasce com a unidade pedida, não com o padrão', async () => {
+        mockEmissor(SIMPLES);
+        mockProdutos([{ id: 'p-1', hasFiscal: false }]);
+
+        await service.bulkUpdateTributacao(COMPANY, {
+          productIds: ['p-1'],
+          commercialUnit: 'M2',
+        });
+
+        expect(prisma.productFiscalData.createMany).toHaveBeenCalledWith({
+          data: [expect.objectContaining({ commercialUnit: 'M2' })],
+          skipDuplicates: true,
+        });
+      });
+    });
+
     it('recusa origem da mercadoria fora de 0-8 e CFOP que não tem 4 dígitos', async () => {
       mockEmissor(REGIME_NORMAL);
 
