@@ -297,6 +297,35 @@ export class QuotationResultService {
       billing -
       agencyCommission;
 
+    // O veículo (veículos, fase 1): o km previsto (vendido) e o rodado nas
+    // saídas fechadas, pelas paradas das tarefas desta venda
+    const stops = await this.prisma.productionTripStop.findMany({
+      where: {
+        task: { project: { quotationId } },
+        trip: { status: { not: 'CANCELED' } },
+      },
+      select: {
+        plannedKm: true,
+        km: true,
+        description: true,
+        trip: { select: { number: true, status: true } },
+      },
+    });
+    const vehicleKm = stops.length
+      ? {
+          planned: stops.reduce((sum, stop) => sum + (stop.plannedKm || 0), 0),
+          driven: stops
+            .filter((stop) => stop.trip.status === 'DONE')
+            .reduce((sum, stop) => sum + (stop.km || 0), 0),
+          stops: stops.map((stop) => ({
+            trip: stop.trip.number,
+            description: stop.description,
+            planned: stop.plannedKm,
+            driven: stop.trip.status === 'DONE' ? stop.km : null,
+          })),
+        }
+      : null;
+
     return {
       // A venda ("3352-V1") e o cliente, para o topo da tela
       reference: [quotation.quotationNumber, quotation.series?.code]
@@ -318,6 +347,7 @@ export class QuotationResultService {
       result,
       margin: marginOf(result, revenue),
       items,
+      vehicleKm,
     };
   }
 

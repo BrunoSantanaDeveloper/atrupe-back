@@ -17,6 +17,8 @@ describe('QuotationResultService', () => {
 
   beforeEach(() => {
     prisma = {
+      // As paradas dos veículos (o km no resultado): nenhuma
+      productionTripStop: { findMany: jest.fn().mockResolvedValue([]) },
       quotation: {
         findUnique: jest.fn().mockResolvedValue({
           companyId: 'c-1',
