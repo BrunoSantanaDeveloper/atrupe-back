@@ -123,6 +123,8 @@ export class UpdateSectorDto {
     nullable: true,
     required: false,
   })
+  hourSale?: number | null;
+
   // O que o setor produz (PS-1; Maicol, 23/11/2026): as produções da lista
   @IsOptional()
   @IsArray()
@@ -134,6 +136,4 @@ export class UpdateSectorDto {
     required: false,
   })
   productions?: string[];
-
-  hourSale?: number | null;
 }
