@@ -65,7 +65,12 @@ export class ProductionLiveService {
    * seguinte (24/11/2026; engine/slot-carry.ts). Vale com ou sem a agenda
    * viva.
    */
-  @Cron('10 0 * * *', { name: 'production-slot-carry' })
+  // Com o fuso: o container roda em UTC, e sem ele a "virada do dia" seria às
+  // 21:10 de Brasília (como os outros crons diários da casa)
+  @Cron('10 0 * * *', {
+    name: 'production-slot-carry',
+    timeZone: 'America/Sao_Paulo',
+  })
   async carryAll() {
     const now = new Date();
     const today = toProjectDateKey(now);

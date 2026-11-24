@@ -147,6 +147,7 @@ describe('a configuração produtiva usada (useSetup)', () => {
       {} as never,
       {} as never,
       {} as never,
+      { after: jest.fn() } as never,
     );
     return { service, prisma };
   };

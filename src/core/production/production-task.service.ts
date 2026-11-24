@@ -10,6 +10,7 @@ import {
 import { Prisma, ProductionAttachmentKind } from '@prisma/client';
 import * as path from 'path';
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import { toProjectDateKey } from '../fiscal/utils/project-date.util';
 import { isOpen } from './engine/production-chain';
 import { planAction } from './engine/task-machine';
 import {

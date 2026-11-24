@@ -225,7 +225,13 @@ describe('ProductionTaskService: blocos de agenda (GP-52)', () => {
     const res = await service.schedule(VIEWER, 't1', { schedule: null });
     expect(prisma.productionTask.update).toHaveBeenCalledWith({
       where: { id: 't1' },
-      data: { scheduleDate: null, scheduleStart: null, scheduleMinutes: null },
+      // Tirar da agenda também solta o cadeado (agenda viva da cadeia)
+      data: {
+        scheduleDate: null,
+        scheduleStart: null,
+        scheduleMinutes: null,
+        scheduleLocked: false,
+      },
     });
     expect(prisma.productionTaskSlot.deleteMany).toHaveBeenCalledWith({
       where: { taskId: 't1' },
