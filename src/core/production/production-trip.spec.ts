@@ -74,6 +74,7 @@ const setup = () => {
       findFirst: jest.fn().mockResolvedValue({ id: 'v1', name: 'Fiorino' }),
     },
     employee: { findMany: jest.fn().mockResolvedValue([]) },
+    productionAttachmentVersion: { count: jest.fn().mockResolvedValue(0) },
   };
   const access: any = {
     collaborator: jest.fn(async (_c, id) => ({ id, name: id })),
@@ -147,5 +148,30 @@ describe('ProductionTripService', () => {
         stops: [{ kind: 'FREE', description: 'Banco' }],
       }),
     ).rejects.toThrow('Fiorino já tem uma saída nesse horário');
+  });
+
+  it('a parada de trabalho concluída no caminho pede a foto', async () => {
+    const { service, prisma } = setup();
+    prisma.productionTrip.findFirst.mockResolvedValue(
+      tripRow({
+        status: 'ON_ROUTE',
+        startedAt: at(8),
+        stops: [
+          {
+            id: 's1',
+            kind: 'WORK',
+            taskId: 'task1',
+            status: 'PENDING',
+            description: 'A',
+          },
+        ],
+      }),
+    );
+    await expect(
+      service.stopResult(VIEWER, 't1', 's1', { status: 'DONE' }),
+    ).rejects.toThrow('Tire a foto do trabalho pronto antes de concluir');
+    prisma.productionAttachmentVersion.count.mockResolvedValue(1);
+    await service.stopResult(VIEWER, 't1', 's1', { status: 'DONE' });
+    expect(prisma.productionTripStop.update).toHaveBeenCalled();
   });
 });

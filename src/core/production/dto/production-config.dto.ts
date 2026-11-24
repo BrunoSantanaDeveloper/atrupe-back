@@ -226,4 +226,10 @@ export class VehicleDto {
   @IsString()
   @MaxLength(20)
   plate?: string;
+
+  /** O patrimônio do veículo (VE-1); nulo desliga */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  assetId?: string | null;
 }

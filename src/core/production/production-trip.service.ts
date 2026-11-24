@@ -345,6 +345,20 @@ export class ProductionTripService {
     if (dto.status === 'NOT_DONE' && !dto.reason?.trim()) {
       bad('Diga por que a parada não foi feita');
     }
+    // A parada de trabalho concluída no caminho pede a foto do trabalho
+    // pronto (Maicol, 23/11/2026): uma imagem anexada à tarefa depois que
+    // a saída começou
+    if (dto.status === 'DONE' && stop.kind === 'WORK' && stop.taskId) {
+      const since = trip.startedAt ?? trip.departAt;
+      const photo = await this.prisma.productionAttachmentVersion.count({
+        where: {
+          attachment: { taskId: stop.taskId },
+          uploadedAt: { gte: since },
+          mime: { startsWith: 'image/' },
+        },
+      });
+      if (!photo) bad('Tire a foto do trabalho pronto antes de concluir');
+    }
     await this.prisma.productionTripStop.update({
       where: { id: stopId },
       data: {

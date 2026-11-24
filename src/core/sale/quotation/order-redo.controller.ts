@@ -26,6 +26,17 @@ export class RedoOrderDto {
   @ApiProperty({ enum: ['CLIENT', 'COMPANY'] })
   @IsIn(['CLIENT', 'COMPANY'])
   excess: 'CLIENT' | 'COMPANY';
+
+  /** Quem causou a refação: a pessoa (colaborador) ou o setor */
+  @ApiPropertyOptional({ enum: ['PERSON', 'SECTOR'] })
+  @IsOptional()
+  @IsIn(['PERSON', 'SECTOR'])
+  responsibleKind?: 'PERSON' | 'SECTOR';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  responsibleId?: string;
 }
 
 export class RejectRedoDto {

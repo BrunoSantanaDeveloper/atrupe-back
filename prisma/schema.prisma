@@ -4678,6 +4678,9 @@ model ProductionVehicle {
   companyId String
   name      String
   plate     String           @default("")
+  /// O veículo é o patrimônio (VE-1): o bem da frota, com o custo por km e
+  /// os lembretes (a manutenção bloqueia a agenda)
+  assetId   String?
   isActive  Boolean          @default(true)
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
@@ -5808,6 +5811,11 @@ model OrderRedo {
   newQuotationId  String?
   reason          String
   excess          OrderRedoExcess @default(COMPANY)
+  /// Quem causou a refação (o erro): uma pessoa ou um setor (ex.: o
+  /// comercial). A perda entra no resultado dele, depois do funcional
+  responsibleKind String?
+  responsibleId   String?
+  responsibleName String?
   status          OrderRedoStatus @default(PENDING_APPROVAL)
   needsApproval   Boolean         @default(false)
   /// O que já tinha sido feito: etapas concluídas e movimentos de estoque

@@ -172,7 +172,14 @@ const vehicleView = (row: {
   name: string;
   plate: string;
   isActive: boolean;
-}) => ({ id: row.id, name: row.name, plate: row.plate, active: row.isActive });
+  assetId?: string | null;
+}) => ({
+  id: row.id,
+  name: row.name,
+  plate: row.plate,
+  active: row.isActive,
+  assetId: row.assetId ?? null,
+});
 
 const nameKey = (name: string) => name.trim().toLocaleLowerCase('pt-BR');
 
@@ -658,16 +665,25 @@ export class ProductionConfigService {
 
   /* --------------------------------------------------------- veículos */
 
-  private vehicleData(dto: VehicleDto) {
+  private async vehicleData(companyId: string, dto: VehicleDto) {
+    // O veículo é o patrimônio (VE-1): o bem precisa ser da empresa
+    if (dto.assetId) {
+      const asset = await this.prisma.asset.findFirst({
+        where: { id: dto.assetId, companyId },
+        select: { id: true },
+      });
+      if (!asset) throw new NotFoundException('Patrimônio não encontrado');
+    }
     return {
       name: dto.name?.trim() || bad('Informe o nome do veículo'),
       plate: (dto.plate ?? '').trim().toUpperCase(),
+      ...(dto.assetId !== undefined ? { assetId: dto.assetId || null } : {}),
     };
   }
 
   async createVehicle(companyId: string, dto: VehicleDto) {
     const row = await this.prisma.productionVehicle.create({
-      data: { companyId, ...this.vehicleData(dto) },
+      data: { companyId, ...(await this.vehicleData(companyId, dto)) },
     });
     return vehicleView(row);
   }
@@ -684,7 +700,7 @@ export class ProductionConfigService {
     await this.vehicleRow(companyId, id);
     const row = await this.prisma.productionVehicle.update({
       where: { id },
-      data: this.vehicleData(dto),
+      data: await this.vehicleData(companyId, dto),
     });
     return vehicleView(row);
   }

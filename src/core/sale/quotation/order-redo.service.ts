@@ -56,9 +56,30 @@ export class OrderRedoService {
   async request(
     actor: RedoActor,
     orderId: string,
-    dto: { reason: string; excess: 'CLIENT' | 'COMPANY' },
+    dto: {
+      reason: string;
+      excess: 'CLIENT' | 'COMPANY';
+      responsibleKind?: 'PERSON' | 'SECTOR';
+      responsibleId?: string;
+    },
   ) {
     const reason = dto.reason?.trim() || bad('Diga o motivo');
+    // O responsável pela refação: a pessoa ou o setor, da empresa
+    let responsibleName: string | null = null;
+    if (dto.responsibleKind && dto.responsibleId) {
+      const found =
+        dto.responsibleKind === 'PERSON'
+          ? await this.prisma.employee.findFirst({
+              where: { id: dto.responsibleId, companyId: actor.companyId },
+              select: { name: true },
+            })
+          : await this.prisma.companySector.findFirst({
+              where: { id: dto.responsibleId, companyId: actor.companyId },
+              select: { name: true },
+            });
+      if (!found) throw new NotFoundException('Responsável não encontrado');
+      responsibleName = found.name;
+    }
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, quotation: { companyId: actor.companyId } },
       select: { id: true, status: true, quotationId: true },
@@ -102,6 +123,9 @@ export class OrderRedoService {
         oldQuotationId: order.quotationId,
         reason,
         excess: dto.excess,
+        responsibleKind: responsibleName ? dto.responsibleKind : null,
+        responsibleId: responsibleName ? dto.responsibleId : null,
+        responsibleName,
         needsApproval,
         produced: { tasks, stages, stockMovements: moves },
         requestedById: actor.userId,
