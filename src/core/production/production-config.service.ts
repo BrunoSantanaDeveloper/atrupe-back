@@ -314,6 +314,7 @@ export class ProductionConfigService {
         select: {
           id: true,
           name: true,
+          avatarUrl: true,
           user: { select: { name: true, email: true } },
           productionProfile: { select: { role: true } },
         },
@@ -330,6 +331,8 @@ export class ProductionConfigService {
         id: row.id,
         name: row.name || row.user?.name || '',
         email: row.user?.email ?? null,
+        // A foto do cadastro: a bolinha do colaborador no gerenciador
+        avatarUrl: row.avatarUrl ?? null,
         role: row.productionProfile?.role ?? 'OPERATOR',
         working: entry
           ? { taskId: entry.taskId, since: entry.start.toISOString() }
