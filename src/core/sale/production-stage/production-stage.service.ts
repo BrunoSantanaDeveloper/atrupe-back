@@ -5,10 +5,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { Prisma } from '@prisma/client';
+import { DeliveryScheduleStatus, Prisma } from '@prisma/client';
 import { UpdateProductionStageDto } from './dto/update-production-stage.dto';
 import { UpdateItemStageDto } from './dto/item-stage.dto';
-import { StageStatus, aggregateStatus, itemsToApply } from './stage-aggregate';
+import {
+  ItemStage,
+  OPEN,
+  StageStatus,
+  itemChanges,
+  orderStatusAfter,
+} from './stage-aggregate';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
 
@@ -18,6 +24,12 @@ const MANAGED_BY_PRODUCTION =
 const ITEM_STAGE_NOT_FOUND = 'Etapa do item não encontrada';
 // Entrega e Cliente Retira não são etapas de produção
 const DELIVERY_STAGES = ['Entrega', 'Cliente Retira'];
+/** A agenda fechada: entregue (FINISHED, DONE) ou cancelada */
+const CLOSED_SCHEDULE: DeliveryScheduleStatus[] = [
+  'CANCELED',
+  'FINISHED',
+  'DONE',
+];
 
 /**
  * A agenda de entrega da empresa: a companyId da agenda é opcional, então
@@ -74,7 +86,12 @@ export class ProductionStageService {
       'Setor não encontrado.',
     );
 
-    updateProductionStageDto.prevStatus = productionStage.status;
+    // O anterior só muda quando o estado muda: gravar o mesmo estado (só a
+    // nota, ou o setor) não perde para onde voltar
+    const from = productionStage.status as StageStatus;
+    const next = updateProductionStageDto.status as StageStatus | undefined;
+    updateProductionStageDto.prevStatus =
+      next && next !== from ? from : productionStage.prevStatus;
 
     try {
       await this.prisma.productionStage.update({
@@ -86,11 +103,12 @@ export class ProductionStageService {
       // abertos daquele setor, e o pedido volta a ser o resumo deles
       const stageId =
         updateProductionStageDto.stageId ?? productionStage.stageId;
-      if (updateProductionStageDto.status && stageId) {
+      if (next && stageId) {
         await this.applyToItems(
           productionStage.scheduleId,
           stageId,
-          updateProductionStageDto.status as StageStatus,
+          from,
+          next,
           updateProductionStageDto.notes,
         );
       }
@@ -116,7 +134,8 @@ export class ProductionStageService {
       where: { id },
       data: {
         status: dto.status,
-        prevStatus: item.status,
+        // Gravar o mesmo estado (só a nota) não perde para onde voltar
+        prevStatus: dto.status === item.status ? item.prevStatus : item.status,
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
       },
     });
@@ -125,43 +144,54 @@ export class ProductionStageService {
     return { ok: true };
   }
 
-  /** Aplica a ação do pedido aos itens do setor e recalcula o pedido. */
+  /**
+   * Aplica a ação do pedido aos itens do setor e recalcula o pedido. Cada
+   * item recebe a troca que lhe cabe (itemChanges): tirar a pendência devolve
+   * a cada item o próprio estado anterior, e voltar o pedido fechado reabre
+   * os itens da etapa, em vez de o resumo desfazer a volta em silêncio.
+   */
   private async applyToItems(
     scheduleId: string,
     stageId: string,
+    from: StageStatus,
     next: StageStatus,
     notes?: string,
   ) {
     const items = await this.prisma.productionItemStage.findMany({
       where: { scheduleId, stageId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, prevStatus: true },
     });
     if (!items.length) return;
-    for (const item of itemsToApply(
-      items as { id: string; status: StageStatus }[],
-      next,
-    )) {
+    for (const item of itemChanges(items as ItemStage[], from, next)) {
       await this.prisma.productionItemStage.update({
         where: { id: item.id },
         data: {
-          status: next,
-          prevStatus: item.status,
+          status: item.status,
+          prevStatus: item.prevStatus,
           ...(notes !== undefined ? { notes } : {}),
         },
       });
     }
-    await this.syncOrderStage(scheduleId, stageId);
+    await this.syncOrderStage(scheduleId, stageId, next);
   }
 
-  /** A etapa do pedido no setor = o resumo das etapas dos itens (§4.7). */
-  private async syncOrderStage(scheduleId: string, stageId: string) {
+  /**
+   * A etapa do pedido no setor = o resumo das etapas dos itens (§4.7). Com
+   * a ação feita no pedido, cancelar fica cancelado (orderStatusAfter).
+   */
+  private async syncOrderStage(
+    scheduleId: string,
+    stageId: string,
+    action?: StageStatus,
+  ) {
     const items = await this.prisma.productionItemStage.findMany({
       where: { scheduleId, stageId },
       select: { status: true },
     });
     if (!items.length) return;
-    const status = aggregateStatus(
+    const status = orderStatusAfter(
       items.map((item) => item.status as StageStatus),
+      action,
     );
     const order = await this.prisma.productionStage.findFirst({
       where: { scheduleId, stageId },
@@ -178,41 +208,59 @@ export class ProductionStageService {
    * Concluir tudo de uma vez (gerencial; Maicol, 23/11/2026): finaliza as
    * etapas de produção e as dos itens das agendas escolhidas, para quem não
    * usou a agenda do jeito certo limpar e começar de novo. Entrega e Cliente
-   * Retira ficam como estão; a venda que segue o gerenciador fica de fora.
+   * Retira ficam como estão; a venda que segue o gerenciador fica de fora
+   * (skipped), e a agenda cancelada ou já entregue também (closed): concluir
+   * as etapas dela a traria de volta para a entrega. Cada etapa guarda o
+   * estado de antes (prevStatus), como na troca de uma etapa.
    */
   async finishAll(scheduleIds: string[], companyId: string) {
     const schedules = await this.prisma.deliverySchedule.findMany({
       where: { id: { in: scheduleIds }, ...scheduleOfCompany(companyId) },
-      select: { id: true },
+      select: { id: true, status: true },
     });
-    let finished = 0;
+    const ids: string[] = [];
     let skipped = 0;
-    for (const { id } of schedules) {
+    let closed = 0;
+    for (const { id, status } of schedules) {
+      if (CLOSED_SCHEDULE.includes(status)) {
+        closed++;
+        continue;
+      }
       if (await this.isManaged(id)) {
         skipped++;
         continue;
       }
-      await this.prisma.productionItemStage.updateMany({
-        where: { scheduleId: id, status: { notIn: ['DONE', 'CANCELED'] } },
-        data: { status: 'DONE' },
-      });
-      await this.prisma.productionStage.updateMany({
-        where: {
-          scheduleId: id,
-          status: { notIn: ['DONE', 'CANCELED'] },
-          OR: [
-            { stageId: null },
-            { stage: { name: { notIn: DELIVERY_STAGES } } },
-          ],
-        },
-        data: { status: 'DONE' },
-      });
-      await this.updateStatusIfAllStagesAreDone(id);
-      finished++;
+      ids.push(id);
     }
+    if (ids.length) {
+      // Um updateMany por estado aberto: cada etapa grava o próprio anterior
+      await this.prisma.$transaction([
+        ...OPEN.map((status) =>
+          this.prisma.productionItemStage.updateMany({
+            where: { scheduleId: { in: ids }, status },
+            data: { status: 'DONE', prevStatus: status },
+          }),
+        ),
+        ...OPEN.map((status) =>
+          this.prisma.productionStage.updateMany({
+            where: {
+              scheduleId: { in: ids },
+              status,
+              OR: [
+                { stageId: null },
+                { stage: { name: { notIn: DELIVERY_STAGES } } },
+              ],
+            },
+            data: { status: 'DONE', prevStatus: status },
+          }),
+        ),
+      ]);
+    }
+    for (const id of ids) await this.updateStatusIfAllStagesAreDone(id);
     return {
-      finished,
+      finished: ids.length,
       skipped,
+      closed,
       notFound: scheduleIds.length - schedules.length,
     };
   }
@@ -224,10 +272,11 @@ export class ProductionStageService {
       select: { status: true },
     });
 
-    // Se o status já for FINALIZADO, não faz nada
+    // Entregue ou cancelada, não faz nada: a cancelada voltaria para a
+    // produção ou a entrega
     if (
       !deliverySchedule ||
-      ['FINISHED', 'DONE'].includes(deliverySchedule.status)
+      CLOSED_SCHEDULE.includes(deliverySchedule.status)
     ) {
       return;
     }

@@ -35,6 +35,11 @@ const apply = (row: Row, data: Row) => {
 };
 
 const MATERIAL = { name: 'Adesivo', unit: 'M2', sectorId: null };
+// O rolo de outro material (a troca, VS-1.1): lots com stockItemId 's2'
+const MATERIALS: Record<string, typeof MATERIAL> = {
+  adesivo: MATERIAL,
+  vinil: { name: 'Vinil', unit: 'M2', sectorId: null },
+};
 
 function memory() {
   const items: Row[] = [
@@ -47,20 +52,32 @@ function memory() {
       quantity: 100,
       averageCost: 1000,
     },
+    {
+      id: 's2',
+      companyId: 'c1',
+      key: 'vinil|',
+      materialId: 'vinil',
+      variationId: null,
+      quantity: 100,
+      averageCost: 800,
+    },
   ];
   const movements: Row[] = [];
   const lots: Row[] = [];
   const events: Row[] = [];
-  const withStock = (lot: Row) => ({
-    ...lot,
-    stockItem: {
-      materialId: 'adesivo',
-      variationId: null,
-      material: MATERIAL,
-      variation: null,
-    },
-    events: [],
-  });
+  const withStock = (lot: Row) => {
+    const item = items.find((row) => row.id === lot.stockItemId) ?? items[0];
+    return {
+      ...lot,
+      stockItem: {
+        materialId: item.materialId,
+        variationId: null,
+        material: MATERIALS[item.materialId],
+        variation: null,
+      },
+      events: [],
+    };
+  };
   const db: any = {
     $executeRaw: jest.fn(async () => 0),
     quotation: {
@@ -193,7 +210,7 @@ function memory() {
     return row;
   };
   const service = new StockLotService(db as never, {} as never);
-  const balance = () => items.find((row) => row.id === 's1')!.quantity;
+  const balance = (id = 's1') => items.find((row) => row.id === id)!.quantity;
   return { db, service, lots, events, movements, addLot, balance };
 }
 
@@ -367,5 +384,171 @@ describe('StockLotService (baixa no lote)', () => {
       currentWidth: 1.5,
       currentLength: 30,
     });
+  });
+});
+
+describe('StockLotService (baixa conjunta, VS-2)', () => {
+  // Três trabalhos de adesivo: 3, 1 e 2 m² vendidos
+  const job = (id: string, quotationId: string, m2: number, over = {}) => ({
+    ...task,
+    id,
+    code: `T-${id}`,
+    quotationId,
+    number: quotationId,
+    consumption: [{ ...task.consumption[0], quantity: m2 }],
+    ...over,
+  });
+
+  it('uma tarefa de outro setor: nada é gravado', async () => {
+    const { service, addLot, lots, movements, events, balance } = memory();
+    addLot(ROLL);
+    const inside = jest.fn();
+    await expect(
+      service.useBatch(
+        'c1',
+        {
+          tasks: [
+            job('1', 'q1', 3),
+            job('2', 'q2', 1),
+            // A terceira é do acabamento; o rolo está na impressão
+            job('3', 'q3', 2, { sectorId: 'acabamento' }),
+          ],
+          rolls: [{ lotId: 'L1', length: 6 }],
+        },
+        actor,
+        inside,
+      ),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Tarefa T-3: O lote L-1 está aberto em outro setor (Impressão): leve-o para o setor da tarefa antes de dar baixa',
+      ),
+    );
+    expect(lots[0].currentLength).toBe(50);
+    expect(lots[0].currentQuantity).toBe(50);
+    expect(movements).toEqual([]);
+    expect(events).toEqual([]);
+    expect(balance()).toBe(100);
+    expect(inside).not.toHaveBeenCalled();
+  });
+
+  it('o segundo rolo e a tarefa cancelada são conferidos antes de gravar', async () => {
+    const { service, addLot, movements } = memory();
+    addLot(ROLL);
+    // O segundo rolo fechado
+    addLot({ ...ROLL, status: 'CLOSED' });
+    await expect(
+      service.useBatch(
+        'c1',
+        {
+          tasks: [job('1', 'q1', 3), job('2', 'q2', 1)],
+          rolls: [
+            { lotId: 'L1', length: 50 },
+            { lotId: 'L2', length: 2 },
+          ],
+        },
+        actor,
+      ),
+    ).rejects.toThrow('Abra o lote L-2 antes de dar baixa');
+    await expect(
+      service.useBatch(
+        'c1',
+        {
+          tasks: [job('1', 'q1', 3), job('2', 'q2', 1, { status: 'CANCELED' })],
+          rolls: [{ lotId: 'L1', length: 4 }],
+        },
+        actor,
+      ),
+    ).rejects.toThrow('A tarefa T-2 foi cancelada');
+    expect(movements).toEqual([]);
+  });
+
+  it('divide pela área, numa transação só, e grava o histórico junto', async () => {
+    const { db, service, addLot, lots, balance } = memory();
+    addLot(ROLL);
+    const inside = jest.fn();
+    const result = await service.useBatch(
+      'c1',
+      {
+        tasks: [job('1', 'q1', 3), job('2', 'q2', 1)],
+        rolls: [{ lotId: 'L1', length: 5 }],
+      },
+      actor,
+      inside,
+    );
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(lots[0].currentLength).toBe(45);
+    expect(balance()).toBe(95);
+    expect(result.waste).toEqual({
+      printed: 4,
+      used: 5,
+      waste: 1,
+      percent: 20,
+    });
+    expect(result.uses.map((use) => [use.taskId, use.text])).toEqual([
+      ['1', expect.stringContaining('(3,75 m)')],
+      ['2', expect.stringContaining('(1,25 m)')],
+    ]);
+    // O histórico das tarefas na mesma transação
+    expect(inside).toHaveBeenCalledWith(db, result.uses);
+  });
+
+  it('a troca por tarefa estorna a baixa da venda e a venda não tira de novo', async () => {
+    const { db, service, addLot, balance, movements } = memory();
+    // O rolo de vinil no lugar do adesivo vendido
+    addLot({ ...ROLL, stockItemId: 's2' });
+    await consumeSale(db, 'q1', 'Sistema');
+    expect(balance('s1')).toBe(97);
+    db.$executeRaw.mockClear();
+
+    const result = await service.useBatch(
+      'c1',
+      {
+        tasks: [job('1', 'q1', 3), job('2', 'q2', 1)],
+        rolls: [{ lotId: 'L1', length: 4 }],
+        replaces: new Map([
+          ['1', 'adesivo|'],
+          ['2', 'adesivo|'],
+        ]),
+      },
+      actor,
+    );
+    // O vinil saiu do rolo (3 + 1 m²); o adesivo que a venda q1 tirou voltou
+    expect(balance('s2')).toBe(96);
+    expect(balance('s1')).toBe(100);
+    const reversal = movements.filter((row) => row.kind === 'ADJUSTMENT');
+    expect(reversal).toHaveLength(1);
+    expect(reversal[0]).toMatchObject({
+      quantity: 3,
+      quotationId: 'q1',
+      replacesKey: 'adesivo|',
+    });
+    expect(result.uses[0].text).toContain('no lugar de Adesivo');
+    expect(result.uses[0].text).toContain('voltou ao saldo');
+    // As vendas travadas em ordem, antes dos lotes
+    const locks = db.$executeRaw.mock.calls.map((call: unknown[]) =>
+      call.slice(1).join(''),
+    );
+    expect(locks.slice(0, 2)).toEqual(['stock-sale:q1', 'stock-sale:q2']);
+
+    // A baixa da venda q2 não tira o adesivo que o rolo substituiu
+    await consumeSale(db, 'q2', 'Sistema');
+    expect(balance('s1')).toBe(100);
+  });
+
+  it('sem a troca, o rolo de outro material não estorna a venda', async () => {
+    const { db, service, addLot, balance } = memory();
+    addLot({ ...ROLL, stockItemId: 's2' });
+    await consumeSale(db, 'q1', 'Sistema');
+    await service.useBatch(
+      'c1',
+      {
+        tasks: [job('1', 'q1', 3)],
+        rolls: [{ lotId: 'L1', length: 3 }],
+      },
+      actor,
+    );
+    // Material diferente sem dizer o que substitui: a venda fica como está
+    expect(balance('s1')).toBe(97);
+    expect(balance('s2')).toBe(97);
   });
 });

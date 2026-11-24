@@ -1,11 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import { lockNumbering } from '../stock/purchasing/numbering';
 import {
   ProductionAccessService,
   ProductionViewer,
@@ -18,12 +21,22 @@ import {
   StopResultDto,
   VehicleRequestDto,
 } from './dto/production-trip.dto';
-import { allocateKm, tripAt, tripConflict } from './engine/trips';
+import {
+  allocateKm,
+  round1,
+  TripSpan,
+  tripAt,
+  tripConflict,
+} from './engine/trips';
 
 const bad = (message: string): never => {
   throw new BadRequestException(message);
 };
 const TRIP_NOT_FOUND = 'Saída não encontrada';
+const TRIP_CHANGED =
+  'A saída mudou enquanto a operação era gravada: abra de novo e confira';
+export const NOT_TRIP_CREW =
+  'Só o motorista, a equipe da saída ou quem agenda os veículos faz isto';
 const OPEN_TASK = ['NOT_STARTED', 'IN_PROGRESS', 'PAUSED', 'PENDING'] as const;
 
 const TRIP_INCLUDE = {
@@ -98,15 +111,36 @@ export class ProductionTripService {
         },
         orderBy: { scheduleDate: 'asc' },
       }),
+      // Todos, para os nomes das saídas antigas; os ativos vão para a lista
       this.prisma.employee.findMany({
         where: { companyId },
-        select: { id: true, name: true },
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          userId: true,
+          user: { select: { name: true, isActive: true } },
+        },
       }),
     ]);
-    const nameOf = new Map(people.map((person) => [person.id, person.name]));
+    const named = people.map((person) => ({
+      ...person,
+      name: person.name || person.user?.name || '',
+    }));
+    const nameOf = new Map(named.map((person) => [person.id, person.name]));
     // A saída de ontem ainda aberta: o alerta depois da volta prevista
     const now = new Date();
     return {
+      // Quem pode dirigir ou ir na equipe: os colaboradores ativos, como o
+      // agendamento confere (collaboratorWhere). Vem aqui para quem tem só
+      // a chave de veículos, sem a visão da produção (/production/config)
+      people: named
+        .filter(
+          (person) =>
+            person.isActive && !!person.userId && person.user?.isActive,
+        )
+        .map((person) => ({ id: person.id, name: person.name }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
       trips: trips.map((trip) => ({
         ...this.view(trip, nameOf),
         overdue:
@@ -144,43 +178,13 @@ export class ProductionTripService {
       if (id === driver?.id) continue;
       team.push(await this.access.collaborator(companyId, id));
     }
-    const others = await this.prisma.productionTrip.findMany({
-      where: {
-        companyId,
-        status: { not: 'CANCELED' },
-        departAt: { lt: returnAt },
-        returnAt: { gt: departAt },
-      },
-      select: {
-        id: true,
-        vehicleId: true,
-        driverId: true,
-        teamIds: true,
-        departAt: true,
-        returnAt: true,
-        status: true,
-      },
-    });
-    const conflict = tripConflict(
-      {
-        vehicleId: vehicle.id,
-        driverId: driver?.id ?? null,
-        teamIds: team.map((person) => person.id),
-        departAt,
-        returnAt,
-      },
-      others,
-    );
-    if (conflict === 'VEHICLE') {
-      throw new ConflictException(
-        `${vehicle.name} já tem uma saída nesse horário`,
-      );
-    }
-    if (conflict === 'PERSON') {
-      throw new ConflictException(
-        'Alguém da equipe já está em outra saída nesse horário',
-      );
-    }
+    const span = {
+      vehicleId: vehicle.id,
+      driverId: driver?.id ?? null,
+      teamIds: team.map((person) => person.id),
+      departAt,
+      returnAt,
+    };
 
     const stops = await this.stopsOf(companyId, dto.stops);
     const requests = dto.requestIds?.length
@@ -202,6 +206,11 @@ export class ProductionTripService {
     if (!stops.length) bad('Acrescente ao menos uma parada');
 
     const trip = await this.prisma.$transaction(async (tx) => {
+      // Duas saídas agendadas ao mesmo tempo esperam uma pela outra: o
+      // número não repete e o conflito é conferido depois da trava, com a
+      // outra já gravada
+      await lockNumbering(tx, 'production_trips', companyId);
+      await this.assertNoConflict(tx, companyId, span, vehicle.name);
       const last = await tx.productionTrip.findFirst({
         where: { companyId },
         orderBy: { number: 'desc' },
@@ -211,11 +220,7 @@ export class ProductionTripService {
         data: {
           companyId,
           number: (last?.number ?? 0) + 1,
-          vehicleId: vehicle.id,
-          driverId: driver?.id ?? null,
-          teamIds: team.map((person) => person.id),
-          departAt,
-          returnAt,
+          ...span,
           note: dto.note?.trim() || null,
           createdByName: viewer.name,
           stops: {
@@ -225,13 +230,68 @@ export class ProductionTripService {
       });
       if (requests.length) {
         await tx.productionVehicleRequest.updateMany({
-          where: { id: { in: requests.map((request) => request.id) } },
+          where: {
+            id: { in: requests.map((request) => request.id) },
+            status: 'OPEN',
+          },
           data: { status: 'SCHEDULED', tripId: created.id },
         });
       }
       return created;
     });
     return this.read(companyId, trip.id);
+  }
+
+  /** O mesmo veículo ou a mesma pessoa em outra saída no horário (VE-3). */
+  private async assertNoConflict(
+    tx: Prisma.TransactionClient,
+    companyId: string,
+    span: Omit<TripSpan, 'id' | 'status'>,
+    vehicleName: string,
+  ) {
+    const others = await tx.productionTrip.findMany({
+      where: {
+        companyId,
+        status: { not: 'CANCELED' },
+        departAt: { lt: span.returnAt },
+        returnAt: { gt: span.departAt },
+      },
+      select: {
+        id: true,
+        vehicleId: true,
+        driverId: true,
+        teamIds: true,
+        departAt: true,
+        returnAt: true,
+        status: true,
+      },
+    });
+    const conflict = tripConflict(span, others);
+    if (conflict === 'VEHICLE') {
+      throw new ConflictException(
+        `${vehicleName} já tem uma saída nesse horário`,
+      );
+    }
+    if (conflict === 'PERSON') {
+      throw new ConflictException(
+        'Alguém da equipe já está em outra saída nesse horário',
+      );
+    }
+  }
+
+  /**
+   * Quem marca a saída e as paradas: o motorista, alguém da equipe ou quem
+   * agenda os veículos (a chave "Agendar veículos", que o controller confere).
+   */
+  private assertCrew(
+    viewer: ProductionViewer,
+    trip: { driverId: string | null; teamIds: string[] },
+    scheduler: boolean,
+  ) {
+    if (scheduler) return;
+    const me = viewer.employeeId;
+    if (me && (trip.driverId === me || trip.teamIds.includes(me))) return;
+    throw new ForbiddenException(NOT_TRIP_CREW);
   }
 
   private async stopsOf(companyId: string, dtos: CreateTripDto['stops']) {
@@ -298,8 +358,14 @@ export class ProductionTripService {
    * Saiu: marca a partida e o odômetro. O veículo só sai de novo depois de
    * fechada a saída anterior (Maicol, 23/11/2026).
    */
-  async start(viewer: ProductionViewer, id: string, dto: StartTripDto) {
+  async start(
+    viewer: ProductionViewer,
+    id: string,
+    dto: StartTripDto,
+    scheduler: boolean,
+  ) {
     const trip = await this.find(viewer.companyId, id);
+    this.assertCrew(viewer, trip, scheduler);
     if (trip.status !== 'SCHEDULED') bad('Esta saída já saiu ou fechou');
     const open = await this.prisma.productionTrip.findFirst({
       where: {
@@ -318,14 +384,16 @@ export class ProductionTripService {
         `Feche a saída ${open.number} deste veículo antes: ${open.status === 'ON_ROUTE' ? 'ela ainda está em rota' : 'ela ficou sem fechar'}`,
       );
     }
-    await this.prisma.productionTrip.update({
-      where: { id },
+    // Grava só se ainda está agendada (dois "Saiu" ao mesmo tempo)
+    const saved = await this.prisma.productionTrip.updateMany({
+      where: { id, companyId: viewer.companyId, status: 'SCHEDULED' },
       data: {
         status: 'ON_ROUTE',
         startedAt: new Date(),
         odometerStart: dto.odometerStart ?? null,
       },
     });
+    if (!saved.count) throw new ConflictException(TRIP_CHANGED);
     return this.read(viewer.companyId, id);
   }
 
@@ -335,13 +403,20 @@ export class ProductionTripService {
     id: string,
     stopId: string,
     dto: StopResultDto,
+    scheduler: boolean,
   ) {
     const trip = await this.find(viewer.companyId, id);
+    this.assertCrew(viewer, trip, scheduler);
     if (trip.status === 'DONE' || trip.status === 'CANCELED') {
       bad('Esta saída já fechou');
     }
+    // A parada se conclui no caminho; antes de sair, só no fechamento
+    if (trip.status !== 'ON_ROUTE') {
+      bad('Marque "Saiu" antes de concluir uma parada');
+    }
     const stop = trip.stops.find((item) => item.id === stopId);
     if (!stop) throw new NotFoundException('Parada não encontrada');
+    if (stop.status !== 'PENDING') bad('Esta parada já foi concluída');
     if (dto.status === 'NOT_DONE' && !dto.reason?.trim()) {
       bad('Diga por que a parada não foi feita');
     }
@@ -359,8 +434,15 @@ export class ProductionTripService {
       });
       if (!photo) bad('Tire a foto do trabalho pronto antes de concluir');
     }
-    await this.prisma.productionTripStop.update({
-      where: { id: stopId },
+    // Grava só se a parada ainda está aberta e a saída, em rota (a parada
+    // concluída por outro, ou a saída fechada, no meio tempo)
+    const saved = await this.prisma.productionTripStop.updateMany({
+      where: {
+        id: stopId,
+        tripId: id,
+        status: 'PENDING',
+        trip: { status: 'ON_ROUTE' },
+      },
       data: {
         status: dto.status,
         reason: dto.reason?.trim() || null,
@@ -368,6 +450,7 @@ export class ProductionTripService {
         doneByName: viewer.name,
       },
     });
+    if (!saved.count) throw new ConflictException(TRIP_CHANGED);
     return this.read(viewer.companyId, id);
   }
 
@@ -382,20 +465,23 @@ export class ProductionTripService {
     if (trip.status === 'DONE' || trip.status === 'CANCELED') {
       bad('Esta saída já fechou');
     }
-    const km =
-      dto.odometerEnd !== undefined && trip.odometerStart !== null
-        ? dto.odometerEnd - trip.odometerStart
-        : dto.km;
-    if (km === undefined || km === null || !(km >= 0)) {
+    const byOdometer =
+      dto.odometerEnd !== undefined && trip.odometerStart !== null;
+    // O odômetro menor que o da saída tem o aviso próprio, antes do "informe"
+    if (byOdometer && dto.odometerEnd! < trip.odometerStart!) {
+      bad('O odômetro da volta é menor que o da saída');
+    }
+    const raw = byOdometer ? dto.odometerEnd! - trip.odometerStart! : dto.km;
+    if (raw === undefined || raw === null || !(raw >= 0)) {
       bad(
         trip.odometerStart !== null
           ? 'Informe o odômetro na volta'
           : 'Informe o km rodado',
       );
     }
-    if (dto.odometerEnd !== undefined && km! < 0) {
-      bad('O odômetro da volta é menor que o da saída');
-    }
+    // Uma casa, como a tela mostra (o odômetro 1130,4 − 1000 não vira
+    // 130,40000000000009); a repartição fecha neste número
+    const km = round1(raw!);
     const results = new Map(
       (dto.stops ?? []).map((item) => [item.stopId, item]),
     );
@@ -408,17 +494,34 @@ export class ProductionTripService {
       }
     }
     const allocation = dto.allocations?.length
-      ? new Map(dto.allocations.map((item) => [item.stopId, item.km]))
+      ? this.manualAllocation(trip.stops, dto.allocations, km)
       : allocateKm(
           trip.stops.map((stop) => ({
             id: stop.id,
             kind: stop.kind,
             plannedKm: stop.plannedKm,
           })),
-          km!,
+          km,
         );
     const finishedAt = dto.finishedAt ? new Date(dto.finishedAt) : new Date();
     await this.prisma.$transaction(async (tx) => {
+      // Fecha uma vez só (dois "Fechar" ao mesmo tempo)
+      const closed = await tx.productionTrip.updateMany({
+        where: {
+          id,
+          companyId: viewer.companyId,
+          status: { in: ['SCHEDULED', 'ON_ROUTE'] },
+        },
+        data: {
+          status: 'DONE',
+          startedAt: trip.startedAt ?? trip.departAt,
+          finishedAt,
+          odometerEnd: dto.odometerEnd ?? null,
+          km,
+          closedByName: viewer.name,
+        },
+      });
+      if (!closed.count) throw new ConflictException(TRIP_CHANGED);
       for (const stop of trip.stops) {
         const result = results.get(stop.id);
         await tx.productionTripStop.update({
@@ -436,19 +539,39 @@ export class ProductionTripService {
           },
         });
       }
-      await tx.productionTrip.update({
-        where: { id },
-        data: {
-          status: 'DONE',
-          startedAt: trip.startedAt ?? trip.departAt,
-          finishedAt,
-          odometerEnd: dto.odometerEnd ?? null,
-          km: km!,
-          closedByName: viewer.name,
-        },
-      });
     });
     return this.read(viewer.companyId, id);
+  }
+
+  /**
+   * A divisão do km ajustada por quem fecha: só as paradas de trabalho desta
+   * saída, cada uma uma vez, e a soma no km rodado (com folga de 0,1 km
+   * para o arredondamento da tela). As paradas fora da lista ficam com zero.
+   */
+  private manualAllocation(
+    stops: { id: string; kind: string }[],
+    allocations: { stopId: string; km: number }[],
+    km: number,
+  ) {
+    const work = new Set(
+      stops.filter((stop) => stop.kind === 'WORK').map((stop) => stop.id),
+    );
+    const result = new Map<string, number>();
+    for (const item of allocations) {
+      if (!work.has(item.stopId)) {
+        bad('O km se reparte só entre as paradas de trabalho desta saída');
+      }
+      if (result.has(item.stopId)) bad('Cada parada aparece uma vez no km');
+      if (!(item.km >= 0)) bad('O km de cada parada não pode ser negativo');
+      result.set(item.stopId, round1(item.km));
+    }
+    const sum = [...result.values()].reduce((total, value) => total + value, 0);
+    if (Math.abs(sum - km) > 0.1 + 1e-9) {
+      bad(
+        `A soma do km das paradas (${round1(sum).toLocaleString('pt-BR')}) precisa fechar no km rodado (${km.toLocaleString('pt-BR')})`,
+      );
+    }
+    return result;
   }
 
   async cancel(viewer: ProductionViewer, id: string, dto: CancelTripDto) {

@@ -277,7 +277,15 @@ export class ProductionConfigService {
         this.prisma.productionVehicle.findMany({
           where: { companyId },
           orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
-          select: { id: true, name: true, plate: true, isActive: true },
+          // O assetId vai junto: sem ele, reabrir o veículo e salvar apagava
+          // o vínculo com o patrimônio
+          select: {
+            id: true,
+            name: true,
+            plate: true,
+            isActive: true,
+            assetId: true,
+          },
         }),
         this.calendar(companyId),
       ]);

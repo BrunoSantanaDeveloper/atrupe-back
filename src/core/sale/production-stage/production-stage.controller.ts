@@ -77,6 +77,8 @@ export class ProductionStageController {
 
   @Patch('item/:id')
   @HasPermission('edit', 'production:delivery_schedule')
+  // Rota nova (§4.7): a permissão já recusa, sem passar pelo modo observar
+  @ObservePermissions(false)
   @UseGuards(FeatureGuard)
   @RequiresFeature('delivery_stage_status_change')
   @ApiOperation({
@@ -90,9 +92,11 @@ export class ProductionStageController {
     return this.productionStageService.updateItem(id, dto, req.user.companyId);
   }
 
-  // Concluir tudo de uma vez (gerencial, §4.7): chave própria no cargo
+  // Concluir tudo de uma vez (gerencial, §4.7): chave própria no cargo, que
+  // já recusa (rota nova, fora do modo observar da classe)
   @Post('finish-all')
   @HasPermission('edit', 'production:delivery_schedule_finish_all')
+  @ObservePermissions(false)
   @UseGuards(FeatureGuard)
   @RequiresFeature('delivery_stage_status_change')
   @ApiOperation({

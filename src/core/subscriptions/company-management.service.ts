@@ -864,6 +864,14 @@ export class CompanyManagementService {
           await tx.productionTaskType.deleteMany({ where: { companyId } });
           await tx.productionManager.deleteMany({ where: { companyId } });
           await tx.productionFlow.deleteMany({ where: { companyId } });
+          // As saídas antes dos veículos (vehicleId é RESTRICT); as paradas
+          // saem em cascata com a saída. Os pedidos de veículo e os de
+          // refazer a O.S. não têm FK, mas são da empresa
+          await tx.productionTrip.deleteMany({ where: { companyId } });
+          await tx.productionVehicleRequest.deleteMany({
+            where: { companyId },
+          });
+          await tx.orderRedo.deleteMany({ where: { companyId } });
           await tx.productionVehicle.deleteMany({ where: { companyId } });
           await tx.productionCalendar.deleteMany({ where: { companyId } });
           await tx.productionCollaborator.deleteMany({

@@ -7,13 +7,26 @@ import { soldMaterials } from './lot-task';
  */
 const AREA = /m²|m2/i;
 
-/** A área vendida do trabalho (m²); sem área, nulo. */
-export function areaOf(consumption: unknown): number | null {
-  const areas = soldMaterials(consumption).filter(
-    (item) => AREA.test(item.unit) && item.quantity !== null,
-  );
-  return areas.length
-    ? areas.reduce((sum, item) => sum + (item.quantity as number), 0)
+/**
+ * A área vendida do trabalho (m²) que sai deste rolo; sem ela, nulo.
+ *
+ * Conta um material só: o vendido que o rolo substitui (a troca, VS-1.1)
+ * ou, sem troca, o do próprio rolo. A etapa costuma vender mais de um
+ * material em m² (a lona e a laminação, o adesivo e a máscara), e somar
+ * todos dobrava a área do trabalho: o rolo da lona não imprime a
+ * laminação. A área que importa para dividir o comprimento é a do material
+ * que passou na máquina, e ela é a mesma do material que ele substitui.
+ */
+export function areaOf(
+  consumption: unknown,
+  keys: { replaces: string | null; lot: string },
+): number | null {
+  const sold = soldMaterials(consumption);
+  const item =
+    (keys.replaces && sold.find((row) => row.key === keys.replaces)) ||
+    sold.find((row) => row.key === keys.lot);
+  return item && AREA.test(item.unit) && item.quantity !== null
+    ? item.quantity
     : null;
 }
 

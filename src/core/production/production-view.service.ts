@@ -12,6 +12,7 @@ import {
   WorkCalendar,
   entryMinutes,
 } from './engine/production-chain';
+import { TaskBlock, scheduleBlocks } from './engine/task-blocks';
 import {
   ProductionAccessService,
   ProductionViewer,
@@ -55,6 +56,11 @@ const CHAIN_SELECT = {
   currentStepId: true,
   taskTypeId: true,
   sectorId: true,
+  // Os outros blocos de agenda (GP-52): a cadeia, a fila e a agenda contam
+  // cada um no dia dele
+  slots: {
+    select: { id: true, date: true, start: true, minutes: true, kind: true },
+  },
   timeEntries: {
     select: { start: true, end: true, seconds: true, employeeId: true },
   },
@@ -384,6 +390,14 @@ export class ProductionViewService {
   }
 
   chainTask(row: ChainRow): ChainTask {
+    // Só o dia (GP-49): sem a hora, com o tempo da tarefa. O bloco 1 é o
+    // agendamento da tarefa; os outros blocos (GP-52) vêm depois
+    const [first, ...others] = scheduleBlocks(row);
+    const schedule = (block: TaskBlock) => ({
+      date: block.date,
+      start: block.start,
+      minutes: block.minutes,
+    });
     return {
       id: row.id,
       projectId: row.projectId,
@@ -392,15 +406,8 @@ export class ProductionViewService {
       estimatedMinutes: row.estimatedMinutes,
       dependsOn: row.dependsOn,
       released: !!row.releasedNext,
-      // Só o dia (GP-49): sem a hora, com o tempo da tarefa
-      schedule: row.scheduleDate
-        ? {
-            date: dayKey(row.scheduleDate)!,
-            start: row.scheduleStart || null,
-            minutes:
-              row.scheduleMinutes || Math.max(row.estimatedMinutes ?? 0, 0),
-          }
-        : null,
+      schedule: first ? schedule(first) : null,
+      slots: others.map(schedule),
       entries: row.timeEntries,
     };
   }
@@ -547,6 +554,9 @@ export class ProductionViewService {
         reason: slot.reason,
         by: slot.byName,
       })),
+      // Todos os blocos, o bloco 1 primeiro (slotId nulo), com os minutos de
+      // cada um: a fila e a agenda mostram a tarefa em cada dia (GP-52)
+      blocks: scheduleBlocks(row),
       corrections: row.corrections.map((correction) => ({
         id: correction.id,
         at: correction.at.toISOString(),

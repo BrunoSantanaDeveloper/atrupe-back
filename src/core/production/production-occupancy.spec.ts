@@ -38,6 +38,57 @@ describe('o mapa de ocupação (GP-50)', () => {
     ]);
   });
 
+  it('a tarefa dividida conta em cada dia só o bloco dele, e a soma dá o total (GP-52)', () => {
+    // 480 min divididos em 240 + 240: o split grava 240 no bloco 1
+    const days = occupancyOf(
+      [
+        task({
+          estimatedMinutes: 480,
+          scheduleMinutes: 240,
+          slots: [
+            {
+              id: 'sl-2',
+              date: new Date('2026-11-25T00:00:00Z'),
+              start: null,
+              minutes: 240,
+              kind: 'NORMAL',
+            },
+          ],
+        }),
+      ],
+      steps,
+    );
+    expect(days).toEqual([
+      { managerId: 'm-imp', date: '2026-11-24', minutes: 240, tasks: 1 },
+      { managerId: 'm-imp', date: '2026-11-25', minutes: 240, tasks: 1 },
+    ]);
+    expect(days.reduce((sum, row) => sum + row.minutes, 0)).toBe(480);
+  });
+
+  it('só os dias do período, e o bloco de tarefa fora da agenda não conta', () => {
+    const slots = [
+      {
+        id: 'sl-2',
+        date: new Date('2026-11-26T00:00:00Z'),
+        start: null,
+        minutes: 60,
+        kind: 'EXTRA' as const,
+      },
+    ];
+    expect(
+      occupancyOf(
+        [
+          task({ slots }),
+          task({ scheduleDate: null, slots: [{ ...slots[0], id: 'sl-9' }] }),
+        ],
+        steps,
+        { from: '2026-11-25', to: '2026-11-30' },
+      ),
+    ).toEqual([
+      { managerId: 'm-imp', date: '2026-11-26', minutes: 60, tasks: 1 },
+    ]);
+  });
+
   it('recusa período inválido ou longo demais', async () => {
     const service = new ProductionOccupancyService({} as never, {} as never);
     await expect(

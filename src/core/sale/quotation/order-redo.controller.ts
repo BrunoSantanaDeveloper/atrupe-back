@@ -8,7 +8,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PrismaService } from 'nestjs-prisma';
 
@@ -37,6 +44,18 @@ export class RedoOrderDto {
   @IsOptional()
   @IsString()
   responsibleId?: string;
+
+  /**
+   * O motivo do cancelamento da O.S. antiga: obrigatório como na rota de
+   * cancelar (com o cadastro de motivos no plano e algum cadastrado)
+   */
+  @ApiPropertyOptional({ description: 'ID do motivo de cancelamento' })
+  @IsOptional()
+  @ValidateIf(
+    (o) => o.reasonId !== null && o.reasonId !== undefined && o.reasonId !== '',
+  )
+  @IsUUID()
+  reasonId?: string;
 }
 
 export class RejectRedoDto {

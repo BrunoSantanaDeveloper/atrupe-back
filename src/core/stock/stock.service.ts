@@ -9,6 +9,7 @@ import { PrismaService } from 'nestjs-prisma';
 import { PricingParametersService } from '../pricing/pricing-parameters.service';
 import { UNIT_SYMBOL, normalizeText } from '../material/material-text';
 import { CashActor } from '../financial/cash-control/cash-ledger';
+import { PlanControlService } from '../plan/plan-control.service';
 import { reservedByKey } from './stock-consumption';
 import { NfeXmlError, parseNfeXml } from './nfe-xml';
 import { enterStock } from './stock-entry';
@@ -63,18 +64,19 @@ type InvoiceRow = Prisma.InboundInvoiceGetPayload<{
   include: typeof INVOICE_INCLUDE;
 }>;
 
+const round3 = (value: number) => Math.round(value * 1000) / 1000;
+
 /**
  * Estoque e entrada de nota (ES-1 a ES-6, FULL): o saldo por material e
  * variação com o custo médio, os movimentos com a origem e a nota de
  * entrada, da conciliação com o de-para à entrada no estoque.
  */
-const round3 = (value: number) => Math.round(value * 1000) / 1000;
-
 @Injectable()
 export class StockService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricing: PricingParametersService,
+    private readonly plans: PlanControlService,
   ) {}
 
   /* ------------------------------------------------------------- saldo */
@@ -109,8 +111,13 @@ export class StockService {
           : true,
     );
     const page = paged(filtered, filter.page, filter.limit);
-    // A reserva das vendas aprovadas em andamento (item 23, FULL)
-    const reserved = await reservedByKey(this.prisma as never, companyId);
+    // A reserva das vendas aprovadas em andamento (item 23): só no FULL, pela
+    // chave de compras e lotes (a conta lê o retrato de todas as vendas
+    // abertas e desconta as baixas no rolo, que são dela). Sem a chave, o
+    // saldo sai sem reservado e disponível, e a tela mostra o saldo.
+    const reserved = (await this.plans.hasFeature(companyId, 'purchasing'))
+      ? await reservedByKey(this.prisma as never, companyId)
+      : null;
     return {
       ...page,
       data: page.data.map((row) => ({
@@ -122,8 +129,10 @@ export class StockService {
         unit: UNIT_SYMBOL[row.material.unit],
         quantity: row.quantity,
         // O disponível é o saldo menos o reservado para as vendas
-        reserved: round3(reserved.get(row.key) ?? 0),
-        available: round3(row.quantity - (reserved.get(row.key) ?? 0)),
+        ...(reserved && {
+          reserved: round3(reserved.get(row.key) ?? 0),
+          available: round3(row.quantity - (reserved.get(row.key) ?? 0)),
+        }),
         minimum: row.minimum,
         // Custo só com a permissão de valores
         ...(values

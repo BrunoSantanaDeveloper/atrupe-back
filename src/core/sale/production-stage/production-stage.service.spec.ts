@@ -37,6 +37,7 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
     };
     prisma.deliverySchedule.findMany = jest.fn().mockResolvedValue([]);
     prisma.productionStage.updateMany = jest.fn();
+    prisma.$transaction = jest.fn(async (ops) => ops);
     service = new ProductionStageService(prisma);
   });
 
@@ -220,31 +221,181 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
       expect(updated).toEqual(['b', 'c']);
     });
 
-    it('concluir tudo finaliza as etapas das agendas da empresa, fora a entrega', async () => {
-      prisma.deliverySchedule.findMany.mockResolvedValue([{ id: 'sch-1' }]);
+    it('concluir tudo finaliza as etapas das agendas da empresa, fora a entrega, guardando o anterior', async () => {
+      prisma.deliverySchedule.findMany.mockResolvedValue([
+        { id: 'sch-1', status: 'IN_PRODUCTION' },
+      ]);
 
       const result = await service.finishAll(['sch-1', 'sch-x'], 'c-1');
 
       expect(prisma.deliverySchedule.findMany).toHaveBeenCalledWith({
         where: { id: { in: ['sch-1', 'sch-x'] }, ...scheduleOfCompany },
-        select: { id: true },
+        select: { id: true, status: true },
+      });
+      // Um updateMany por estado aberto, cada um gravando o próprio anterior
+      expect(prisma.productionItemStage.updateMany).toHaveBeenCalledWith({
+        where: { scheduleId: { in: ['sch-1'] }, status: 'IN_PROGRESS' },
+        data: { status: 'DONE', prevStatus: 'IN_PROGRESS' },
       });
       expect(prisma.productionItemStage.updateMany).toHaveBeenCalledWith({
-        where: { scheduleId: 'sch-1', status: { notIn: ['DONE', 'CANCELED'] } },
-        data: { status: 'DONE' },
+        where: { scheduleId: { in: ['sch-1'] }, status: 'NOT_STARTED' },
+        data: { status: 'DONE', prevStatus: 'NOT_STARTED' },
       });
       expect(prisma.productionStage.updateMany).toHaveBeenCalledWith({
         where: {
-          scheduleId: 'sch-1',
-          status: { notIn: ['DONE', 'CANCELED'] },
+          scheduleId: { in: ['sch-1'] },
+          status: 'PENDING',
           OR: [
             { stageId: null },
             { stage: { name: { notIn: ['Entrega', 'Cliente Retira'] } } },
           ],
         },
-        data: { status: 'DONE' },
+        data: { status: 'DONE', prevStatus: 'PENDING' },
       });
-      expect(result).toEqual({ finished: 1, skipped: 0, notFound: 1 });
+      const touched = [
+        ...prisma.productionItemStage.updateMany.mock.calls,
+        ...prisma.productionStage.updateMany.mock.calls,
+      ].map(([arg]) => arg.where.status);
+      expect(touched).not.toContain('DONE');
+      expect(touched).not.toContain('CANCELED');
+      expect(result).toEqual({
+        finished: 1,
+        skipped: 0,
+        closed: 0,
+        notFound: 1,
+      });
+    });
+
+    it('concluir tudo ignora a agenda cancelada ou já entregue', async () => {
+      prisma.deliverySchedule.findMany.mockResolvedValue([
+        { id: 'sch-c', status: 'CANCELED' },
+        { id: 'sch-f', status: 'FINISHED' },
+      ]);
+
+      const result = await service.finishAll(['sch-c', 'sch-f'], 'c-1');
+
+      expect(prisma.productionItemStage.updateMany).not.toHaveBeenCalled();
+      expect(prisma.productionStage.updateMany).not.toHaveBeenCalled();
+      expect(prisma.deliverySchedule.update).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        finished: 0,
+        skipped: 0,
+        closed: 2,
+        notFound: 0,
+      });
+    });
+
+    it('o recálculo não mexe na agenda cancelada', async () => {
+      prisma.deliverySchedule.findUnique.mockResolvedValue({
+        status: 'CANCELED',
+      });
+      await service.updateStatusIfAllStagesAreDone('sch-c');
+      expect(prisma.productionStage.findMany).not.toHaveBeenCalled();
+      expect(prisma.deliverySchedule.update).not.toHaveBeenCalled();
+    });
+
+    it('tirar a pendência pelo pedido devolve a cada item o próprio estado anterior', async () => {
+      prisma.productionStage.findFirst
+        .mockResolvedValueOnce({
+          id: 'st-imp',
+          scheduleId: 'sch-1',
+          stageId: 'sec-imp',
+          status: 'PENDING',
+          prevStatus: 'IN_PROGRESS',
+        })
+        .mockResolvedValueOnce({ id: 'st-imp', status: 'IN_PROGRESS' });
+      prisma.productionItemStage.findMany
+        .mockResolvedValueOnce([
+          { id: 'a', status: 'PENDING', prevStatus: 'IN_PROGRESS' },
+          { id: 'b', status: 'PENDING', prevStatus: 'NOT_STARTED' },
+          { id: 'c', status: 'DONE', prevStatus: 'IN_PROGRESS' },
+        ])
+        .mockResolvedValueOnce([
+          { status: 'IN_PROGRESS' },
+          { status: 'NOT_STARTED' },
+          { status: 'DONE' },
+        ]);
+
+      await service.update(
+        'st-imp',
+        { status: 'IN_PROGRESS', notes: '' } as any,
+        'c-1',
+      );
+
+      expect(prisma.productionItemStage.update.mock.calls).toEqual([
+        [
+          {
+            where: { id: 'a' },
+            data: { status: 'IN_PROGRESS', prevStatus: 'PENDING', notes: '' },
+          },
+        ],
+        [
+          {
+            where: { id: 'b' },
+            data: { status: 'NOT_STARTED', prevStatus: 'PENDING', notes: '' },
+          },
+        ],
+      ]);
+    });
+
+    it('voltar a etapa finalizada do pedido reabre os itens dela', async () => {
+      prisma.productionStage.findFirst
+        .mockResolvedValueOnce({
+          id: 'st-imp',
+          scheduleId: 'sch-1',
+          stageId: 'sec-imp',
+          status: 'DONE',
+        })
+        .mockResolvedValueOnce({ id: 'st-imp', status: 'IN_PROGRESS' });
+      prisma.productionItemStage.findMany
+        .mockResolvedValueOnce([
+          { id: 'a', status: 'DONE' },
+          { id: 'b', status: 'CANCELED' },
+        ])
+        .mockResolvedValueOnce([
+          { status: 'IN_PROGRESS' },
+          { status: 'CANCELED' },
+        ]);
+
+      await service.update('st-imp', { status: 'IN_PROGRESS' } as any, 'c-1');
+
+      expect(prisma.productionItemStage.update).toHaveBeenCalledTimes(1);
+      expect(prisma.productionItemStage.update).toHaveBeenCalledWith({
+        where: { id: 'a' },
+        data: { status: 'IN_PROGRESS', prevStatus: 'DONE' },
+      });
+      // O resumo bate com a volta: nada é desfeito depois
+      expect(prisma.productionStage.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancelar pelo pedido fica cancelado, com o item feito ainda finalizado', async () => {
+      prisma.productionStage.findFirst
+        .mockResolvedValueOnce({
+          id: 'st-imp',
+          scheduleId: 'sch-1',
+          stageId: 'sec-imp',
+          status: 'IN_PROGRESS',
+        })
+        .mockResolvedValueOnce({ id: 'st-imp', status: 'CANCELED' });
+      prisma.productionItemStage.findMany
+        .mockResolvedValueOnce([
+          { id: 'a', status: 'DONE' },
+          { id: 'b', status: 'IN_PROGRESS' },
+        ])
+        .mockResolvedValueOnce([{ status: 'DONE' }, { status: 'CANCELED' }]);
+
+      await service.update('st-imp', { status: 'CANCELED' } as any, 'c-1');
+
+      expect(prisma.productionItemStage.update).toHaveBeenCalledTimes(1);
+      expect(prisma.productionItemStage.update).toHaveBeenCalledWith({
+        where: { id: 'b' },
+        data: { status: 'CANCELED', prevStatus: 'IN_PROGRESS' },
+      });
+      expect(prisma.productionStage.update).toHaveBeenCalledTimes(1);
+      expect(prisma.productionStage.update).toHaveBeenCalledWith({
+        where: { id: 'st-imp' },
+        data: { status: 'CANCELED', prevStatus: 'IN_PROGRESS' },
+      });
     });
   });
 });

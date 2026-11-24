@@ -20,6 +20,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { OrderService } from './order.service';
+import { assertCancelReason } from './cancel-reason';
 import { CancelOrderDto } from './dto/create-order.dto';
 import { FilterOrderDto } from './dto/filter.dto';
 import { UpdateOrderInfoDto } from './dto/update-order.dto';
@@ -256,26 +257,14 @@ export class OrderController {
     @Body() dto: CancelOrderDto,
     @Req() req,
   ) {
-    // O cadastro de motivos é recurso de plano (LITE). Com ele, o motivo é
-    // obrigatório (decisão do produto, 24/10/2026); sem ele, cancela livre.
-    // Sem nenhum motivo de cancelamento cadastrado, a tela não teria o que
-    // oferecer: o cancelamento segue livre até a empresa cadastrar um
-    const hasReasons = await this.planControlService.hasFeature(
+    // O motivo: obrigatório com o cadastro de motivos no plano e algum
+    // motivo cadastrado (a mesma regra de refazer a O.S.)
+    await assertCancelReason(
+      this.planControlService,
+      (companyId) => this.orderService.countCancelReasons(companyId),
       req.user.companyId,
-      'service_order_cancellation_reason',
+      dto.reasonId,
     );
-    const required =
-      hasReasons &&
-      (await this.orderService.countCancelReasons(req.user.companyId)) > 0;
-    if (required && !dto.reasonId) {
-      throw new BadRequestException('Informe o motivo do cancelamento');
-    }
-    if (dto.reasonId && !hasReasons) {
-      await this.planControlService.enforceFeature(
-        req.user.companyId,
-        'service_order_cancellation_reason',
-      );
-    }
     return this.orderService.cancelOrder(id, dto, req.user.userId);
   }
 

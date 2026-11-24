@@ -525,6 +525,26 @@ export class TaskLotUseDto {
 }
 
 /**
+ * O material vendido que o rolo substitui numa das tarefas da baixa
+ * conjunta, como o `replaces` da baixa simples (TaskLotUseDto).
+ */
+export class BatchReplaceDto {
+  @ApiProperty()
+  @IsUUID('all', { message: 'Tarefa não encontrada' })
+  taskId: string;
+
+  @ApiPropertyOptional({
+    description:
+      'O material vendido que a baixa substitui (material|variação); nulo, nenhum',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  replaces?: string | null;
+}
+
+/**
  * A baixa conjunta (VS-2, FULL): os trabalhos marcados numa impressão só,
  * o rolo e o comprimento usado; acabando o rolo, o segundo rolo e o resto.
  */
@@ -552,11 +572,27 @@ export class BatchLotUseDto {
   @IsUUID('all', { message: 'Lote não encontrado' })
   secondLotId?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Metros usados no segundo rolo (obrigatório com ele)',
+  })
   @IsOptional()
   @IsNumber()
   @Min(0.001)
   secondLength?: number;
+
+  /**
+   * Por tarefa, o material vendido que o rolo substitui (a troca): a venda
+   * não tira de novo esse material e, se já tirou, ele volta ao saldo. A
+   * tarefa fora da lista segue a regra da baixa simples (o material do rolo,
+   * quando vendido)
+   */
+  @ApiPropertyOptional({ type: [BatchReplaceDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => BatchReplaceDto)
+  replaces?: BatchReplaceDto[];
 
   /** A configuração produtiva usada (ex.: 4 passes); o tempo não muda */
   @ApiPropertyOptional()

@@ -47,6 +47,9 @@ describe('CompanyManagementService', () => {
     productionTaskType: { deleteMany: jest.fn() },
     productionManager: { deleteMany: jest.fn() },
     productionFlow: { deleteMany: jest.fn() },
+    productionTrip: { deleteMany: jest.fn() },
+    productionVehicleRequest: { deleteMany: jest.fn() },
+    orderRedo: { deleteMany: jest.fn() },
     productionVehicle: { deleteMany: jest.fn() },
     productionCollaborator: { deleteMany: jest.fn() },
     productionCalendar: { deleteMany: jest.fn() },
@@ -795,6 +798,36 @@ describe('CompanyManagementService', () => {
       expect(mockTx.customer.delete).toHaveBeenCalledWith({
         where: { id: 'cus-1' },
       });
+    });
+
+    it('apaga as saídas antes dos veículos (vehicleId é RESTRICT), com os pedidos de veículo e de refazer', async () => {
+      mockPrismaService.user.findFirst.mockResolvedValue({
+        id: 'admin-1',
+        password: 'hashed',
+        name: 'Admin',
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      mockPrismaService.company.findUnique.mockResolvedValue({
+        id: 'company-1',
+        name: 'Test',
+        Subscription: [],
+      });
+      mockPrismaService.employee.findMany.mockResolvedValue([]);
+      mockTx.subscription.count.mockResolvedValue(0);
+      mockTx.employee.count.mockResolvedValue(0);
+
+      await service.deleteCompany('company-1', 'password', 'admin-1');
+
+      const where = { where: { companyId: 'company-1' } };
+      expect(mockTx.productionTrip.deleteMany).toHaveBeenCalledWith(where);
+      expect(mockTx.productionVehicleRequest.deleteMany).toHaveBeenCalledWith(
+        where,
+      );
+      expect(mockTx.orderRedo.deleteMany).toHaveBeenCalledWith(where);
+      const order = (mock: jest.Mock) => mock.mock.invocationCallOrder[0];
+      expect(order(mockTx.productionTrip.deleteMany)).toBeLessThan(
+        order(mockTx.productionVehicle.deleteMany),
+      );
     });
   });
 });

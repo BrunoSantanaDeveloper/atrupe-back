@@ -653,9 +653,9 @@ export class ProductAssemblyService {
   /**
    * PRO: a sequência de ícones do produto (o fluxo, desenhado no LITE) cria
    * a composição, mesmo vazia (área 9; Maicol, 23/11/2026): uma etapa própria
-   * por setor ativo do fluxo, na ordem dos ícones, com o nome do setor. A
-   * empresa preenche nelas os processos produtivos. Só na composição sem
-   * etapas: a que já tem etapas fica como está.
+   * por setor ativo do fluxo, na ordem dos ícones, com o nome do setor, cada
+   * uma ligada à anterior. A empresa preenche nelas os processos produtivos.
+   * Só na composição sem etapas: a que já tem etapas fica como está.
    */
   async fromFlow(ctx: Ctx) {
     const { assembly } = await this.writable(ctx);
@@ -686,22 +686,29 @@ export class ProductAssemblyService {
       .map((id) => sectors.find((sector) => sector.id === id))
       .filter((sector): sector is { id: string; name: string } => !!sector);
     if (!ordered.length) bad('O fluxo não tem setor de produção ativo');
+    // Cada etapa depende da anterior, na ordem dos ícones: na produção, a
+    // seguinte espera a anterior (no ELITE, não nascem todas liberadas). É
+    // o mesmo que acrescentar cada etapa depois da outra: com dependência,
+    // as regras de acabamento (FL-2, MS-5)
     await this.prisma.$transaction(async (tx) => {
+      let previous: string | null = null;
       for (const [position, sector] of ordered.entries()) {
+        const id = randomUUID();
         await tx.assemblyBlock.create({
           data: {
-            id: randomUUID(),
+            id,
             assemblyId: assembly.id,
             type: 'OWN',
             name: sector.name,
             sectorId: sector.id,
             taskType: sector.name,
-            dependsOn: [],
-            baseBlockId: null,
+            dependsOn: previous ? [previous] : [],
+            baseBlockId: previous,
             position,
-            rules: { ...BASE_RULES },
+            rules: { ...(previous ? FINISHING_RULES : BASE_RULES) },
           },
         });
+        previous = id;
       }
     });
     return { created: ordered.length };

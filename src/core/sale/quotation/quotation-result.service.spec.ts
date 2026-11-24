@@ -206,6 +206,38 @@ describe('QuotationResultService', () => {
     expect(billingCostOf([])).toBe(0);
   });
 
+  it('o km previsto conta cada tarefa uma vez; o rodado, cada saída fechada', async () => {
+    const stop = (
+      taskId: string,
+      trip: number,
+      status: string,
+      plannedKm: number,
+      km: number | null,
+    ) => ({
+      taskId,
+      plannedKm,
+      km,
+      description: taskId,
+      trip: { number: trip, status },
+    });
+    prisma.productionTripStop.findMany.mockResolvedValue([
+      // A instalação não feita na saída 1 e reagendada na saída 2
+      stop('instalar', 1, 'DONE', 10.1, 10.1),
+      stop('instalar', 2, 'DONE', 10.1, 9.9),
+      stop('entregar', 2, 'DONE', 10.1, 10.1),
+      stop('medir', 3, 'SCHEDULED', 9.8, null),
+    ]);
+    const res = await service.result('q-1');
+    // Antes: 40,1 (a instalação duas vezes) e 30.000000000000004
+    expect(res.vehicleKm).toMatchObject({ planned: 30, driven: 30.1 });
+    expect(res.vehicleKm!.stops.map((row) => row.driven)).toEqual([
+      10.1,
+      9.9,
+      10.1,
+      null,
+    ]);
+  });
+
   it('orçamento inexistente: 404', async () => {
     prisma.quotation.findUnique.mockResolvedValue(null);
     await expect(service.result('q-9')).rejects.toBeInstanceOf(

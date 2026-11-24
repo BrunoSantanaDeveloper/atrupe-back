@@ -32,6 +32,8 @@ import { PAYMENT_HOLD_RELEASER } from './payment-hold';
 
 import { OrderRedoController } from './order-redo.controller';
 import { OrderRedoService } from './order-redo.service';
+import { ProductionStageModule } from '../production-stage/production-stage.module';
+import { ProductionMirrorService } from '../../production/production-mirror.service';
 
 @Module({
   imports: [
@@ -50,6 +52,8 @@ import { OrderRedoService } from './order-redo.service';
     PricingModule,
     // O projeto de produção nasce da aprovação (ELITE, Fase 6)
     ProductionModule,
+    // O espelho da agenda (ELITE) depois de refazer a O.S. (GP-51)
+    ProductionStageModule,
   ],
   // A venda rápida (Fase 7.3) é o mesmo orçamento
   controllers: [
@@ -70,6 +74,10 @@ import { OrderRedoService } from './order-redo.service';
     QuotationResultService,
     CreditCheckService,
     OrderRedoService,
+    // Refazer a O.S. conclui tarefas da nova: a agenda do ELITE acompanha.
+    // O módulo da produção não exporta o espelho; ele só lê e grava pelo
+    // Prisma e pelo recálculo da agenda, então uma instância aqui basta
+    ProductionMirrorService,
     // O item montado na hora (ORC-11, Fase 4.5)
     ComposedItemService,
     QuickSaleService,

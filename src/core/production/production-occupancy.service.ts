@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { PrismaService } from 'src/config/prisma/prisma.service';
+import { BlockTask, occupiedBlocks } from './engine/task-blocks';
 import { ProductionConfigService } from './production-config.service';
 
 /**
@@ -10,14 +11,12 @@ import { ProductionConfigService } from './production-config.service';
  * vendedor: por isso a rota devolve só os totais, sem as tarefas.
  *
  * O ocupado do dia é o tempo das tarefas abertas agendadas para ele, no
- * gerenciador da etapa em que cada uma está, pela mesma conta da agenda viva:
- * o maior entre o previsto, o preparo e a duração agendada.
+ * gerenciador da etapa em que cada uma está, bloco a bloco (GP-52): sem
+ * outros blocos, o maior entre o previsto, o preparo e a duração agendada;
+ * com eles, cada bloco conta o que é dele, no dia dele, e a soma dá o total
+ * (dividir 480 min em 240 + 240 ocupa 240 em cada dia).
  */
-export type OccupancyTask = {
-  scheduleDate: Date | null;
-  scheduleMinutes: number | null;
-  estimatedMinutes: number;
-  setupMinutes: number;
+export type OccupancyTask = BlockTask & {
   currentStepId: string | null;
   taskTypeId: string;
 };
@@ -28,10 +27,12 @@ export type OccupancyStep = {
   managerId: string;
 };
 
-const day = (value: Date) => value.toISOString().slice(0, 10);
-
-/** Os minutos ocupados por gerenciador e por dia. */
-export function occupancyOf(tasks: OccupancyTask[], steps: OccupancyStep[]) {
+/** Os minutos ocupados por gerenciador e por dia; com o período, só nele. */
+export function occupancyOf(
+  tasks: OccupancyTask[],
+  steps: OccupancyStep[],
+  period?: { from: string; to: string },
+) {
   const stepById = new Map(steps.map((step) => [step.id, step]));
   // Sem etapa atual, a tarefa está na primeira etapa do tipo dela
   const firstStep = new Map<string, OccupancyStep>();
@@ -43,27 +44,25 @@ export function occupancyOf(tasks: OccupancyTask[], steps: OccupancyStep[]) {
     { managerId: string; date: string; minutes: number; tasks: number }
   >();
   for (const task of tasks) {
-    if (!task.scheduleDate) continue;
     const step =
       (task.currentStepId && stepById.get(task.currentStepId)) ||
       firstStep.get(task.taskTypeId);
     if (!step) continue;
-    const date = day(task.scheduleDate);
-    const minutes = Math.max(
-      task.estimatedMinutes,
-      task.setupMinutes,
-      task.scheduleMinutes ?? 0,
-    );
-    const key = `${step.managerId}:${date}`;
-    const entry = totals.get(key) ?? {
-      managerId: step.managerId,
-      date,
-      minutes: 0,
-      tasks: 0,
-    };
-    entry.minutes += minutes;
-    entry.tasks += 1;
-    totals.set(key, entry);
+    for (const block of occupiedBlocks(task)) {
+      if (period && (block.date < period.from || block.date > period.to)) {
+        continue;
+      }
+      const key = `${step.managerId}:${block.date}`;
+      const entry = totals.get(key) ?? {
+        managerId: step.managerId,
+        date: block.date,
+        minutes: 0,
+        tasks: 0,
+      };
+      entry.minutes += block.minutes;
+      entry.tasks += 1;
+      totals.set(key, entry);
+    }
   }
   return [...totals.values()].sort((a, b) =>
     `${a.date}${a.managerId}`.localeCompare(`${b.date}${b.managerId}`),
@@ -92,7 +91,11 @@ export class ProductionOccupancyService {
     if (span > MAX_DAYS) {
       throw new BadRequestException(`O período vai até ${MAX_DAYS} dias.`);
     }
-    const [managers, steps, tasks, calendar, slots] = await Promise.all([
+    const range = {
+      gte: new Date(`${from}T00:00:00Z`),
+      lte: new Date(`${to}T00:00:00Z`),
+    };
+    const [managers, steps, tasks, calendar] = await Promise.all([
       this.prisma.productionManager.findMany({
         where: { companyId, isActive: true },
         select: {
@@ -112,51 +115,37 @@ export class ProductionOccupancyService {
         select: { id: true, taskTypeId: true, managerId: true },
         orderBy: { position: 'asc' },
       }),
+      // As tarefas abertas com algum bloco de agenda no período (GP-52): o
+      // bloco 1 ou outro (o resto de um trabalho dividido, o tempo extra).
+      // Sem o bloco 1, a tarefa está fora da agenda e não ocupa nada
       this.prisma.productionTask.findMany({
         where: {
           companyId,
           status: { notIn: ['DONE', 'CANCELED'] },
-          scheduleDate: {
-            gte: new Date(`${from}T00:00:00Z`),
-            lte: new Date(`${to}T00:00:00Z`),
-          },
+          scheduleDate: { not: null },
+          OR: [{ scheduleDate: range }, { slots: { some: { date: range } } }],
         },
         select: {
           scheduleDate: true,
+          scheduleStart: true,
           scheduleMinutes: true,
           estimatedMinutes: true,
           setupMinutes: true,
           currentStepId: true,
           taskTypeId: true,
+          slots: {
+            select: {
+              id: true,
+              date: true,
+              start: true,
+              minutes: true,
+              kind: true,
+            },
+          },
         },
       }),
       this.config.calendar(companyId),
-      // Os outros blocos de agenda (GP-52): o resto de um trabalho dividido
-      // e o tempo extra ocupam o dia deles
-      this.prisma.productionTaskSlot.findMany({
-        where: {
-          companyId,
-          date: {
-            gte: new Date(`${from}T00:00:00Z`),
-            lte: new Date(`${to}T00:00:00Z`),
-          },
-          task: { status: { notIn: ['DONE', 'CANCELED'] } },
-        },
-        select: {
-          date: true,
-          minutes: true,
-          task: { select: { currentStepId: true, taskTypeId: true } },
-        },
-      }),
     ]);
-    const slotTasks: OccupancyTask[] = slots.map((slot) => ({
-      scheduleDate: slot.date,
-      scheduleMinutes: slot.minutes,
-      estimatedMinutes: 0,
-      setupMinutes: 0,
-      currentStepId: slot.task.currentStepId,
-      taskTypeId: slot.task.taskTypeId,
-    }));
     return {
       from,
       to,
@@ -173,7 +162,7 @@ export class ProductionOccupancyService {
           runsThroughBreak: manager.runsThroughBreak,
         },
       })),
-      days: occupancyOf([...tasks, ...slotTasks], steps),
+      days: occupancyOf(tasks, steps, { from, to }),
     };
   }
 }

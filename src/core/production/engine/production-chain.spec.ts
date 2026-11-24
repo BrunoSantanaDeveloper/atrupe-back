@@ -222,6 +222,21 @@ describe('ProductionChain', () => {
       expect(hoje.overdue(hoje.task('a')!)).toBe(false);
     });
 
+    it('dividida em dois dias: só atrasa depois do fim do último bloco (GP-52)', () => {
+      // O bloco 1 foi ontem; o resto é hoje às 14:00 (agora são 10:00)
+      const schedule = { date: '2026-10-06', start: '08:00', minutes: 240 };
+      const dividida = chainOf([
+        task({
+          id: 'a',
+          schedule,
+          slots: [{ date: '2026-10-07', start: '14:00', minutes: 240 }],
+        }),
+      ]);
+      expect(dividida.overdue(dividida.task('a')!)).toBe(false);
+      const sozinha = chainOf([task({ id: 'a', schedule })]);
+      expect(sozinha.overdue(sozinha.task('a')!)).toBe(true);
+    });
+
     it('o apontado desconta do que falta, e o alerta some quando cabe', () => {
       const chain = chainOf([
         task({
@@ -247,6 +262,21 @@ describe('ProductionChain', () => {
           id: 'a',
           estimatedMinutes: 10,
           schedule: { date: '2026-10-10', start: '08:00', minutes: 10 },
+        }),
+      ]);
+      expect(chain.alert(chain.task('a')!)).toEqual({
+        kind: 'DELIVERY_RISK',
+        text: 'Agendada para depois da data de entrega.',
+      });
+    });
+
+    it('DELIVERY_RISK: o outro bloco depois da entrega também conta (GP-52)', () => {
+      const chain = chainOf([
+        task({
+          id: 'a',
+          estimatedMinutes: 10,
+          schedule: { date: '2026-10-08', start: '08:00', minutes: 5 },
+          slots: [{ date: '2026-10-12', start: null, minutes: 5 }],
         }),
       ]);
       expect(chain.alert(chain.task('a')!)).toEqual({

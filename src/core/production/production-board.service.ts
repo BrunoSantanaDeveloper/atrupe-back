@@ -11,6 +11,11 @@ import {
 import { isOpen } from './engine/production-chain';
 import { maintenanceBlocks } from './engine/maintenance';
 import {
+  machineConflicts,
+  occupiedBlocks,
+  scheduleBlocks,
+} from './engine/task-blocks';
+import {
   ProductionAccessService,
   ProductionViewer,
 } from './production-access.service';
@@ -222,6 +227,8 @@ export class ProductionBoardService {
    * A agenda viva (§4.8): as tarefas agendadas no período, as abertas sem
    * agenda e a ocupação dos veículos (VS-7). O preparo ocupa a máquina; o
    * intervalo do gerenciador entra na sobreposição da mesma máquina (GP-20).
+   * A tarefa entra pelo dia de qualquer bloco de agenda (GP-52), e cada
+   * bloco ocupa a máquina no dia dele, com os minutos dele.
    */
   async agenda(
     viewer: ProductionViewer,
@@ -234,18 +241,18 @@ export class ProductionBoardService {
     }));
     const ctx = await this.view.context(viewer, { status: 'PRODUCTION' });
     const visible = ctx.rows.filter((row) => this.view.visible(ctx, row));
+    const inPeriod = (date: string) => date >= from && date <= to;
+    // O trabalho dividido em dois dias aparece nos dois (GP-52)
     const scheduled = visible
-      .map((row) => ({ row, task: ctx.chain.task(row.id)! }))
-      .filter(
-        ({ task }) =>
-          task.schedule &&
-          task.schedule.date >= from &&
-          task.schedule.date <= to,
-      )
+      .map((row) => ({
+        row,
+        days: scheduleBlocks(row).filter((block) => inPeriod(block.date)),
+      }))
+      .filter(({ days }) => days.length)
       .sort((a, b) =>
         // Só o dia vai depois das que têm hora
-        `${a.task.schedule!.date}${a.task.schedule!.start ?? '99:99'}`.localeCompare(
-          `${b.task.schedule!.date}${b.task.schedule!.start ?? '99:99'}`,
+        `${a.days[0].date}${a.days[0].start ?? '99:99'}`.localeCompare(
+          `${b.days[0].date}${b.days[0].start ?? '99:99'}`,
         ),
       );
     const unscheduled = visible.filter(
@@ -276,41 +283,30 @@ export class ProductionBoardService {
       const managerId = this.managerOf(ctx, row);
       return (managerId && ctx.managers.get(managerId)?.intervalMinutes) || 0;
     };
-    const slots = scheduled.map(({ row, task }) => {
-      const detail = detailOf.get(row.id)!;
-      const occupies =
-        detail.setupMinutes +
-        Math.max(detail.estimatedMinutes - detail.setupMinutes, 0);
-      // Só o dia (GP-49): sem a hora, não há horário para sobrepor
-      const start = task.schedule!.start
-        ? minutesOf(task.schedule!.start)
-        : null;
-      return {
-        row,
-        task,
-        detail,
-        occupies,
-        start,
-        end:
-          start === null
-            ? null
-            : start + Math.max(occupies, task.schedule!.minutes),
-      };
-    });
-    const machineConflict = (slot: (typeof slots)[number]) =>
-      !!slot.detail.machine &&
-      slot.start !== null &&
-      slots.some(
-        (other) =>
-          other !== slot &&
-          other.start !== null &&
-          other.detail.machine === slot.detail.machine &&
-          other.task.schedule!.date === slot.task.schedule!.date &&
-          other.start < slot.end + intervalOf(slot.row) &&
-          slot.start < other.end + intervalOf(other.row),
-      );
+    // A máquina ocupada bloco a bloco, no dia de cada um (GP-52): a tarefa
+    // dividida ocupa em cada dia só o que é dele. Só o dia (GP-49): sem a
+    // hora, não há horário para sobrepor
+    const conflicts = machineConflicts(
+      scheduled.flatMap(({ row }) => {
+        const detail = detailOf.get(row.id)!;
+        return occupiedBlocks({ ...row, setupMinutes: detail.setupMinutes })
+          .filter((block) => inPeriod(block.date))
+          .map((block) => {
+            const start = block.start ? minutesOf(block.start) : null;
+            return {
+              taskId: row.id,
+              machine: detail.machine,
+              date: block.date,
+              start,
+              end: start === null ? null : start + block.minutes,
+              interval: intervalOf(row),
+            };
+          });
+      }),
+    );
 
-    // Os veículos por dia: os km somados e saídas que se sobrepõem
+    // Os veículos por dia: os km somados e saídas que se sobrepõem. A tarefa
+    // dividida usa o veículo em cada dia; os km dela contam no bloco 1
     const usage = new Map<
       string,
       {
@@ -318,45 +314,59 @@ export class ProductionBoardService {
         date: string;
         km: number;
         tasks: string[];
-        spans: [number, number][];
+        spans: { taskId: string; start: number; end: number }[];
       }
     >();
-    for (const slot of slots) {
-      if (!slot.detail.vehicleId) continue;
-      const date = slot.task.schedule!.date;
-      const key = `${slot.detail.vehicleId}:${date}`;
-      const entry = usage.get(key) ?? {
-        vehicleId: slot.detail.vehicleId,
-        date,
-        km: 0,
-        tasks: [],
-        spans: [],
-      };
-      entry.km += slot.detail.km ?? 0;
-      entry.tasks.push(slot.row.id);
-      if (slot.start !== null) {
-        entry.spans.push([
-          slot.start,
-          slot.start + slot.task.schedule!.minutes,
-        ]);
+    for (const { row, days } of scheduled) {
+      const detail = detailOf.get(row.id)!;
+      if (!detail.vehicleId) continue;
+      for (const block of days) {
+        const key = `${detail.vehicleId}:${block.date}`;
+        const entry = usage.get(key) ?? {
+          vehicleId: detail.vehicleId,
+          date: block.date,
+          km: 0,
+          tasks: [],
+          spans: [],
+        };
+        if (block.slotId === null) entry.km += detail.km ?? 0;
+        if (!entry.tasks.includes(row.id)) entry.tasks.push(row.id);
+        if (block.start) {
+          const start = minutesOf(block.start);
+          entry.spans.push({
+            taskId: row.id,
+            start,
+            end: start + block.minutes,
+          });
+        }
+        usage.set(key, entry);
       }
-      usage.set(key, entry);
     }
-    const overlaps = (spans: [number, number][]) =>
-      spans.some(([start, end], index) =>
+    const overlaps = (
+      spans: { taskId: string; start: number; end: number }[],
+    ) =>
+      spans.some((span) =>
         spans.some(
-          ([otherStart, otherEnd], other) =>
-            other !== index && otherStart < end && start < otherEnd,
+          (other) =>
+            other.taskId !== span.taskId &&
+            other.start < span.end &&
+            span.start < other.end,
         ),
       );
 
     return {
-      scheduled: slots.map((slot) => ({
-        ...views.get(slot.row.id)!,
-        occupies: slot.occupies,
-        // A mesma máquina ocupada ao mesmo tempo, contando o intervalo
-        conflict: machineConflict(slot),
-      })),
+      scheduled: scheduled.map(({ row }) => {
+        const detail = detailOf.get(row.id)!;
+        return {
+          ...views.get(row.id)!,
+          occupies:
+            detail.setupMinutes +
+            Math.max(detail.estimatedMinutes - detail.setupMinutes, 0),
+          // A mesma máquina ocupada ao mesmo tempo em algum bloco, contando
+          // o intervalo
+          conflict: conflicts.has(row.id),
+        };
+      }),
       unscheduled: unscheduled.map((row) => views.get(row.id)!),
       vehicles: await this.vehicles(viewer.companyId),
       vehicleUsage: [...usage.values()].map(({ spans, ...entry }) => ({

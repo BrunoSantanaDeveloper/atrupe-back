@@ -667,7 +667,11 @@ export class OrderService {
     }
   }
 
-  private async verifySellerPermission(sellerId: string) {
+  /**
+   * O perfil de vendedor pode cancelar a O.S. (canCancelSale). Público para
+   * refazer a O.S. conferir antes de copiar (GP-51), e não depois.
+   */
+  async verifySellerPermission(sellerId: string) {
     const seller = await this.prisma.sellerProfile.findFirst({
       where: {
         employees: {

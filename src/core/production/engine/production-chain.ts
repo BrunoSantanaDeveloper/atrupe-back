@@ -35,13 +35,24 @@ export type ChainTask = {
    */
   afterDoneMinutes?: number;
   /** Agendada só no dia (GP-49): sem a hora, vale até o fim do expediente */
-  schedule: { date: string; start: string | null; minutes: number } | null;
+  schedule: ChainSchedule | null;
+  /**
+   * Os outros blocos de agenda (GP-52): o resto de um trabalho dividido e o
+   * tempo extra. O prazo da tarefa é o fim do último bloco
+   */
+  slots?: ChainSchedule[];
   entries: ChainEntry[];
   /**
    * O expediente do gerenciador onde a tarefa está (GP-48 item 19); sem ele,
    * o da empresa. Os dias e os feriados são sempre os da empresa.
    */
   hours?: WorkHours | null;
+};
+
+export type ChainSchedule = {
+  date: string;
+  start: string | null;
+  minutes: number;
 };
 
 export type WorkHours = {
@@ -204,15 +215,31 @@ export class ProductionChain {
     return !!project && isOpen(task.status) && project.due < this.today;
   }
 
+  private blockEnd(task: ChainTask, block: ChainSchedule) {
+    // Só o dia: o prazo é o fim do expediente daquele dia
+    if (!block.start) {
+      const hours = this.hoursOf(task);
+      return this.clock.at(block.date, hours.endTime);
+    }
+    const start = this.clock.at(block.date, block.start);
+    return new Date(start.getTime() + block.minutes * 60000);
+  }
+
+  /** O fim do último bloco de agenda (GP-52); sem o bloco 1, nenhum. */
   private scheduleEnd(task: ChainTask) {
     if (!task.schedule) return null;
-    // Só o dia: o prazo é o fim do expediente daquele dia
-    if (!task.schedule.start) {
-      const hours = this.hoursOf(task);
-      return this.clock.at(task.schedule.date, hours.endTime);
-    }
-    const start = this.clock.at(task.schedule.date, task.schedule.start);
-    return new Date(start.getTime() + task.schedule.minutes * 60000);
+    return [task.schedule, ...(task.slots ?? [])]
+      .map((block) => this.blockEnd(task, block))
+      .reduce((last, end) => (end.getTime() > last.getTime() ? end : last));
+  }
+
+  /** O último dia agendado, entre todos os blocos (GP-52). */
+  private lastScheduledDay(task: ChainTask) {
+    if (!task.schedule) return null;
+    return [task.schedule, ...(task.slots ?? [])].reduce(
+      (last, block) => (block.date > last ? block.date : last),
+      task.schedule.date,
+    );
   }
 
   /** Passou do horário planejado sem terminar. */
@@ -367,7 +394,8 @@ export class ProductionChain {
         text: `O que falta daqui para a frente (${Math.round(remaining)} min) não cabe até a entrega em ${brDate(project.due)}${project.dueTime ? ` às ${project.dueTime}` : ''}.`,
       };
     }
-    if (task.schedule && task.schedule.date > project.due) {
+    const lastDay = this.lastScheduledDay(task);
+    if (lastDay && lastDay > project.due) {
       return {
         kind: 'DELIVERY_RISK',
         text: 'Agendada para depois da data de entrega.',

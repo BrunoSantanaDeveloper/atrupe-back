@@ -11,7 +11,8 @@ import { UNIT_SYMBOL } from '../../material/material-text';
 import { PricingParametersService } from '../../pricing/pricing-parameters.service';
 import { lockSale, reverseSaleConsumption } from '../stock-consumption';
 import { enterStock, stockKey } from '../stock-entry';
-import { LotTask, soldMaterials } from './lot-task';
+import { areaOf, batchShares, batchWaste } from './lot-batch';
+import { LotTask, SoldMaterial, soldMaterials } from './lot-task';
 import { LotCut, LotUse, splitLot, unitCostOf, useLot } from './lot-math';
 import { lockNumbering } from './numbering';
 import {
@@ -23,9 +24,27 @@ import {
   StockLotFilterDto,
 } from './purchasing.dto';
 
+type Tx = Prisma.TransactionClient;
+
 const bad = (message: string): never => {
   throw new BadRequestException(message);
 };
+
+/** O que a baixa pela tarefa decide antes de gravar (ES-16, VS-1.1). */
+type TaskUsePlan = {
+  /** material|variação do rolo */
+  lotKey: string;
+  /** O material vendido que o rolo substitui; nulo, nenhum */
+  replaces: string | null;
+  /** O rolo é de outro material que o vendido (a troca) */
+  swapped: boolean;
+  replaced: SoldMaterial | undefined;
+  /** O nome do material do rolo, como na lista de Lotes */
+  material: string;
+};
+
+/** Uma parte da baixa conjunta: a tarefa, o rolo e os metros dela. */
+export type BatchUse = { taskId: string; lotId: string; text: string };
 const LOT_NOT_FOUND = 'Lote não encontrado';
 const LOT_CHANGED =
   'O lote mudou enquanto a operação era gravada: tente de novo';
@@ -364,6 +383,9 @@ export class StockLotService {
    * O lote é relido dentro da transação e gravado só se não mudou desde a
    * leitura: duas baixas ao mesmo tempo no mesmo rolo não se perdem (a
    * segunda pede para tentar de novo).
+   *
+   * Com `tx`, roda na transação de quem chama (a baixa conjunta, que grava
+   * tudo ou nada); sem, abre a sua.
    */
   private async applyUse(
     companyId: string,
@@ -386,9 +408,10 @@ export class StockLotService {
       reverseSale?: { key: string; origin: string } | null;
     },
     actor: CashActor,
+    outer?: Tx,
   ) {
     const unit = UNIT_SYMBOL[row.stockItem.material.unit] ?? '';
-    return this.prisma.$transaction(async (tx) => {
+    const run = async (tx: Tx) => {
       // A baixa do rolo e a da venda se enfileiram antes de qualquer outra
       // trava (ver lockSale)
       if (entry.reverseSale && entry.quotationId) {
@@ -487,7 +510,8 @@ export class StockLotService {
             })
           : 0;
       return { used: result.used, unit, text, reversed };
-    });
+    };
+    return outer ? run(outer) : this.prisma.$transaction(run);
   }
 
   /** A baixa à mão, na tela de Lotes: corrige o saldo (a sobra medida). */
@@ -573,37 +597,16 @@ export class StockLotService {
   }
 
   /**
-   * A baixa do impressor (ES-16): escolhe o rolo aberto no setor da tarefa e
-   * informa o comprimento (a largura é a do rolo) ou a quantidade. Vale para
-   * o estoque: a baixa da venda não tira de novo o material que ela
-   * substitui, e, se a venda já tinha tirado (o projeto ou a entrega
-   * concluíram antes), o que ela tirou volta ao saldo. Material diferente do
-   * vendido fica como troca (VS-1.1).
+   * O que a baixa pela tarefa decide antes de gravar: o rolo aberto no setor
+   * da tarefa e o material vendido que ele substitui. Sem `replaces`, o do
+   * rolo, quando a etapa o vendeu (ou quando a etapa não diz o que vendeu);
+   * com `replaces`, precisa ser um material vendido na etapa.
    */
-  /**
-   * A baixa conjunta (VS-2): o rolo aberto e se o comprimento cabe nele.
-   * Sem caber, avisa e pede o segundo rolo para o resto.
-   */
-  async batchRoll(companyId: string, lotId: string, length: number) {
-    const row = await this.row(companyId, lotId);
-    if (row.status !== 'OPEN')
-      bad(`Abra o lote L-${row.number} antes de dar baixa`);
-    if (!row.currentWidth) bad(`O lote L-${row.number} não é rolo com largura`);
-    if (row.currentLength !== null && length > row.currentLength + 1e-6) {
-      bad(
-        `Material insuficiente no lote L-${row.number}: restam ${m(row.currentLength)} m. Escolha o segundo rolo para o resto.`,
-      );
-    }
-    return { width: row.currentWidth as number, number: row.number };
-  }
-
-  async useForTask(
-    companyId: string,
+  private planTaskUse(
+    row: LotRow,
     task: LotTask,
-    dto: TaskLotUseDto,
-    actor: CashActor,
-  ) {
-    const row = await this.row(companyId, dto.lotId);
+    replacesInput: string | null | undefined,
+  ): TaskUsePlan {
     if (row.status !== 'OPEN') bad('Abra o lote antes de dar baixa');
     if (task.sectorId && row.sectorId && row.sectorId !== task.sectorId) {
       bad(
@@ -616,8 +619,8 @@ export class StockLotService {
       row.stockItem.variationId,
     );
     const replaces =
-      dto.replaces !== undefined
-        ? dto.replaces
+      replacesInput !== undefined
+        ? replacesInput
         : sold.some((item) => item.key === lotKey) || !sold.length
           ? lotKey
           : null;
@@ -628,10 +631,30 @@ export class StockLotService {
     ) {
       bad('O material substituído não é desta etapa');
     }
-    const swapped = replaces && replaces !== lotKey;
-    const replaced = sold.find((item) => item.key === replaces);
+    return {
+      lotKey,
+      replaces,
+      swapped: !!replaces && replaces !== lotKey,
+      replaced: sold.find((item) => item.key === replaces),
+      material: this.view(row).material,
+    };
+  }
+
+  /**
+   * Grava a baixa pela tarefa decidida em `planTaskUse`: a baixa no rolo e,
+   * com o material substituído, o estorno da baixa da venda.
+   */
+  private async runTaskUse(
+    companyId: string,
+    row: LotRow,
+    task: LotTask,
+    plan: TaskUsePlan,
+    dto: { length?: number; quantity?: number; note?: string },
+    actor: CashActor,
+    tx?: Tx,
+  ) {
+    const { replaces, swapped, replaced, material } = plan;
     const replacedName = replaced?.name;
-    const material = this.view(row).material;
     const result = await this.applyUse(
       companyId,
       row,
@@ -655,6 +678,7 @@ export class StockLotService {
           : null,
       },
       actor,
+      tx,
     );
     const reversedText = result.reversed
       ? `; a baixa da venda de ${m(result.reversed)} ${replaced?.unit || result.unit} de ${replacedName || material} voltou ao saldo`
@@ -662,6 +686,168 @@ export class StockLotService {
     return {
       text: `Baixa no lote L-${row.number} (${material}): ${m(result.used)} ${result.unit}${dto.length ? ` (${m(dto.length)} m)` : ''}${swapped && replacedName ? `, no lugar de ${replacedName}` : ''}${reversedText}`,
     };
+  }
+
+  /**
+   * A baixa do impressor (ES-16): escolhe o rolo aberto no setor da tarefa e
+   * informa o comprimento (a largura é a do rolo) ou a quantidade. Vale para
+   * o estoque: a baixa da venda não tira de novo o material que ela
+   * substitui, e, se a venda já tinha tirado (o projeto ou a entrega
+   * concluíram antes), o que ela tirou volta ao saldo. Material diferente do
+   * vendido fica como troca (VS-1.1).
+   */
+  async useForTask(
+    companyId: string,
+    task: LotTask,
+    dto: TaskLotUseDto,
+    actor: CashActor,
+  ) {
+    const row = await this.row(companyId, dto.lotId);
+    const plan = this.planTaskUse(row, task, dto.replaces);
+    return this.runTaskUse(companyId, row, task, plan, dto, actor);
+  }
+
+  /**
+   * A baixa conjunta (VS-2): o rolo aberto, com largura, e o comprimento
+   * cabendo nele. Sem caber, avisa e pede o segundo rolo para o resto.
+   */
+  private assertBatchRoll(row: LotRow, length: number) {
+    if (row.status !== 'OPEN') {
+      bad(`Abra o lote L-${row.number} antes de dar baixa`);
+    }
+    if (!row.currentWidth) bad(`O lote L-${row.number} não é rolo com largura`);
+    if (row.currentLength !== null && length > row.currentLength + 1e-6) {
+      bad(
+        `Material insuficiente no lote L-${row.number}: restam ${m(row.currentLength)} m. Escolha o segundo rolo para o resto.`,
+      );
+    }
+  }
+
+  /**
+   * A baixa conjunta (VS-2; Maicol, 23/11/2026, FULL): os trabalhos marcados
+   * numa impressão só. O comprimento usado (com o refugo) de cada rolo é
+   * dividido pela área de cada trabalho; acabando o rolo, o segundo rolo
+   * leva o resto. Cada parte é uma baixa pela tarefa, com a mesma regra da
+   * baixa simples (a troca de material e o estorno da baixa da venda).
+   *
+   * Tudo ou nada: o rolo, o segundo rolo, o setor, o estado e a troca de
+   * todas as tarefas são conferidos antes da primeira escrita, e as baixas
+   * (com o que `inside` grava, a configuração e o histórico das tarefas)
+   * saem numa transação só. As travas seguem uma ordem fixa, a mesma da
+   * baixa simples: primeiro as vendas (lockSale, pelo id), depois os lotes
+   * (pelo id, na releitura com o update condicional).
+   */
+  async useBatch(
+    companyId: string,
+    input: {
+      tasks: (LotTask & { status?: string })[];
+      rolls: { lotId: string; length: number }[];
+      /** Por tarefa, o material substituído (sem a tarefa, a regra simples) */
+      replaces?: Map<string, string | null | undefined>;
+      note?: string;
+    },
+    actor: CashActor,
+    inside?: (tx: Tx, uses: BatchUse[]) => Promise<void>,
+  ) {
+    const { tasks, rolls } = input;
+    for (const task of tasks) {
+      if (task.status === 'CANCELED') {
+        bad(`A tarefa ${task.code} foi cancelada: tire-a da impressão`);
+      }
+    }
+    const plans = [];
+    for (const roll of rolls) {
+      const row = await this.row(companyId, roll.lotId);
+      this.assertBatchRoll(row, roll.length);
+      const items = tasks.map((task) => {
+        const plan = this.ofTask(task, () =>
+          this.planTaskUse(row, task, input.replaces?.get(task.id)),
+        );
+        return {
+          task,
+          plan,
+          area: areaOf(task.consumption, {
+            replaces: plan.replaces,
+            lot: plan.lotKey,
+          }),
+        };
+      });
+      plans.push({
+        roll,
+        row,
+        items,
+        shares: batchShares(
+          items.map((item) => ({ id: item.task.id, area: item.area })),
+          roll.length,
+        ),
+      });
+    }
+    const usedArea = plans.reduce(
+      (sum, plan) => sum + (plan.row.currentWidth as number) * plan.roll.length,
+      0,
+    );
+    const waste = batchWaste(plans[0].items, usedArea);
+    const note = [
+      `Impressão conjunta de ${tasks.length} trabalhos`,
+      waste ? `refugo ${waste.percent}%` : null,
+      input.note?.trim() || null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+    const sales = [
+      ...new Set(
+        plans.flatMap((plan) =>
+          plan.items
+            .filter((item) => item.plan.replaces)
+            .map((item) => item.task.quotationId),
+        ),
+      ),
+    ].sort(byId);
+    const uses = await this.prisma.$transaction(
+      async (tx) => {
+        for (const quotationId of sales) await lockSale(tx, quotationId);
+        const done: BatchUse[] = [];
+        for (const plan of [...plans].sort((a, b) =>
+          byId(a.row.id, b.row.id),
+        )) {
+          for (const share of plan.shares) {
+            if (!(share.length > 0)) continue;
+            const item = plan.items.find((row) => row.task.id === share.id)!;
+            const { text } = await this.runTaskUse(
+              companyId,
+              plan.row,
+              item.task,
+              item.plan,
+              { length: share.length, note },
+              actor,
+              tx,
+            );
+            done.push({ taskId: item.task.id, lotId: plan.row.id, text });
+          }
+        }
+        if (inside) await inside(tx, done);
+        return done;
+      },
+      { timeout: 20000 },
+    );
+    return {
+      uses,
+      waste,
+      message: `Baixa conjunta de ${tasks.length} trabalhos${waste ? `: ${waste.printed} m² impressos, ${waste.used} m² gastos, refugo ${waste.percent}%` : ''}`,
+    };
+  }
+
+  /** Na baixa conjunta, a recusa diz qual tarefa da lista não passou. */
+  private ofTask<T>(task: LotTask, fn: () => T): T {
+    try {
+      return fn();
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw new BadRequestException(`Tarefa ${task.code}: ${error.message}`);
+      }
+      throw error;
+    }
   }
 
   /**

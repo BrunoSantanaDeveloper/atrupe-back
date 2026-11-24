@@ -5825,6 +5825,11 @@ model OrderRedo {
   approvedById    String?
   approvedByName  String?
   rejectReason    String?
+  /// O motivo do cancelamento da O.S. antiga (o da empresa), escolhido no
+  /// pedido: obrigatório quando a empresa tem motivos cadastrados
+  cancelReasonId  String?
+  /// Por que a execução não terminou (status FAILED)
+  failReason      String?
   carriedAt       DateTime?
   carried         Int             @default(0)
   /// O excedente produzido: item, feito, a nova quantidade e a sobra
@@ -5845,6 +5850,10 @@ enum OrderRedoExcess {
 
 enum OrderRedoStatus {
   PENDING_APPROVAL
+  /// Em execução: reservado por quem executa (cópia e cancelamento)
+  EXECUTING
   EXECUTED
   REJECTED
+  /// A execução parou no meio; o motivo fica em failReason
+  FAILED
 }

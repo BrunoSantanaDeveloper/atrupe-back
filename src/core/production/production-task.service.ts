@@ -126,6 +126,19 @@ const hmText = (minutes: number) => {
   const m = minutes % 60;
   return h ? (m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`) : `${m} min`;
 };
+/**
+ * O dia (YYYY-MM-DD) como coluna date, recusado com 400 quando não existe
+ * (13/45, 30/02): a data inválida não chega ao banco como erro 500.
+ */
+const dayColumn = (day: string) => {
+  const date = dateColumn(day);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== day) {
+    bad('Data inválida');
+  }
+  return date;
+};
+const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
+const NOT_SCHEDULED = 'Agende a tarefa antes de acrescentar tempo';
 
 type UploadedFile = {
   originalname: string;
@@ -191,25 +204,31 @@ export class ProductionTaskService {
       quotationId: project.quotationId,
       number: project.number,
       consumption: task!.consumption,
+      // A baixa conjunta recusa a tarefa cancelada
+      status: row.status as string,
     };
   }
 
-  /** Registra a baixa no histórico da tarefa e devolve a tarefa. */
   /**
    * As configurações produtivas da máquina da tarefa (para o apontamento):
    * a do bem da configuração vendida, ou o bem com o nome da máquina.
    */
   async setupsFor(viewer: ProductionViewer, id: string) {
     await this.load(viewer, id);
-    const task = await this.prisma.productionTask.findUnique({
-      where: { id },
+    return this.machineSetups(viewer.companyId, id);
+  }
+
+  /** As configurações da máquina da tarefa, sem conferir quem pede. */
+  private async machineSetups(companyId: string, id: string) {
+    const task = await this.prisma.productionTask.findFirst({
+      where: { id, companyId },
       select: { machine: true, machineSetupId: true },
     });
     const sold = task?.machineSetupId
       ? await this.prisma.assetSetup.findFirst({
           where: {
             id: task.machineSetupId,
-            asset: { companyId: viewer.companyId },
+            asset: { companyId },
           },
           select: { assetId: true },
         })
@@ -219,7 +238,7 @@ export class ProductionTaskService {
       : task?.machine
         ? await this.prisma.asset.findFirst({
             where: {
-              companyId: viewer.companyId,
+              companyId,
               name: { equals: task.machine, mode: 'insensitive' },
             },
             select: { id: true },
@@ -238,37 +257,58 @@ export class ProductionTaskService {
    * A configuração produtiva usada na impressão (item 10 do GP-48): o
    * impressor pode trocar no apontamento; o tempo estimado não muda (vem da
    * venda). Usa as configurações do patrimônio (AssetSetup).
+   *
+   * Confere agora, antes de qualquer escrita: a configuração precisa estar
+   * entre as da máquina de cada tarefa (as de `setupsFor`), e não só ser da
+   * empresa. Devolve a gravação, para rodar na transação de quem chama (a
+   * baixa conjunta grava tudo ou nada).
    */
   async useSetup(viewer: ProductionViewer, ids: string[], setupId: string) {
-    const setup = await this.prisma.assetSetup.findFirst({
-      where: { id: setupId, asset: { companyId: viewer.companyId } },
-      select: { id: true, name: true },
-    });
-    if (!setup) throw new NotFoundException('Configuração não encontrada');
+    let setup: { id: string; name: string } | undefined;
     for (const id of ids) {
-      const task = await this.prisma.productionTask.findUnique({
-        where: { id },
-        select: { machineSetupId: true, machineQuality: true },
-      });
-      if (!task || task.machineSetupId === setup.id) continue;
-      await this.prisma.$transaction(async (tx) => {
+      const { setups } = await this.machineSetups(viewer.companyId, id);
+      setup = setups.find((item) => item.id === setupId);
+      if (!setup) {
+        const task = await this.prisma.productionTask.findFirst({
+          where: { id, companyId: viewer.companyId },
+          select: { code: true },
+        });
+        bad(
+          `A configuração escolhida não é da máquina da tarefa${task ? ` ${task.code}` : ''}`,
+        );
+      }
+    }
+    if (!setup) throw new NotFoundException('Configuração não encontrada');
+    const chosen = setup;
+    return async (tx: Tx) => {
+      for (const id of ids) {
+        const task = await tx.productionTask.findUnique({
+          where: { id },
+          select: { machineSetupId: true, machineQuality: true },
+        });
+        if (!task || task.machineSetupId === chosen.id) continue;
         await tx.productionTask.update({
           where: { id },
-          data: { machineSetupId: setup.id, machineQuality: setup.name },
+          data: { machineSetupId: chosen.id, machineQuality: chosen.name },
         });
         await this.log(
           tx,
           viewer,
           id,
-          `Imprimiu em ${setup.name}${task.machineQuality ? ` (vendido em ${task.machineQuality})` : ''}`,
+          `Imprimiu em ${chosen.name}${task.machineQuality ? ` (vendido em ${task.machineQuality})` : ''}`,
         );
-      });
-    }
+      }
+    };
   }
 
   async lotUsed(viewer: ProductionViewer, id: string, text: string) {
     await this.prisma.$transaction((tx) => this.log(tx, viewer, id, text));
     return this.respond(viewer, id, text);
+  }
+
+  /** A baixa no histórico da tarefa, na transação da baixa conjunta. */
+  lotUsedIn(tx: Tx, viewer: ProductionViewer, id: string, text: string) {
+    return this.log(tx, viewer, id, text);
   }
 
   private async respond(viewer: ProductionViewer, id: string, message: string) {
@@ -380,6 +420,11 @@ export class ProductionTaskService {
             : {}),
         },
       });
+      // Passou para a etapa seguinte sem agenda: os blocos da etapa que
+      // terminou saem junto (GP-52), para não ocupar o gerenciador novo
+      if (plan.clearSchedule) {
+        await tx.productionTaskSlot.deleteMany({ where: { taskId: id } });
+      }
       if (plan.clearPendency && dto.action === 'RESUME') {
         await this.log(
           tx,
@@ -464,13 +509,46 @@ export class ProductionTaskService {
       },
     });
     if (others.some((item) => item.status === 'IN_PROGRESS')) return;
-    const tasks = others
-      .filter((item) => item.scheduleStart)
-      .map((item) => ({
-        id: item.id,
-        start: item.scheduleStart!,
-        minutes: item.scheduleMinutes || item.estimatedMinutes,
-      }));
+    // Os outros blocos de hoje (GP-52) entram na sequência com os minutos
+    // deles: o resto de um trabalho dividido (a tarefa pode estar pausada
+    // desde o bloco 1) e o tempo extra. O bloco 1 já conta só o que ficou
+    // nele (scheduleMinutes)
+    const slots = await this.prisma.productionTaskSlot.findMany({
+      where: {
+        companyId: viewer.companyId,
+        date: dateColumn(today),
+        start: { not: null },
+        task: {
+          id: { not: id },
+          machine: task.machine,
+          currentStepId: { in: steps.map((step) => step.id) },
+          status: { in: ['NOT_STARTED', 'PAUSED'] },
+          scheduleDate: { not: null },
+        },
+      },
+      select: {
+        id: true,
+        taskId: true,
+        start: true,
+        minutes: true,
+        task: { select: { projectId: true } },
+      },
+    });
+    const slotById = new Map(slots.map((slot) => [slot.id, slot]));
+    const tasks = [
+      ...others
+        .filter((item) => item.scheduleStart)
+        .map((item) => ({
+          id: item.id,
+          start: item.scheduleStart!,
+          minutes: item.scheduleMinutes || item.estimatedMinutes,
+        })),
+      ...slots.map((slot) => ({
+        id: slot.id,
+        start: slot.start!,
+        minutes: slot.minutes,
+      })),
+    ];
     if (!tasks.length) return;
     // A manutenção da máquina hoje (GP-49 item 6), casada pela configuração
     const blocks = maintenanceSpans(
@@ -489,6 +567,26 @@ export class ProductionTaskService {
     const nextDay = nextWorkDay(today, calendar);
     await this.prisma.$transaction(async (tx) => {
       for (const move of moves) {
+        const slot = slotById.get(move.id);
+        if (slot) {
+          await tx.productionTaskSlot.update({
+            where: { id: slot.id },
+            data: move.to
+              ? { start: move.to }
+              : { date: dateColumn(nextDay), start: null },
+          });
+          await this.log(
+            tx,
+            viewer,
+            slot.taskId,
+            !move.to
+              ? `O bloco de hoje às ${move.from} passou para ${brDate(nextDay)}, sem horário: não começa mais no expediente de hoje (agenda viva)`
+              : move.maintenance
+                ? `O bloco de hoje passou de ${move.from} para ${move.to}, depois da manutenção "${move.maintenance}" da máquina (agenda viva)`
+                : `O bloco de hoje passou de ${move.from} para ${move.to}: o trabalho anterior na máquina atrasou (agenda viva)`,
+          );
+          continue;
+        }
         await tx.productionTask.update({
           where: { id: move.id },
           // Não começa mais hoje: o próximo dia útil, só com o dia (GP-49)
@@ -508,11 +606,14 @@ export class ProductionTaskService {
         );
       }
     });
-    const projects = new Set(
-      others
+    const projects = new Set([
+      ...others
         .filter((item) => moves.some((move) => move.id === item.id))
         .map((item) => item.projectId),
-    );
+      ...slots
+        .filter((slot) => moves.some((move) => move.id === slot.id))
+        .map((slot) => slot.task.projectId),
+    ]);
     for (const projectId of projects) await this.mirror.sync(projectId);
   }
 
@@ -585,7 +686,13 @@ export class ProductionTaskService {
     );
   }
 
-  /** Agenda ou tira da agenda (GP-35); não recusa conflito. */
+  /**
+   * Agenda ou tira da agenda (GP-35); não recusa conflito. O agendamento é o
+   * bloco 1 (GP-52): os outros blocos vêm no dia dele ou depois. Reagendar
+   * para depois de algum deles é recusado com o dia do bloco, em vez de
+   * apagar o resto do trabalho e o tempo lançado nele; tirar da agenda tira
+   * os blocos junto.
+   */
   async schedule(viewer: ProductionViewer, id: string, dto: TaskScheduleDto) {
     await this.load(viewer, id);
     if (dto.schedule === undefined) bad('Informe a agenda');
@@ -599,7 +706,24 @@ export class ProductionTaskService {
           : Math.round(value.minutes);
       if (start && !(minutes && minutes > 0)) bad('Informe os minutos');
       if (minutes !== null && !(minutes > 0)) bad('Informe os minutos');
-      if (Number.isNaN(dateColumn(value.date).getTime())) bad('Data inválida');
+      const date = dayColumn(value.date);
+      const earlier = await this.prisma.productionTaskSlot.findMany({
+        where: { taskId: id, date: { lt: date } },
+        select: { date: true },
+        orderBy: { date: 'asc' },
+      });
+      if (earlier.length) {
+        const days = [
+          ...new Set(
+            earlier.map((slot) => brDate(slot.date.toISOString().slice(0, 10))),
+          ),
+        ];
+        bad(
+          earlier.length === 1
+            ? `O bloco de ${days[0]} ficaria antes do primeiro dia. Agende até ${days[0]} ou tire esse bloco antes (o resto de um trabalho dividido volta ao primeiro dia).`
+            : `Os blocos de ${days.join(', ')} ficariam antes do primeiro dia. Agende até ${days[0]} ou tire esses blocos antes (o resto de um trabalho dividido volta ao primeiro dia).`,
+        );
+      }
       const message = start
         ? `Agendou para ${brDate(value.date)} às ${start}`
         : `Agendou para ${brDate(value.date)}, sem horário`;
@@ -607,7 +731,7 @@ export class ProductionTaskService {
         await tx.productionTask.update({
           where: { id },
           data: {
-            scheduleDate: dateColumn(value.date),
+            scheduleDate: date,
             scheduleStart: start,
             scheduleMinutes: minutes,
           },
@@ -616,6 +740,7 @@ export class ProductionTaskService {
       });
       return this.respond(viewer, id, message);
     }
+    let message = 'Tirou da agenda';
     await this.prisma.$transaction(async (tx) => {
       await tx.productionTask.update({
         where: { id },
@@ -625,9 +750,29 @@ export class ProductionTaskService {
           scheduleMinutes: null,
         },
       });
-      await this.log(tx, viewer, id, 'Tirou da agenda');
+      // Sem o bloco 1, os outros blocos não têm de quem ser o resto: saem
+      // junto, e o tempo lançado neles fica na tarefa (GP-52)
+      const { count } = await tx.productionTaskSlot.deleteMany({
+        where: { taskId: id },
+      });
+      if (count) {
+        message =
+          count === 1
+            ? 'Tirou da agenda, com o outro bloco'
+            : `Tirou da agenda, com os outros ${count} blocos`;
+      }
+      await this.log(tx, viewer, id, message);
     });
-    return this.respond(viewer, id, 'Tirou da agenda');
+    return this.respond(viewer, id, message);
+  }
+
+  /** O dia do bloco 1 (YYYY-MM-DD); sem ele, a tarefa está fora da agenda. */
+  private async firstBlockDay(id: string) {
+    const task = await this.prisma.productionTask.findUnique({
+      where: { id },
+      select: { scheduleDate: true },
+    });
+    return task?.scheduleDate?.toISOString().slice(0, 10) ?? null;
   }
 
   /**
@@ -637,8 +782,15 @@ export class ProductionTaskService {
    */
   async addSlot(viewer: ProductionViewer, id: string, dto: TaskSlotDto) {
     await this.load(viewer, id);
+    const date = dayColumn(dto.date);
+    if (dto.start && !HOUR.test(dto.start)) bad('Hora inválida');
     const reason = dto.reason?.trim() || null;
     if (dto.kind === 'EXTRA' && !reason) bad('Diga o motivo do tempo extra');
+    const first = await this.firstBlockDay(id);
+    if (!first) bad(NOT_SCHEDULED);
+    if (dto.date < first!) {
+      bad(`O bloco vai no dia do primeiro (${brDate(first!)}) ou depois dele`);
+    }
     const message =
       dto.kind === 'EXTRA'
         ? `Acrescentou ${hmText(dto.minutes)} em ${brDate(dto.date)} (${reason})`
@@ -648,7 +800,7 @@ export class ProductionTaskService {
         data: {
           companyId: viewer.companyId,
           taskId: id,
-          date: dateColumn(dto.date),
+          date,
           start: dto.start || null,
           minutes: dto.minutes,
           kind: dto.kind,
@@ -667,6 +819,8 @@ export class ProductionTaskService {
    */
   async split(viewer: ProductionViewer, id: string, dto: SplitTaskDto) {
     await this.load(viewer, id);
+    const date = dayColumn(dto.date);
+    if (dto.start && !HOUR.test(dto.start)) bad('Hora inválida');
     const task = await this.prisma.productionTask.findUnique({
       where: { id },
       select: {
@@ -676,6 +830,10 @@ export class ProductionTaskService {
       },
     });
     if (!task?.scheduleDate) bad('Agende a tarefa antes de dividir');
+    const first = task!.scheduleDate!.toISOString().slice(0, 10);
+    if (!(dto.date > first)) {
+      bad(`O resto vai para um dia depois do primeiro (${brDate(first)})`);
+    }
     const total = task!.scheduleMinutes || task!.estimatedMinutes;
     if (!(total > 1)) bad('Informe a duração da tarefa antes de dividir');
     if (!(dto.keepMinutes < total)) {
@@ -692,7 +850,7 @@ export class ProductionTaskService {
         data: {
           companyId: viewer.companyId,
           taskId: id,
-          date: dateColumn(dto.date),
+          date,
           start: dto.start || null,
           minutes: rest,
           kind: 'NORMAL',
@@ -896,11 +1054,12 @@ export class ProductionTaskService {
           );
         }
         // O relógio do dia vai para o bloco agendado para hoje (GP-52);
-        // sem bloco hoje, é o bloco 1
+        // sem bloco hoje, é o bloco 1. Hoje no fuso da empresa: às 22h de
+        // Brasília ainda é hoje, embora em UTC já seja amanhã
         const todaySlot = await tx.productionTaskSlot.findFirst({
           where: {
             taskId: id,
-            date: dateColumn(now.toISOString().slice(0, 10)),
+            date: dateColumn(toProjectDateKey(now)),
           },
           select: { id: true },
           orderBy: { createdAt: 'asc' },
@@ -987,7 +1146,24 @@ export class ProductionTaskService {
     }
   }
 
-  /** Corrige os minutos e a pessoa de um trecho; o antes fica (GP-44). */
+  /**
+   * O bloco de agenda do trecho (GP-52): o id de um bloco da tarefa, ou nulo
+   * para o bloco 1. O bloco de outra tarefa é recusado.
+   */
+  private async slotOf(id: string, slotId: string | null | undefined) {
+    if (!slotId) return null;
+    const slot = await this.prisma.productionTaskSlot.findFirst({
+      where: { id: slotId, taskId: id },
+      select: { id: true },
+    });
+    return slot?.id ?? bad('Bloco não encontrado');
+  }
+
+  /**
+   * Corrige os minutos e a pessoa de um trecho; o antes fica (GP-44). Com o
+   * slotId (GP-52), o trecho passa para aquele bloco (nulo: o bloco 1); sem
+   * ele, fica no bloco em que estava.
+   */
   async correctEntry(
     viewer: ProductionViewer,
     id: string,
@@ -998,7 +1174,13 @@ export class ProductionTaskService {
     await this.load(viewer, id);
     const entry = await this.prisma.productionTimeEntry.findFirst({
       where: { id: entryId, taskId: id },
-      select: { id: true, employeeId: true, end: true, seconds: true },
+      select: {
+        id: true,
+        employeeId: true,
+        end: true,
+        seconds: true,
+        slotId: true,
+      },
     });
     if (!entry) throw new NotFoundException('Apontamento não encontrado');
     if (!entry.end) bad('Pare o relógio antes de corrigir');
@@ -1008,11 +1190,21 @@ export class ProductionTaskService {
       viewer.companyId,
       dto.collaboratorId,
     );
+    const slotId =
+      dto.slotId === undefined
+        ? entry.slotId
+        : await this.slotOf(id, dto.slotId);
+    const moved = slotId !== entry.slotId;
     const before = {
       collaboratorId: entry.employeeId,
       minutes: round1(entry.seconds / 60),
+      ...(moved ? { slotId: entry.slotId } : {}),
     };
-    const after = { collaboratorId: person.id, minutes: round1(dto.minutes) };
+    const after = {
+      collaboratorId: person.id,
+      minutes: round1(dto.minutes),
+      ...(moved ? { slotId } : {}),
+    };
     await this.prisma.$transaction(async (tx) => {
       await tx.productionTimeEntry.update({
         where: { id: entryId },
@@ -1021,6 +1213,7 @@ export class ProductionTaskService {
           employeeId: person.id,
           source: 'CORRECTION',
           note,
+          slotId,
         },
       });
       await tx.productionTimeCorrection.create({
@@ -1038,7 +1231,7 @@ export class ProductionTaskService {
         tx,
         viewer,
         id,
-        `Corrigiu o apontamento: ${before.minutes} min → ${after.minutes} min (${person.name}). ${note}`,
+        `Corrigiu o apontamento: ${before.minutes} min → ${after.minutes} min (${person.name})${moved ? (slotId ? ', passou para outro bloco' : ', passou para o bloco 1') : ''}. ${note}`,
         [...new Set([before.collaboratorId, after.collaboratorId])],
       );
     });
@@ -1059,14 +1252,7 @@ export class ProductionTaskService {
     const seconds = Math.round(dto.minutes * 60);
     const minutes = round1(dto.minutes);
     // Quem e quanto em cada bloco (GP-52): o bloco precisa ser da tarefa
-    const slotId = dto.slotId
-      ? ((
-          await this.prisma.productionTaskSlot.findFirst({
-            where: { id: dto.slotId, taskId: id },
-            select: { id: true },
-          })
-        )?.id ?? bad('Bloco não encontrado'))
-      : null;
+    const slotId = await this.slotOf(id, dto.slotId);
     await this.prisma.$transaction(async (tx) => {
       const entry = await tx.productionTimeEntry.create({
         data: {

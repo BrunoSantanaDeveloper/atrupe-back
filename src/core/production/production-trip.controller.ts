@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { AbacService } from '../auth/abac/abac.service';
 import { HasPermission } from '../auth/abac/has-permission.decorator';
 import { HasAnyPermission } from '../auth/abac/has-any-permission.decorator';
 import { PermissionsGuard } from '../auth/abac/permissions.guard';
@@ -45,7 +46,13 @@ export class ProductionTripController {
   constructor(
     private readonly access: ProductionAccessService,
     private readonly trips: ProductionTripService,
+    private readonly abac: AbacService,
   ) {}
+
+  /** Quem agenda os veículos marca qualquer saída; os outros, só a sua. */
+  private scheduler(req) {
+    return this.abac.hasPermission(req.user, 'edit', VEHICLES);
+  }
 
   @Get()
   @HasAnyPermission(
@@ -87,9 +94,15 @@ export class ProductionTripController {
     { action: 'view', resource: PRODUCTION },
     { action: 'edit', resource: VEHICLES },
   )
+  // O motorista, a equipe ou quem agenda os veículos (o serviço confere)
   @ApiOperation({ summary: 'Saiu: a partida e o odômetro' })
   async start(@Req() req, @Param('id') id: string, @Body() dto: StartTripDto) {
-    return this.trips.start(await this.access.viewer(req.user), id, dto);
+    return this.trips.start(
+      await this.access.viewer(req.user),
+      id,
+      dto,
+      await this.scheduler(req),
+    );
   }
 
   @Post(':id/stop/:stopId')
@@ -97,6 +110,7 @@ export class ProductionTripController {
     { action: 'view', resource: PRODUCTION },
     { action: 'edit', resource: VEHICLES },
   )
+  // O motorista, a equipe ou quem agenda os veículos (o serviço confere)
   @ApiOperation({ summary: 'Conclui uma parada: feita ou não feita' })
   async stop(
     @Req() req,
@@ -109,6 +123,7 @@ export class ProductionTripController {
       id,
       stopId,
       dto,
+      await this.scheduler(req),
     );
   }
 
@@ -131,9 +146,10 @@ export class ProductionTripController {
   }
 
   // Pedir veículo: qualquer setor (a produção, a agenda, o financeiro, as
-  // vendas)
+  // vendas) e quem agenda os veículos (a tela de Veículos)
   @Post('request')
   @HasAnyPermission(
+    { action: 'edit', resource: VEHICLES },
     { action: 'view', resource: PRODUCTION },
     { action: 'view', resource: 'production:delivery_schedule' },
     { action: 'view', resource: 'financial:flow' },

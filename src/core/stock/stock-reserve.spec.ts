@@ -1,4 +1,5 @@
 import { reservedByKey } from './stock-consumption';
+import { StockService } from './stock.service';
 
 /** A reserva do FULL (item 23; Maicol, 23/11/2026). */
 describe('a reserva das vendas aprovadas em andamento', () => {
@@ -52,5 +53,75 @@ describe('a reserva das vendas aprovadas em andamento', () => {
         },
       }),
     );
+  });
+});
+
+describe('o saldo do estoque com a reserva', () => {
+  const setup = (full: boolean) => {
+    const prisma = {
+      stockItem: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 's1',
+            key: 'lona|',
+            materialId: 'lona',
+            variationId: null,
+            quantity: 30,
+            minimum: 0,
+            averageCost: 100,
+            lastEntryCost: 100,
+            lastEntryDate: null,
+            material: { name: 'Lona', unit: 'M2' },
+            variation: null,
+          },
+        ]),
+      },
+      quotation: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'q1',
+            quotationProduct: [
+              {
+                origin: 'MATERIAL',
+                quantity: 10,
+                materialId: 'lona',
+                materialVariationId: null,
+                snapshot: null,
+                lines: [],
+              },
+            ],
+          },
+        ]),
+      },
+      stockMovement: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const plans = { hasFeature: jest.fn().mockResolvedValue(full) };
+    const service = new StockService(
+      prisma as never,
+      {} as never,
+      plans as never,
+    );
+    return { service, prisma, plans };
+  };
+
+  it('no FULL (compras e lotes): o reservado e o disponível', async () => {
+    const { service, plans } = setup(true);
+    const { data } = await service.list('c1', {}, false);
+    expect(plans.hasFeature).toHaveBeenCalledWith('c1', 'purchasing');
+    expect(data[0]).toMatchObject({
+      quantity: 30,
+      reserved: 10,
+      available: 20,
+    });
+  });
+
+  it('sem a chave: não lê as vendas abertas e devolve só o saldo', async () => {
+    const { service, prisma } = setup(false);
+    const { data } = await service.list('c1', {}, false);
+    expect(prisma.quotation.findMany).not.toHaveBeenCalled();
+    expect(prisma.stockMovement.findMany).not.toHaveBeenCalled();
+    expect(data[0].quantity).toBe(30);
+    expect(data[0]).not.toHaveProperty('reserved');
+    expect(data[0]).not.toHaveProperty('available');
   });
 });

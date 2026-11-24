@@ -248,6 +248,43 @@ describe('ProductAssemblyService', () => {
     ]);
   });
 
+  it('o fluxo encadeia cada etapa à anterior, na ordem dos ícones', async () => {
+    prisma.product.findFirst
+      .mockResolvedValueOnce(product())
+      .mockResolvedValueOnce({
+        productionStages: JSON.stringify([
+          { id: 's-1', isActive: true },
+          { id: 's-2', isActive: true },
+          { id: 's-3', isActive: true },
+        ]),
+      });
+    prisma.companySector.findMany = jest.fn().mockResolvedValue([
+      { id: 's-3', name: 'Acabamento' },
+      { id: 's-1', name: 'Criação' },
+      { id: 's-2', name: 'Impressão' },
+    ]);
+
+    expect(await service.fromFlow(ctx)).toEqual({ created: 3 });
+    const [first, second, third] = tx.assemblyBlock.create.mock.calls.map(
+      ([arg]) => arg.data,
+    );
+    expect([first.name, second.name, third.name]).toEqual([
+      'Criação',
+      'Impressão',
+      'Acabamento',
+    ]);
+    // A primeira começa o caminho; cada seguinte espera a anterior (no
+    // ELITE, não nascem todas liberadas)
+    expect(first.dependsOn).toEqual([]);
+    expect(first.baseBlockId).toBeNull();
+    expect(first.rules).toEqual(BASE_RULES);
+    expect(second.dependsOn).toEqual([first.id]);
+    expect(second.baseBlockId).toBe(first.id);
+    expect(second.rules).toEqual(FINISHING_RULES);
+    expect(third.dependsOn).toEqual([second.id]);
+    expect(third.baseBlockId).toBe(second.id);
+  });
+
   it('o fluxo não mexe na composição que já tem etapas', async () => {
     prisma.productAssembly.findUnique.mockResolvedValue(
       assembly([processBlock()]),

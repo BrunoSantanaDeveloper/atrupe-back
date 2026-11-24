@@ -11,9 +11,34 @@ describe('a baixa conjunta (VS-2)', () => {
     },
   ];
 
-  it('a área do trabalho é a dos materiais vendidos em m²', () => {
-    expect(areaOf(consumption(3))).toBe(3);
-    expect(areaOf([{ resourceId: 'machine:x', unit: 'h' }])).toBeNull();
+  it('a área do trabalho é a do material do rolo, vendido em m²', () => {
+    const lona = { replaces: null, lot: 'lona|' };
+    expect(areaOf(consumption(3), lona)).toBe(3);
+    expect(areaOf([{ resourceId: 'machine:x', unit: 'h' }], lona)).toBeNull();
+    // O rolo de outro material, sem troca: a área não é conhecida
+    expect(areaOf(consumption(3), { replaces: null, lot: 'vinil|' })).toBe(
+      null,
+    );
+    // O material por unidade não dá área
+    expect(areaOf(consumption(3), { replaces: 'ilhos|', lot: 'lona|' })).toBe(
+      null,
+    );
+  });
+
+  it('a lona e a laminação na mesma etapa: conta só o material do rolo', () => {
+    const both = [
+      ...consumption(3),
+      {
+        resourceId: 'material:laminacao',
+        resource: 'Laminação',
+        unit: 'm²',
+        quantity: 3,
+      },
+    ];
+    // Antes: 6 m² (as duas somadas)
+    expect(areaOf(both, { replaces: null, lot: 'lona|' })).toBe(3);
+    // O rolo de outra lona no lugar da vendida: a área da vendida
+    expect(areaOf(both, { replaces: 'lona|', lot: 'lona-b|' })).toBe(3);
   });
 
   it('divide o comprimento pela área de cada trabalho e fecha na soma', () => {

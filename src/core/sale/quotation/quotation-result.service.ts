@@ -305,23 +305,47 @@ export class QuotationResultService {
         trip: { status: { not: 'CANCELED' } },
       },
       select: {
+        taskId: true,
         plannedKm: true,
         km: true,
         description: true,
         trip: { select: { number: true, status: true } },
       },
     });
+    // O previsto é da tarefa (o km vendido), uma vez só: a parada não feita
+    // e reagendada em outra saída não conta de novo. Vale o da saída mais
+    // recente. O rodado é de cada saída fechada (o veículo andou nas duas).
+    const plannedByTask = new Map<string, { trip: number; km: number }>();
+    for (const stop of stops) {
+      const key = stop.taskId ?? stop.description;
+      const current = plannedByTask.get(key);
+      if (!current || stop.trip.number > current.trip) {
+        plannedByTask.set(key, {
+          trip: stop.trip.number,
+          km: stop.plannedKm || 0,
+        });
+      }
+    }
+    // Uma casa: a soma de décimos não sai como 30.000000000000004
+    const km1 = (value: number) => Math.round(value * 10) / 10;
     const vehicleKm = stops.length
       ? {
-          planned: stops.reduce((sum, stop) => sum + (stop.plannedKm || 0), 0),
-          driven: stops
-            .filter((stop) => stop.trip.status === 'DONE')
-            .reduce((sum, stop) => sum + (stop.km || 0), 0),
+          planned: km1(
+            [...plannedByTask.values()].reduce((sum, row) => sum + row.km, 0),
+          ),
+          driven: km1(
+            stops
+              .filter((stop) => stop.trip.status === 'DONE')
+              .reduce((sum, stop) => sum + (stop.km || 0), 0),
+          ),
           stops: stops.map((stop) => ({
             trip: stop.trip.number,
             description: stop.description,
-            planned: stop.plannedKm,
-            driven: stop.trip.status === 'DONE' ? stop.km : null,
+            planned: stop.plannedKm === null ? null : km1(stop.plannedKm),
+            driven:
+              stop.trip.status === 'DONE' && stop.km !== null
+                ? km1(stop.km)
+                : null,
           })),
         }
       : null;
