@@ -2,7 +2,9 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  forwardRef,
   HttpException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -67,6 +69,10 @@ export class OrderRedoService {
 
   constructor(
     private readonly prisma: PrismaService,
+    // forwardRef: os arquivos se importam em ciclo (quotation-crud →
+    // quotation-workflow → order-redo → quotation-crud). Sem ele, conforme a
+    // ordem de carga, a classe chega undefined e a API não sobe (24/11/2026)
+    @Inject(forwardRef(() => QuotationCrudService))
     private readonly crud: QuotationCrudService,
     private readonly orders: OrderService,
     private readonly plan: PlanControlService,
