@@ -20,7 +20,15 @@ export const PERMISSION_CATALOG: Readonly<Record<string, readonly string[]>> = {
   dashboard: ['financial', 'sales', 'quotations', 'rankings'],
   // quotation_result: o resultado previsto da venda (ORC-8), tela de
   // método desligada no perfil de vendedor
-  sale: ['quotation', 'other_quotation', 'order', 'quotation_result'],
+  // order_redo_approve: aprovar o refazer da O.S. com produção já feita
+  // (GP-51, 23/11/2026)
+  sale: [
+    'quotation',
+    'other_quotation',
+    'order',
+    'quotation_result',
+    'order_redo_approve',
+  ],
   // payable, receivable, pdv e checkout: as telas já pediam e a tela de
   // cargos passou a conceder (decisão do PO, 14/10)
   financial: [

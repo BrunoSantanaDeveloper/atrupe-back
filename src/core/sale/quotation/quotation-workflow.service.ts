@@ -187,6 +187,8 @@ export type ApprovalReprocessResult = {
  * QuotationWorkflowService
  * Responsável por mudanças de status e workflow do orçamento.
  */
+import { OrderRedoService } from './order-redo.service';
+
 @Injectable()
 export class QuotationWorkflowService implements PaymentHoldReleaser {
   private readonly logger = new Logger(QuotationWorkflowService.name);
@@ -199,6 +201,7 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
     private productSale: ProductSaleService,
     private credit: CreditCheckService,
     private production: ProductionProjectService,
+    private redo: OrderRedoService,
   ) {}
 
   /**
@@ -1071,6 +1074,8 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
         'productionProject',
         () => this.production.ensureFromQuotation(quotationId),
       ],
+      // A O.S. que refaz outra (GP-51): as etapas já feitas na antiga
+      ['redoCarryOver', () => this.redo.carryOver(quotationId)],
     ];
     const failed: ApprovalReprocessResult['failed'] = [];
     for (const [step, run] of steps) {

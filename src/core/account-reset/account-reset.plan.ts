@@ -104,6 +104,12 @@ export const RESET_STEPS: ResetStep[] = [
     where: (companyId) => ({ companyId }),
   },
   {
+    // Os pedidos de refazer a O.S. (GP-51)
+    model: 'OrderRedo',
+    group: 'documents',
+    where: (companyId) => ({ companyId }),
+  },
+  {
     // As saídas dos veículos (fase 1): as paradas saem com a saída
     model: 'ProductionTrip',
     group: 'documents',

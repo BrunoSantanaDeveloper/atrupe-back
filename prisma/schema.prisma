@@ -5791,3 +5791,49 @@ enum ProductionVehicleRequestStatus {
   SCHEDULED
   CANCELED
 }
+
+/// Refazer a O.S. (GP-51; Maicol, 23/11/2026): a O.S. aprovada não se
+/// altera; refazer cancela a atual e cria a nova (cópia em digitação),
+/// ligada a ela. Com produção ou material já baixado, outra pessoa aprova.
+/// Aprovada a nova, as etapas feitas na antiga passam para a nova pelo item
+/// correspondente; o que sobra fica como perda (ou é cobrado do cliente).
+model OrderRedo {
+  id              String          @id @default(uuid())
+  companyId       String
+  orderId         String
+  oldQuotationId  String
+  newQuotationId  String?
+  reason          String
+  excess          OrderRedoExcess @default(COMPANY)
+  status          OrderRedoStatus @default(PENDING_APPROVAL)
+  needsApproval   Boolean         @default(false)
+  /// O que já tinha sido feito: etapas concluídas e movimentos de estoque
+  produced        Json?
+  requestedById   String
+  requestedByName String
+  approvedById    String?
+  approvedByName  String?
+  rejectReason    String?
+  carriedAt       DateTime?
+  carried         Int             @default(0)
+  /// O excedente produzido: item, feito, a nova quantidade e a sobra
+  lossItems       Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([companyId, status])
+  @@index([orderId])
+  @@index([newQuotationId])
+  @@map("order_redos")
+}
+
+enum OrderRedoExcess {
+  CLIENT
+  COMPANY
+}
+
+enum OrderRedoStatus {
+  PENDING_APPROVAL
+  EXECUTED
+  REJECTED
+}

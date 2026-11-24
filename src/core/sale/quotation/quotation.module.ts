@@ -30,6 +30,9 @@ import { FollowUpService } from './follow-up/follow-up.service';
 import { FollowUpController } from './follow-up/follow-up.controller';
 import { PAYMENT_HOLD_RELEASER } from './payment-hold';
 
+import { OrderRedoController } from './order-redo.controller';
+import { OrderRedoService } from './order-redo.service';
+
 @Module({
   imports: [
     PrismaModule,
@@ -49,7 +52,12 @@ import { PAYMENT_HOLD_RELEASER } from './payment-hold';
     ProductionModule,
   ],
   // A venda rápida (Fase 7.3) é o mesmo orçamento
-  controllers: [QuotationController, QuickSaleController, FollowUpController],
+  controllers: [
+    QuotationController,
+    QuickSaleController,
+    FollowUpController,
+    OrderRedoController,
+  ],
   providers: [
     QuotationService,
     QuotationCrudService,
@@ -61,6 +69,7 @@ import { PAYMENT_HOLD_RELEASER } from './payment-hold';
     QuotationLinesService,
     QuotationResultService,
     CreditCheckService,
+    OrderRedoService,
     // O item montado na hora (ORC-11, Fase 4.5)
     ComposedItemService,
     QuickSaleService,

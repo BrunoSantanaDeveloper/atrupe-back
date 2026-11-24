@@ -199,6 +199,8 @@ const mockProduction = {
   summaryOf: jest.fn().mockResolvedValue(null),
 };
 
+import { OrderRedoService } from './order-redo.service';
+
 describe('QuotationWorkflowService', () => {
   let service: QuotationWorkflowService;
   let prisma: ReturnType<typeof createMockPrismaService>;
@@ -229,6 +231,11 @@ describe('QuotationWorkflowService', () => {
         { provide: ProductSaleService, useValue: mockProductSale },
         { provide: CreditCheckService, useValue: mockCredit },
         { provide: ProductionProjectService, useValue: mockProduction },
+        // Refazer a O.S. (GP-51): o passo depois da aprovação
+        {
+          provide: OrderRedoService,
+          useValue: { carryOver: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 
