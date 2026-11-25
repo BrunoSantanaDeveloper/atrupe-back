@@ -1918,6 +1918,8 @@ model Product {
 model ProductItem {
   id                     String                 @id @default(uuid())
   name                   String
+  /// A ordem das unidades de venda no cadastro (Lista Lite 24/11, item 3)
+  position               Int                    @default(0)
   productId              String
   unitCost               Float?
   salePrice              Float?

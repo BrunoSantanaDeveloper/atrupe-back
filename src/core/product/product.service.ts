@@ -206,7 +206,9 @@ export class ProductService {
 
       // Processar itens do produto
       const items =
-        createProductDto.items?.map((item) => ({
+        createProductDto.items?.map((item, index) => ({
+          // A ordem do cadastro (Lista Lite 24/11, item 3)
+          position: index,
           name: item.name,
           unitKind: item.unitKind,
           unitCost: item.unitCost,
@@ -489,10 +491,10 @@ export class ProductService {
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
+        // Na ordem em que foram cadastradas (Lista Lite 24/11, item 3): por
+        // nome, a segunda unidade de venda vinha antes da primeira
         items: {
-          orderBy: {
-            name: 'asc',
-          },
+          orderBy: [{ position: 'asc' }, { name: 'asc' }],
         },
         // Em ordem de nome: o primeiro é o fornecedor que recebe a despesa do
         // terceirizado quando o item não escolhe outro (T-3, patch 39)
@@ -675,8 +677,10 @@ export class ProductService {
           suppliers: product._count?.suppliers ?? 0,
         },
       );
-      const items = updateProductDto.items?.map((item) => ({
+      const items = updateProductDto.items?.map((item, index) => ({
         id: item.id,
+        // A ordem em que vêm na tela é a ordem do cadastro (item 3, 24/11)
+        position: index,
         name: item.name,
         unitKind: item.unitKind,
         unitCost: item.unitCost,
