@@ -12,6 +12,11 @@ import { Prisma, ProductStructure } from '@prisma/client';
 
 export const STRUCTURE_MISMATCH =
   'A estrutura e o terceirizado não combinam: o produto terceirizado tem a estrutura Terceirizado';
+// O tipo do produto (a estrutura) trava depois que ele entra num orçamento
+// (Maicol, 25/11/2026): mudar o tipo mudaria como ele calcula daqui para
+// frente e o que a venda antiga mostra
+export const STRUCTURE_LOCKED =
+  'Este produto já foi usado em orçamento e o tipo dele não muda. Para outro tipo, duplique o produto ou inative este e cadastre um novo';
 export const OUTSOURCED_BLOCK_REQUIRED =
   'Informe o fornecedor e o custo do terceirizado';
 import { JsonArray } from '@prisma/client/runtime/library';
@@ -677,6 +682,18 @@ export class ProductService {
           suppliers: product._count?.suppliers ?? 0,
         },
       );
+      const nextStructure = (outsourced as { structure?: ProductStructure })
+        .structure;
+      if (
+        product.structure &&
+        nextStructure &&
+        nextStructure !== product.structure
+      ) {
+        const sold = await this.prisma.quotationProduct.count({
+          where: { productId: id },
+        });
+        if (sold > 0) throw new BadRequestException(STRUCTURE_LOCKED);
+      }
       const items = updateProductDto.items?.map((item, index) => ({
         id: item.id,
         // A ordem em que vêm na tela é a ordem do cadastro (item 3, 24/11)

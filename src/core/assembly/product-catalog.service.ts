@@ -39,7 +39,7 @@ export class ProductCatalogService {
    */
   async usage(companyId: string, productId: string) {
     await this.exists(companyId, productId);
-    const [blocks, items] = await Promise.all([
+    const [blocks, items, sold] = await Promise.all([
       this.prisma.assemblyBlock.findMany({
         // Só os produtos: o rascunho do item montado não entra (ORC-11)
         where: {
@@ -79,8 +79,14 @@ export class ProductCatalogService {
           },
         },
       }),
+      // Em quantos itens de orçamento ele já entrou, de qualquer situação:
+      // com algum, o tipo do produto trava (25/11/2026)
+      this.prisma.quotationProduct.count({
+        where: { productId, quotation: { companyId } },
+      }),
     ]);
     return {
+      soldCount: sold,
       asPart: blocks.map((block) => ({
         productId: block.assembly.productId,
         name: block.assembly.product.name,

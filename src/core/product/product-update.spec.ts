@@ -112,6 +112,7 @@ describe('ProductService.update: a estrutura do produto', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       supplier: { count: jest.fn().mockResolvedValue(1) },
+      quotationProduct: { count: jest.fn().mockResolvedValue(0) },
     };
     service = new ProductService(prisma, {} as any);
   });
@@ -175,5 +176,28 @@ describe('ProductService.update: a estrutura do produto', () => {
     prisma.product.findUnique.mockResolvedValue(stored({ structure: 'SHEET' }));
     await service.update('pr-1', { isOutsourced: false } as any);
     expect(data()).toMatchObject({ structure: 'SHEET', isOutsourced: false });
+  });
+
+  // O tipo trava depois de usado em orçamento (25/11/2026)
+  it('produto já usado em orçamento não troca de tipo', async () => {
+    prisma.quotationProduct.count.mockResolvedValue(3);
+    await expect(
+      service.update('pr-1', { structure: 'SHEET' } as any),
+    ).rejects.toThrow('já foi usado em orçamento');
+    expect(prisma.product.update).not.toHaveBeenCalled();
+  });
+
+  it('produto usado pode ser editado sem trocar o tipo', async () => {
+    prisma.quotationProduct.count.mockResolvedValue(3);
+    await service.update('pr-1', {
+      structure: 'STANDARD',
+      technicalDescription: 'Lona 440 g',
+    } as any);
+    expect(data()).toMatchObject({ technicalDescription: 'Lona 440 g' });
+  });
+
+  it('produto nunca usado troca de tipo', async () => {
+    await service.update('pr-1', { structure: 'SHEET' } as any);
+    expect(data()).toMatchObject({ structure: 'SHEET' });
   });
 });
