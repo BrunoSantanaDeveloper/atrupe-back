@@ -14,6 +14,18 @@ export const PLATFORM_TENANT = 'plataforma';
 
 const STATE_KEY = (tenantId: string) => `atendimento.estado.${tenantId}`;
 const PLATFORM_SETTINGS_KEY = 'atendimento.robo.plataforma';
+const CUSTOMER_CONTACT_KEY = 'atendimento.contato.cliente';
+
+/**
+ * O número que os clientes chamam pelo sistema: a caixa escolhida pelo
+ * superadmin (nula enquanto ele não escolhe) e o último número que a
+ * conferência viu em cada caixa. O do WhatsApp Web não fica no estado do kit:
+ * vem da sessão do OpenWA.
+ */
+export interface CustomerContactSetting {
+  inbox_id: number | null;
+  numeros: Record<string, string>;
+}
 
 /** A equipe do suporte da plataforma: os superadmins ativos. */
 const ACTIVE_SUPERADMIN = {
@@ -125,6 +137,36 @@ export class AtendimentoStore {
       create: { key: PLATFORM_SETTINGS_KEY, value },
       update: { value },
     });
+  }
+
+  async loadCustomerContact(): Promise<CustomerContactSetting> {
+    const row = await this.prisma.systemSetting.findUnique({
+      where: { key: CUSTOMER_CONTACT_KEY },
+    });
+    const value = (row?.value ?? {}) as Partial<CustomerContactSetting>;
+    return {
+      inbox_id: Number.isInteger(value.inbox_id) ? value.inbox_id! : null,
+      numeros: value.numeros ?? {},
+    };
+  }
+
+  /** Grava só o que mudou, relendo antes: a conferência e o superadmin escrevem campos diferentes. */
+  async saveCustomerContact(
+    change: Partial<CustomerContactSetting>,
+  ): Promise<CustomerContactSetting> {
+    const current = await this.loadCustomerContact();
+    const next: CustomerContactSetting = {
+      inbox_id:
+        change.inbox_id === undefined ? current.inbox_id : change.inbox_id,
+      numeros: { ...current.numeros, ...(change.numeros ?? {}) },
+    };
+    const value = next as unknown as Prisma.InputJsonValue;
+    await this.prisma.systemSetting.upsert({
+      where: { key: CUSTOMER_CONTACT_KEY },
+      create: { key: CUSTOMER_CONTACT_KEY, value },
+      update: { value },
+    });
+    return next;
   }
 
   /**

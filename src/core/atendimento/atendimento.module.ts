@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MailModule } from '../mail/mail.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { AtendimentoContatoController } from './atendimento-contato.controller';
 import { AtendimentoEquipeCron } from './atendimento-equipe.cron';
 import { AtendimentoNumeroCron } from './atendimento-numero.cron';
 import { AtendimentoRoboController } from './atendimento-robo.controller';
@@ -20,7 +21,11 @@ import { AtendimentoStore } from './atendimento.store';
  */
 @Module({
   imports: [SubscriptionsModule, MailModule],
-  controllers: [AtendimentoController, AtendimentoRoboController],
+  controllers: [
+    AtendimentoContatoController,
+    AtendimentoController,
+    AtendimentoRoboController,
+  ],
   providers: [
     AtendimentoStore,
     AtendimentoTools,
