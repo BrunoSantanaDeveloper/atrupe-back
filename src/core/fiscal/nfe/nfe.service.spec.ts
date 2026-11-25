@@ -1152,6 +1152,150 @@ describe('NfeService', () => {
      * O unitário saía do líquido e o desconto era abatido de novo — e o
      * percentual (10) virava R$ 0,10. A nota cobrava menos que a venda.
      */
+    /**
+     * O desconto da venda vive em dois lugares: no item e no fechamento da
+     * O.S. (quotation_payments). A nota só enxergava o do item: a O.S. 3316
+     * da INOVAMAIS, fechada em R$ 30.000, saía com nota de R$ 36.192,60.
+     */
+    describe('desconto do documento e duplicatas da O.S.', () => {
+      const comFechamento = (pagamento: any, linhas?: any[]) => ({
+        ...mockQuotation,
+        quotationProduct: linhas ?? [
+          {
+            ...mockQuotation.quotationProduct[0],
+            quantity: 1,
+            totalValue: 10000,
+            finalValue: 10000,
+            items: [],
+          },
+        ],
+        quotationPayment: {
+          ...(mockQuotation as any).quotationPayment,
+          ...pagamento,
+        },
+      });
+
+      it('rateia o desconto do fechamento entre os itens', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comFechamento({ discountTotal: 2500, quotationInstallment: [] }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0]).toMatchObject({ discount: 25, totalValue: 75 });
+        expect(result.totais).toMatchObject({
+          valorProdutos: 100,
+          valorDesconto: 25,
+          valorNota: 75,
+        });
+      });
+
+      it('soma ao desconto que a linha já tinha', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comFechamento({ discountTotal: 1000, quotationInstallment: [] }, [
+            {
+              ...mockQuotation.quotationProduct[0],
+              quantity: 1,
+              totalValue: 10000,
+              finalValue: 9000,
+              items: [],
+            },
+          ]),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0]).toMatchObject({ discount: 20, totalValue: 80 });
+        expect(result.totais.valorNota).toBe(80);
+      });
+
+      it('sem desconto no fechamento, nada muda', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comFechamento({ discountTotal: 0, quotationInstallment: [] }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.items[0]).toMatchObject({ discount: 0, totalValue: 100 });
+        expect(result.totais.valorNota).toBe(100);
+      });
+
+      /** As parcelas da O.S. são as duplicatas que a DANFE mostra. */
+      it('traz as parcelas da O.S. como duplicatas, em ordem de vencimento', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comFechamento({
+            discountTotal: 0,
+            quotationInstallment: [
+              { value: 6000, dueDate: new Date('2026-12-20T03:00:00.000Z') },
+              { value: 4000, dueDate: new Date('2026-11-20T03:00:00.000Z') },
+            ],
+          }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.duplicatas).toEqual([
+          { numero: '001', dataVencimento: '2026-11-20', valor: 40 },
+          { numero: '002', dataVencimento: '2026-12-20', valor: 60 },
+        ]);
+      });
+
+      /**
+       * A SEFAZ confere a soma das duplicatas contra o valor da nota: trazer
+       * parcelas de outro valor trocaria o campo vazio por uma rejeição.
+       */
+      it('não traz as parcelas quando a soma não bate com a nota', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comFechamento({
+            discountTotal: 0,
+            quotationInstallment: [
+              { value: 12000, dueDate: new Date('2026-12-20T03:00:00.000Z') },
+            ],
+          }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.duplicatas).toEqual([]);
+      });
+
+      /** O caso completo: desconto rateado e parcelas que fecham no total. */
+      it('desconto rateado e parcelas batendo com o total da nota', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comFechamento({
+            discountTotal: 2500,
+            quotationInstallment: [
+              { value: 2500, dueDate: new Date('2026-11-20T03:00:00.000Z') },
+              { value: 5000, dueDate: new Date('2026-12-20T03:00:00.000Z') },
+            ],
+          }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.totais.valorNota).toBe(75);
+        expect(result.duplicatas.map((d: any) => d.valor)).toEqual([25, 50]);
+      });
+    });
+
     describe('desconto da linha', () => {
       const comLinha = (over = {}) => ({
         ...mockQuotation,

@@ -119,6 +119,81 @@ export function valoresDaLinhaParaNota(
   };
 }
 
+/**
+ * Item que pode receber o desconto do documento: além dos valores da linha,
+ * carrega o vDesc e o líquido que a tela mostra.
+ */
+export interface ItemParaRateio extends ItemDaEmissao {
+  discount?: number | null;
+  totalValue?: number | null;
+}
+
+/**
+ * Distribui o desconto do DOCUMENTO entre os itens, somando ao vDesc de cada
+ * um.
+ *
+ * O desconto da venda vive em dois lugares: no item (`quotation_products`) e
+ * no documento (`quotation_payments`, onde o vendedor arredonda o total da
+ * negociação). A nota só enxergava o do item, então uma O.S. fechada em
+ * R$ 30.000 saía com nota de R$ 36.192,60 — o cliente pagava imposto sobre
+ * uma venda que não fez.
+ *
+ * O desconto não pode ir ao total sozinho: a SEFAZ confere
+ * `vNF = Σ vProd − Σ vDesc`, com o vDesc da nota igual à soma dos itens. Por
+ * isso ele é rateado proporcionalmente ao líquido de cada item, e a sobra do
+ * arredondamento fica com o último item que tem líquido, para a soma fechar
+ * no centavo.
+ *
+ * Desconto maior que o líquido da nota é limitado ao líquido: vDesc maior que
+ * vProd não existe no leiaute.
+ */
+export function ratearDescontoDoDocumento<T extends ItemParaRateio>(
+  itens: T[],
+  descontoDoDocumento: number,
+): T[] {
+  const desconto = arredondar(Math.max(0, descontoDoDocumento || 0), 2);
+  if (desconto <= 0 || itens.length === 0) return itens;
+
+  const liquidos = itens.map((item) => {
+    const { valorProduto, desconto: vDesc } = valoresDoItemNoXml(item);
+    return arredondar(valorProduto - vDesc, 2);
+  });
+  const totalLiquido = arredondar(
+    liquidos.reduce((soma, valor) => soma + valor, 0),
+    2,
+  );
+  if (totalLiquido <= 0) return itens;
+
+  const aRatear = Math.min(desconto, totalLiquido);
+  const ultimoComLiquido = liquidos.reduce(
+    (ultimo, liquido, indice) => (liquido > 0 ? indice : ultimo),
+    -1,
+  );
+
+  let distribuido = 0;
+  return itens.map((item, indice) => {
+    const liquido = liquidos[indice];
+    if (liquido <= 0) return item;
+
+    const proporcional =
+      indice === ultimoComLiquido
+        ? arredondar(aRatear - distribuido, 2)
+        : arredondar((aRatear * liquido) / totalLiquido, 2);
+    // Nem com a sobra do arredondamento o item desconta mais do que tem.
+    const parte = Math.min(Math.max(proporcional, 0), liquido);
+    distribuido = arredondar(distribuido + parte, 2);
+    if (parte <= 0) return item;
+
+    return {
+      ...item,
+      discount: arredondar((item.discount || 0) + parte, 2),
+      ...(item.totalValue === undefined || item.totalValue === null
+        ? {}
+        : { totalValue: arredondar(liquido - parte, 2) }),
+    };
+  });
+}
+
 /** Item como a tela manda para a emissão: quantidade e valores em reais. */
 export interface ItemDaEmissao {
   quantity: number;

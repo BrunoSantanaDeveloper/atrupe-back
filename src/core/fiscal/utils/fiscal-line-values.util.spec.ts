@@ -1,5 +1,6 @@
 import {
   arredondar,
+  ratearDescontoDoDocumento,
   totaisDosItens,
   valoresDaLinhaParaNota,
   valoresDoItemNoXml,
@@ -250,6 +251,100 @@ describe('valoresDoItemNoXml e totaisDosItens', () => {
       valorSeguro: 0,
       valorTotal: 190,
     });
+  });
+});
+
+/**
+ * O desconto da venda vive em dois lugares: no item e no fechamento da O.S.
+ * A nota só enxergava o do item — a O.S. 3316 da INOVAMAIS, fechada em
+ * R$ 30.000, saía por R$ 36.192,60.
+ */
+describe('ratearDescontoDoDocumento', () => {
+  /** Item da nota: valores em reais, como a tela manda. */
+  const item = (quantity: number, unitValue: number, discount = 0) => ({
+    quantity,
+    unitValue,
+    discount,
+    totalValue: arredondar(quantity * unitValue - discount, 2),
+  });
+
+  it('não mexe nos itens sem desconto de documento', () => {
+    const itens = [item(2, 100), item(1, 50)];
+
+    for (const desconto of [0, -5, undefined as any, null as any]) {
+      expect(ratearDescontoDoDocumento(itens, desconto)).toBe(itens);
+    }
+  });
+
+  it('distribui proporcionalmente ao líquido de cada item', () => {
+    const itens = [item(1, 300), item(1, 100)];
+
+    const [primeiro, segundo] = ratearDescontoDoDocumento(itens, 40);
+
+    expect(primeiro.discount).toBe(30);
+    expect(segundo.discount).toBe(10);
+    expect(primeiro.totalValue).toBe(270);
+    expect(segundo.totalValue).toBe(90);
+  });
+
+  it('soma ao desconto que o item já tinha', () => {
+    const itens = [item(1, 100, 10)];
+
+    const [unico] = ratearDescontoDoDocumento(itens, 20);
+
+    expect(unico.discount).toBe(30);
+    expect(unico.totalValue).toBe(70);
+  });
+
+  /**
+   * A SEFAZ confere vNF contra a soma dos itens: a sobra do arredondamento
+   * tem de ficar com algum item, ou a nota fecha um centavo fora.
+   */
+  it('fecha no centavo quando a divisão não é exata', () => {
+    const itens = [item(1, 100), item(1, 100), item(1, 100)];
+
+    const rateado = ratearDescontoDoDocumento(itens, 10);
+
+    const somaDescontos = arredondar(
+      rateado.reduce((total, i) => total + (i.discount || 0), 0),
+      2,
+    );
+    expect(somaDescontos).toBe(10);
+    expect(rateado.map((i) => i.discount)).toEqual([3.33, 3.33, 3.34]);
+  });
+
+  /** O caso real: 36.192,60 de líquido, 6.192,60 de desconto, 30.000 de nota. */
+  it('reproduz o fechamento da O.S. 3316', () => {
+    const liquidos = [
+      11898, 8392.05, 8069.85, 412.2, 2952, 3861, 432, 81, 94.5,
+    ];
+    const itens = liquidos.map((valor) => item(1, valor));
+
+    const rateado = ratearDescontoDoDocumento(itens, 6192.6);
+
+    const { valorTotal } = totaisDosItens(rateado);
+    expect(valorTotal).toBe(30000);
+  });
+
+  it('não desconta mais do que o líquido da nota', () => {
+    const itens = [item(1, 100), item(1, 50)];
+
+    const rateado = ratearDescontoDoDocumento(itens, 500);
+
+    const { valorTotal } = totaisDosItens(rateado);
+    expect(valorTotal).toBe(0);
+    expect(
+      rateado.every((i) => (i.discount || 0) <= i.quantity * i.unitValue),
+    ).toBe(true);
+  });
+
+  it('ignora item sem líquido, que não tem de onde descontar', () => {
+    const itens = [item(1, 0), item(1, 100)];
+
+    const [zerado, cheio] = ratearDescontoDoDocumento(itens, 10);
+
+    expect(zerado.discount).toBe(0);
+    expect(cheio.discount).toBe(10);
   });
 });
 

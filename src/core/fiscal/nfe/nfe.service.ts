@@ -29,6 +29,7 @@ import { fetchCepData } from '../utils/cep.util';
 import { getTPag } from '../utils/payment-method-map';
 import {
   arredondar,
+  ratearDescontoDoDocumento,
   totaisDosItens,
   totalDoItemNaNota,
   valoresDaLinhaParaNota,
@@ -296,6 +297,8 @@ export class NfeService {
                 paymentMethod: true,
               },
             },
+            // As parcelas da O.S. viram as duplicatas da nota.
+            quotationInstallment: true,
           },
         },
         deliveryInfo: {
@@ -425,13 +428,64 @@ export class NfeService {
       },
     );
 
+    /**
+     * Desconto do DOCUMENTO (o abatimento que o vendedor dá no fechamento da
+     * O.S., guardado em `quotation_payments`) rateado entre os itens.
+     *
+     * A nota só enxergava o desconto de cada item: a O.S. 3316 da INOVAMAIS,
+     * fechada em R$ 30.000, saía com nota de R$ 36.192,60 — imposto sobre uma
+     * venda que não aconteceu. O desconto não pode ir só ao total porque a
+     * SEFAZ confere vNF contra a soma dos itens.
+     */
+    const descontoDoDocumento = arredondar(
+      Math.max(0, quotation.quotationPayment?.discountTotal ?? 0) / 100,
+      2,
+    );
+    // O tipo do item vem do `map` acima; sem dizê-lo, o genérico colapsa para
+    // `ItemParaRateio` e a nota perde descrição, NCM e o resto do cadastro.
+    const itensComDesconto = ratearDescontoDoDocumento<(typeof items)[number]>(
+      items,
+      descontoDoDocumento,
+    );
+
     // Calcular totais: produtos é o bruto, e o desconto sai uma vez só. Antes
     // somava o líquido e abatia o desconto de novo.
     const {
       valorProdutos,
       valorDesconto: valorDescontos,
       valorTotal: valorNota,
-    } = totaisDosItens(items);
+    } = totaisDosItens(itensComDesconto);
+
+    /**
+     * Duplicatas: as parcelas da O.S., que é o que foi combinado com o
+     * comprador e o que a DANFE mostra. A tela tinha o campo e ninguém o
+     * preenchia — nenhuma nota desta conta saiu com cobrança.
+     *
+     * Só entram quando a soma bate com o total da nota: a SEFAZ confere a
+     * soma das duplicatas contra o valor da nota, e trazer parcelas de outro
+     * valor (um acréscimo financeiro, por exemplo) trocaria o campo vazio por
+     * uma rejeição.
+     */
+    const duplicatasDaOrdem = (() => {
+      const parcelas = [
+        ...(quotation.quotationPayment?.quotationInstallment ?? []),
+      ].sort(
+        (a: any, b: any) =>
+          new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+      );
+      if (!parcelas.length) return [];
+
+      const duplicatas = parcelas.map((parcela: any, indice: number) => ({
+        numero: String(indice + 1).padStart(3, '0'),
+        dataVencimento: toProjectDateKey(new Date(parcela.dueDate)),
+        valor: arredondar((parcela.value || 0) / 100, 2),
+      }));
+      const soma = arredondar(
+        duplicatas.reduce((total, dup) => total + dup.valor, 0),
+        2,
+      );
+      return soma === valorNota ? duplicatas : [];
+    })();
 
     // Verificar se já existe NF-e emitida para esta ordem
     const activeEnvironment =
@@ -546,7 +600,7 @@ export class NfeService {
         : null,
 
       // Itens
-      items,
+      items: itensComDesconto,
 
       // Transportadora: pré-preencher com dados do supplier da OS quando deliveryType = CARRIER
       transportadora: (() => {
@@ -626,7 +680,7 @@ export class NfeService {
       },
 
       // Duplicatas
-      duplicatas: [],
+      duplicatas: duplicatasDaOrdem,
 
       // Informações complementares
       informacoesComplementares: config.taxInfoText || '',
