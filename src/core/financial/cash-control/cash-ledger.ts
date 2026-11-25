@@ -151,8 +151,11 @@ export async function manualBaixaTarget(
   if (!controlled) return baixaTarget(tx, bankAccountId, date);
   const row = await postingRegisterRow(tx, bankAccountId, date);
   if (!row) {
+    // A data é a do recebimento ou pagamento informado (Lista Lite 24/11,
+    // item 5): é o caixa daquele dia que precisa estar aberto
+    const [year, month, day] = dayOf(date).split('-');
     throw new BadRequestException(
-      `Abra o caixa de ${account.name} antes de dar baixa`,
+      `Abra o caixa de ${account.name} do dia ${day}/${month}/${year} (a data informada) antes de dar baixa`,
     );
   }
   return row;

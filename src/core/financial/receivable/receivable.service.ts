@@ -1008,6 +1008,13 @@ export class ReceivableService {
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
+        // O caixa antes de tudo (Lista Lite 24/11, itens 5 e 6): sem caixa
+        // aberto, a baixa é recusada aqui e a parcela não fica paga. Antes, a
+        // parcela virava paga e só a compensação, depois, recusava: a tela
+        // mostrava o erro, a parcela ficava paga e o histórico não gravava
+        if (bankAccountData.incomeType !== 'PROVISION') {
+          await manualBaixaTarget(tx, bankAccountId, new Date(paidDate));
+        }
         // Atualiza o status da parcela para "PAGO" e adiciona a data do pagamento
         const data: Prisma.ReceivableInstallmentUncheckedUpdateInput = {
           status:

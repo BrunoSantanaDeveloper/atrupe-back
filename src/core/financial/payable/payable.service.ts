@@ -896,6 +896,13 @@ export class PayableService {
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
+        // O caixa antes de tudo (Lista Lite 24/11, itens 5 e 6): sem caixa
+        // aberto, a baixa é recusada aqui e a parcela não fica paga. Antes, a
+        // parcela virava paga e só a compensação, depois, recusava: a tela
+        // mostrava o erro, a parcela ficava paga e o histórico não gravava
+        if (bankAccountData.paymentType !== 'PROVISION') {
+          await manualBaixaTarget(tx, bankAccountId, new Date(paidDate));
+        }
         const data: Prisma.PayableInstallmentUncheckedUpdateInput = {
           status:
             bankAccountData.paymentType === 'PROVISION'
