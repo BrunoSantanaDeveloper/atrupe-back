@@ -2156,6 +2156,138 @@ describe('NfeService', () => {
       );
     });
 
+    /**
+     * O rascunho guardava o valor do pagamento e uma lista de duplicatas
+     * vazia. Como `[]` é verdadeiro em JS, a lista vazia vencia as parcelas da
+     * O.S.; e o valor congelado reabria R$ 36.192,60 num documento de
+     * R$ 30.000, que só o botão "Sincronizar" arrumava.
+     */
+    describe('rascunho reaberto: pagamento e duplicatas', () => {
+      const rascunhoCom = (draftData: any) => ({
+        ...mockNfe,
+        status: NfeStatus.DRAFT,
+        draftData,
+      });
+
+      const comParcelas = () => {
+        prisma.quotation.findFirst.mockResolvedValue({
+          ...mockQuotation,
+          quotationProduct: [
+            {
+              ...mockQuotation.quotationProduct[0],
+              quantity: 1,
+              totalValue: 10000,
+              finalValue: 10000,
+              items: [],
+            },
+          ],
+          quotationPayment: {
+            ...(mockQuotation as any).quotationPayment,
+            discountTotal: 0,
+            quotationInstallment: [
+              { value: 4000, dueDate: new Date('2026-11-20T03:00:00.000Z') },
+              { value: 6000, dueDate: new Date('2026-12-20T03:00:00.000Z') },
+            ],
+          },
+        });
+      };
+
+      it('lista vazia no rascunho não apaga as parcelas da O.S.', async () => {
+        comParcelas();
+        prisma.nfe.findFirst.mockResolvedValue(rascunhoCom({ duplicatas: [] }));
+
+        const result = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.duplicatas.map((d: any) => d.valor)).toEqual([40, 60]);
+      });
+
+      it('duplicata digitada pelo usuário continua valendo', async () => {
+        comParcelas();
+        prisma.nfe.findFirst.mockResolvedValue(
+          rascunhoCom({
+            duplicatas: [
+              { numero: '001', dataVencimento: '2026-12-31', valor: 100 },
+            ],
+          }),
+        );
+
+        const result = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.duplicatas).toEqual([
+          { numero: '001', dataVencimento: '2026-12-31', valor: 100 },
+        ]);
+      });
+
+      /** Item editado muda o total: as parcelas da O.S. deixam de fechar. */
+      it('não traz as parcelas quando elas não fecham com o total da tela', async () => {
+        comParcelas();
+        // A edição só vale quando a impressão da O.S. guardada bate com a de
+        // agora; a primeira abertura é quem diz qual é.
+        prisma.nfe.findFirst.mockResolvedValue(rascunhoCom({ duplicatas: [] }));
+        const aberta = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+        const origemItens = (aberta as any).origemItens;
+
+        prisma.nfe.findFirst.mockResolvedValue(
+          rascunhoCom({
+            duplicatas: [],
+            versaoItens: 2,
+            itensEditados: true,
+            origemItens,
+            items: [
+              {
+                productId: 'product-1',
+                itemNumber: 1,
+                quantity: 1,
+                unitValue: 50,
+                discount: 0,
+                uCom: 'UN',
+                unit: 'UN',
+                cfop: 5102,
+              },
+            ],
+          }),
+        );
+
+        const result = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.totais.valorNota).toBe(50);
+        expect(result.duplicatas).toEqual([]);
+      });
+
+      it('valor do pagamento acompanha o total da nota, não o do rascunho', async () => {
+        comParcelas();
+        prisma.nfe.findFirst.mockResolvedValue(
+          rascunhoCom({
+            pagamento: { forma: '15', formaDescricao: 'Boleto', valor: 361.92 },
+          }),
+        );
+
+        const result = await service.createOrGetDraft(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.pagamento).toMatchObject({
+          forma: '15',
+          formaDescricao: 'Boleto',
+          valor: 100,
+        });
+        expect(result.totais.valorNota).toBe(100);
+      });
+    });
+
     it('nao cria rascunho quando a ordem ja tem NF-e com carta de correcao', async () => {
       // CORRECTION_SENT e' nota valida: liberar um rascunho novo aqui abriria
       // caminho para uma segunda NF-e autorizada na mesma O.S.

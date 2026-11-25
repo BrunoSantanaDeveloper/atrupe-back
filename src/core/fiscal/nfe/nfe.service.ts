@@ -480,11 +480,7 @@ export class NfeService {
         dataVencimento: toProjectDateKey(new Date(parcela.dueDate)),
         valor: arredondar((parcela.value || 0) / 100, 2),
       }));
-      const soma = arredondar(
-        duplicatas.reduce((total, dup) => total + dup.valor, 0),
-        2,
-      );
-      return soma === valorNota ? duplicatas : [];
+      return this.duplicatasQueFecham(duplicatas, valorNota);
     })();
 
     // Verificar se já existe NF-e emitida para esta ordem
@@ -2366,6 +2362,25 @@ export class NfeService {
    * em optante do Simples), que nunca é escolha deliberada: o cálculo o
    * recusa, e a SEFAZ também. Um CST válido digitado na nota continua valendo.
    */
+  /**
+   * Duplicatas só valem quando fecham com o total da nota: a SEFAZ confere a
+   * soma contra o valor do documento, e uma cobrança de outro valor troca o
+   * campo vazio por uma rejeição. Vale para as parcelas que vêm da O.S. e
+   * para o rascunho reaberto depois de o usuário mexer nos itens.
+   */
+  private duplicatasQueFecham<T extends { valor?: number | null }>(
+    duplicatas: T[] | undefined | null,
+    totalDaNota: number,
+  ): T[] {
+    const lista = duplicatas ?? [];
+    if (!lista.length) return [];
+    const soma = arredondar(
+      lista.reduce((total, dup) => total + (dup.valor || 0), 0),
+      2,
+    );
+    return soma === arredondar(totalDaNota, 2) ? lista : [];
+  }
+
   private async itensComCstDoRegime(
     companyId: string,
     nfe: { invoicyConfigId?: string | null },
@@ -4382,6 +4397,10 @@ export class NfeService {
         [orderId],
       );
 
+      // Total dos itens que a tela recebe: com item editado no rascunho, o
+      // total da O.S. não serve.
+      const totaisDoRascunho = totaisDosItens(reaberto.itens);
+
       return {
         ...preparedData,
         draftId: existingDraft.id,
@@ -4396,8 +4415,38 @@ export class NfeService {
         origemItens: reaberto.origem,
         transportadora: draftData.transportadora || preparedData.transportadora,
         volumes: draftData.volumes || preparedData.volumes,
-        pagamento: draftData.pagamento || preparedData.pagamento,
-        duplicatas: draftData.duplicatas || preparedData.duplicatas,
+        /**
+         * Forma de pagamento do rascunho, valor sempre o da nota.
+         *
+         * O valor ficava congelado no que o rascunho guardou: um rascunho
+         * aberto antes de a nota passar a descontar o fechamento da O.S.
+         * reabria com R$ 36.192,60 num documento de R$ 30.000, e só o botão
+         * "Sincronizar" arrumava. Não há o que preservar — a emissão monta o
+         * `vPag` com o total da nota, não com este campo.
+         */
+        pagamento: {
+          ...(preparedData.pagamento ?? {}),
+          ...(draftData.pagamento ?? {}),
+          valor: totaisDoRascunho.valorTotal,
+        },
+        /**
+         * Lista vazia não é escolha do usuário: é o que todo rascunho guardou
+         * enquanto o prepare nunca trazia duplicata. Como `[]` é verdadeiro em
+         * JS, ela vencia as parcelas da O.S. e a nota saía sem cobrança.
+         */
+        duplicatas: draftData.duplicatas?.length
+          ? draftData.duplicatas
+          : this.duplicatasQueFecham(
+              preparedData.duplicatas,
+              totaisDoRascunho.valorTotal,
+            ),
+        /** Os totais seguem os itens que a tela recebe, não os da O.S. */
+        totais: {
+          ...preparedData.totais,
+          valorProdutos: totaisDoRascunho.valorProdutos,
+          valorDesconto: totaisDoRascunho.valorDesconto,
+          valorNota: totaisDoRascunho.valorTotal,
+        },
         autXml: draftData.autXml || preparedData.autXml,
         informacoesComplementares:
           draftData.informacoesComplementares ||
@@ -4506,6 +4555,10 @@ export class NfeService {
         uniqueOrderIds,
       );
 
+      // Total dos itens que a tela recebe: com item editado no rascunho, o
+      // total da O.S. não serve.
+      const totaisDoRascunho = totaisDosItens(reaberto.itens);
+
       return {
         ...preparedData,
         draftId: existingDraft.id,
@@ -4519,8 +4572,38 @@ export class NfeService {
         origemItens: reaberto.origem,
         transportadora: draftData.transportadora || preparedData.transportadora,
         volumes: draftData.volumes || preparedData.volumes,
-        pagamento: draftData.pagamento || preparedData.pagamento,
-        duplicatas: draftData.duplicatas || preparedData.duplicatas,
+        /**
+         * Forma de pagamento do rascunho, valor sempre o da nota.
+         *
+         * O valor ficava congelado no que o rascunho guardou: um rascunho
+         * aberto antes de a nota passar a descontar o fechamento da O.S.
+         * reabria com R$ 36.192,60 num documento de R$ 30.000, e só o botão
+         * "Sincronizar" arrumava. Não há o que preservar — a emissão monta o
+         * `vPag` com o total da nota, não com este campo.
+         */
+        pagamento: {
+          ...(preparedData.pagamento ?? {}),
+          ...(draftData.pagamento ?? {}),
+          valor: totaisDoRascunho.valorTotal,
+        },
+        /**
+         * Lista vazia não é escolha do usuário: é o que todo rascunho guardou
+         * enquanto o prepare nunca trazia duplicata. Como `[]` é verdadeiro em
+         * JS, ela vencia as parcelas da O.S. e a nota saía sem cobrança.
+         */
+        duplicatas: draftData.duplicatas?.length
+          ? draftData.duplicatas
+          : this.duplicatasQueFecham(
+              preparedData.duplicatas,
+              totaisDoRascunho.valorTotal,
+            ),
+        /** Os totais seguem os itens que a tela recebe, não os da O.S. */
+        totais: {
+          ...preparedData.totais,
+          valorProdutos: totaisDoRascunho.valorProdutos,
+          valorDesconto: totaisDoRascunho.valorDesconto,
+          valorNota: totaisDoRascunho.valorTotal,
+        },
         autXml: draftData.autXml || preparedData.autXml,
         informacoesComplementares:
           draftData.informacoesComplementares ||
