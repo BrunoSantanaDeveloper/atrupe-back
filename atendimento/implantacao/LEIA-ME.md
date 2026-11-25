@@ -81,6 +81,12 @@ Nos comandos abaixo, `<acesso>` é esse comando `ssh` inteiro, com o `ubuntu@52.
      15 minutos olha os dois e o robô atende os dois. Na mesma forma de conexão, o número novo toma o lugar
      do anterior. "Deixar de usar este número" tira um dos dois da tela e da conferência; as conversas
      dele ficam no painel. O único número não sai.
+   - **Número que os clientes chamam:** o botão flutuante do WhatsApp nas telas do sistema, o "Suporte"
+     do "?" do topo e as páginas de conta suspensa e de senha usam o número escolhido no bloco "Número
+     que os clientes chamam" da mesma tela. Com um número só, vale ele. Com dois e sem escolha, vale o
+     da API oficial. O número do WhatsApp Web vem da conferência de 15 minutos. A API expõe esse número
+     em `GET /atendimento/contato`, sem sessão (é a linha do suporte). Sem número, as telas escondem o
+     contato.
 8. **Robô.** Em **Super Admin › Atendimento › Robô**, confira o contexto (vem da base de suporte do Start de
    29/10/2026) e o modo. O robô começa **sugerindo** respostas à equipe; passe para "responde sozinho"
    quando estiver bom.

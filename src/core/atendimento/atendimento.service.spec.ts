@@ -189,6 +189,22 @@ function makeStore(initial: Record<string, unknown> = {}) {
     savePlatformSettings: jest.fn(async (settings) => {
       data.platform = settings;
     }),
+    loadCustomerContact: jest.fn(async () => ({
+      inbox_id: data.contact?.inbox_id ?? null,
+      numeros: data.contact?.numeros ?? {},
+    })),
+    saveCustomerContact: jest.fn(async (change) => {
+      const current = {
+        inbox_id: data.contact?.inbox_id ?? null,
+        numeros: data.contact?.numeros ?? {},
+      };
+      data.contact = {
+        inbox_id:
+          change.inbox_id === undefined ? current.inbox_id : change.inbox_id,
+        numeros: { ...current.numeros, ...(change.numeros ?? {}) },
+      };
+      return data.contact;
+    }),
     listPanelPeople: jest.fn(async () => ['u-admin']),
     teamPeople: jest.fn(async () => [
       { key: 'u-admin', name: 'Admin', email: 'admin@atrupe.com.br' },
@@ -911,6 +927,7 @@ describe('AtendimentoService', () => {
       expect((await service.whatsapp(superadmin)).body).toEqual({
         ...channel,
         channels: [{ ...channel, inbox_id: 5, phone: '+5548999990000' }],
+        cliente: { inbox_id: 5, escolhido: false, numero: '5548999990000' },
       });
       kit.health.healthAlerts.mockReturnValue({ alerts: [], health: {} });
       await service.checkWhatsapp();
@@ -931,6 +948,7 @@ describe('AtendimentoService', () => {
         level: null,
         findings: [],
         channels: [],
+        cliente: { inbox_id: null, escolhido: false, numero: null },
       });
     });
   });
@@ -1065,6 +1083,142 @@ describe('AtendimentoService', () => {
         403,
       );
       expect(store.saveState).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('número que os clientes chamam', () => {
+    const web = { id: 1, route: 'nao_oficial', session_id: 'sess-1' };
+    const official = { id: 2, route: 'oficial', phone: '+55 47 99262-1081' };
+
+    beforeEach(() => {
+      Object.assign(process.env, {
+        OPENWA_URL: 'http://atendimento-openwa:2785',
+        OPENWA_API_KEY: 'chave',
+      });
+    });
+
+    it('com um número só, os clientes chamam ele, em dígitos', async () => {
+      const { service } = makeService({
+        store: makeStore({ state: { account_id: 7, inboxes: [official] } }),
+      });
+      expect(await service.customerContact()).toEqual({
+        whatsapp: '5547992621081',
+      });
+    });
+
+    it('o WhatsApp Web usa o número que a conferência viu', async () => {
+      const { service, kit, store } = makeService({
+        store: makeStore({ state: { account_id: 7, inboxes: [web] } }),
+      });
+      expect(await service.customerContact()).toEqual({ whatsapp: null });
+      kit.health.checkWhatsappHealth.mockResolvedValue({
+        level: 'ok',
+        inboxes: [
+          {
+            inbox_id: 1,
+            route: 'nao_oficial',
+            phone: '554792621081@c.us',
+            level: 'ok',
+            findings: [],
+          },
+        ],
+      });
+      kit.health.healthAlerts.mockReturnValue({ alerts: [], health: {} });
+      await service.checkWhatsapp();
+      expect(store.saveCustomerContact).toHaveBeenCalledWith({
+        numeros: { '1': '554792621081' },
+      });
+      // A conferência limpa o que estava guardado: o número aparece na hora.
+      expect(await service.customerContact()).toEqual({
+        whatsapp: '554792621081',
+      });
+      // Sem mudança, a conferência seguinte não grava de novo.
+      await service.checkWhatsapp();
+      expect(store.saveCustomerContact).toHaveBeenCalledTimes(1);
+    });
+
+    it('com os dois e sem escolha, vale o oficial; o superadmin escolhe outro', async () => {
+      const { service, data } = makeService({
+        store: makeStore({
+          state: { account_id: 7, inboxes: [web, official] },
+          contact: { inbox_id: null, numeros: { '1': '554733330000' } },
+        }),
+      });
+      expect((await service.customerContact()).whatsapp).toBe('5547992621081');
+      expect(await service.chooseCustomerChannel(superadmin, 1)).toEqual({
+        status: 200,
+        body: { ok: true },
+      });
+      expect(data.contact.inbox_id).toBe(1);
+      expect((await service.customerContact()).whatsapp).toBe('554733330000');
+    });
+
+    it('se o escolhido deixa de ser usado, os clientes chamam o que ficou', async () => {
+      const { service } = makeService({
+        store: makeStore({
+          state: { account_id: 7, inboxes: [web, official] },
+          contact: { inbox_id: 2, numeros: { '1': '554733330000' } },
+        }),
+      });
+      expect((await service.customerContact()).whatsapp).toBe('5547992621081');
+      await service.retireWhatsapp(superadmin, 'oficial');
+      expect((await service.customerContact()).whatsapp).toBe('554733330000');
+    });
+
+    it('guarda o número por um minuto, sem ler o banco a cada página', async () => {
+      const { service, store } = makeService({
+        store: makeStore({ state: { account_id: 7, inboxes: [official] } }),
+      });
+      await service.customerContact();
+      await service.customerContact();
+      expect(store.loadState).toHaveBeenCalledTimes(1);
+    });
+
+    it('a tela do superadmin mostra o escolhido e o número de cada canal', async () => {
+      const { service, kit } = makeService({
+        store: makeStore({
+          state: { account_id: 7, inboxes: [web, official] },
+          contact: { inbox_id: 1, numeros: { '1': '554733330000' } },
+        }),
+      });
+      kit.provision.whatsappStatus.mockResolvedValue({
+        status: 'ready',
+        qrCode: null,
+        level: 'ok',
+        findings: [],
+      });
+      kit.health.checkWhatsappHealth.mockResolvedValue({
+        level: 'ok',
+        inboxes: [{ inbox_id: 2, level: 'ok', findings: [] }],
+      });
+      const body = (await service.whatsapp(superadmin)).body as any;
+      expect(body.cliente).toEqual({
+        inbox_id: 1,
+        escolhido: true,
+        numero: '554733330000',
+      });
+      expect(body.channels[0].phone).toBe('554733330000');
+    });
+
+    it('só o superadmin escolhe, e só entre os números ligados', async () => {
+      const { service, store } = makeService({
+        store: makeStore({ state: { account_id: 7, inboxes: [official] } }),
+      });
+      expect((await service.chooseCustomerChannel(outsider, 2)).status).toBe(
+        403,
+      );
+      const answer = await service.chooseCustomerChannel(superadmin, 99);
+      expect(answer.status).toBe(409);
+      expect(answer.body).toMatchObject({ code: 'inbox_not_connected' });
+      expect(store.saveCustomerContact).not.toHaveBeenCalled();
+    });
+
+    it('sem atendimento configurado, não há número e nada quebra', async () => {
+      const { service, store } = makeService({
+        store: makeStore({ state: null }),
+      });
+      store.loadState.mockRejectedValueOnce(new Error('sem chave'));
+      expect(await service.customerContact()).toEqual({ whatsapp: null });
     });
   });
 
@@ -1243,6 +1397,7 @@ describe('AtendimentoService', () => {
       expect(status.body).toEqual({
         ...channel,
         channels: [{ ...channel, inbox_id: 2, phone: null }],
+        cliente: { inbox_id: 2, escolhido: false, numero: null },
       });
       expect(kit.provision.whatsappStatus).toHaveBeenCalledWith(
         expect.objectContaining({ sessionId: 's2' }),

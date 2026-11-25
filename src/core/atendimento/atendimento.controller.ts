@@ -247,7 +247,7 @@ export class AtendimentoController {
   @Post('whatsapp')
   @ApiOperation({
     summary:
-      'Conecta o número (API oficial ou OpenWA); com acao "reconectar" retoma a sessão que a caixa já tem e com acao "deixar" tira uma das duas rotas',
+      'Conecta o número (API oficial ou OpenWA); com acao "reconectar" retoma a sessão que a caixa já tem, com acao "deixar" tira uma das duas rotas e com acao "cliente" (inbox_id) escolhe o número que os clientes chamam',
   })
   async connect(
     @Req() req,
@@ -261,6 +261,9 @@ export class AtendimentoController {
       }
       if (body?.acao === 'deixar') {
         return this.atendimento.retireWhatsapp(person, body.route ?? '');
+      }
+      if (body?.acao === 'cliente') {
+        return this.atendimento.chooseCustomerChannel(person, body.inbox_id);
       }
       return this.atendimento.connectWhatsapp(person, body);
     });

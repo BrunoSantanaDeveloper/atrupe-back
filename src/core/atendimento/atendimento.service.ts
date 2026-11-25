@@ -134,6 +134,14 @@ const forbidden = (message: string): Answer => ({
   body: { code: 'forbidden', message },
 });
 
+const CONTACT_CACHE_MS = 60_000;
+
+/** Só os dígitos, com o código do país: é o que o link wa.me aceita. */
+export function whatsappDigits(phone: string | null | undefined) {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15 ? digits : null;
+}
+
 /**
  * O atendimento do Atrupe pelo WhatsApp, no modelo "plataforma": o Atrupe
  * atende os próprios clientes, numa conta só do Chatwoot. O contexto do robô
@@ -147,6 +155,7 @@ const forbidden = (message: string): Answer => ({
 export class AtendimentoService {
   private readonly logger = new Logger(AtendimentoService.name);
   private tools: Promise<ProjectTool[]> | null = null;
+  private contactCache: { at: number; value: string | null } | null = null;
 
   constructor(
     private readonly store: AtendimentoStore,
@@ -782,9 +791,13 @@ export class AtendimentoService {
           level: null,
           findings: [],
           channels: [],
+          cliente: { inbox_id: null, escolhido: false, numero: null },
         },
       };
     }
+    const contact = await this.customerChannels(kit, state);
+    const seenPhone = (id: number) =>
+      contact.channels.find((item) => item.inbox_id === id)?.phone ?? null;
     // Um item por canal: o número oficial e o do WhatsApp Web podem estar de pé
     // ao mesmo tempo. Os campos de cima repetem o canal ligado por último.
     const channels: Array<Record<string, unknown>> = [];
@@ -815,7 +828,8 @@ export class AtendimentoService {
         channels.push({
           inbox_id: inbox.id,
           route: 'nao_oficial',
-          phone: inbox.phone ?? null,
+          // O WhatsApp Web não guarda o número: vem da última conferência.
+          phone: inbox.phone ?? seenPhone(inbox.id),
           connected: status.status === 'ready',
           ...status,
         });
@@ -824,7 +838,115 @@ export class AtendimentoService {
     const latest = { ...channels[channels.length - 1] };
     delete latest.inbox_id;
     delete latest.phone;
-    return { status: 200, body: { ...latest, channels } };
+    return {
+      status: 200,
+      body: { ...latest, channels, cliente: contact.cliente },
+    };
+  }
+
+  /**
+   * Os canais de pé com o número de cada um, e o que os clientes chamam pelo
+   * sistema: o escolhido pelo superadmin; sem escolha, ou se ele deixou de ser
+   * usado, o único canal ou, com os dois, o oficial.
+   */
+  private async customerChannels(
+    kit: AtendimentoKit,
+    state: SupportState | null,
+  ) {
+    const setting = await this.store.loadCustomerContact();
+    const channels = kit.health.currentInboxes(state).map((inbox) => ({
+      inbox_id: inbox.id,
+      route: inbox.route,
+      phone:
+        whatsappDigits(inbox.phone) ??
+        setting.numeros[String(inbox.id)] ??
+        null,
+    }));
+    const picked = channels.find((item) => item.inbox_id === setting.inbox_id);
+    const chosen =
+      picked ??
+      (channels.length === 1
+        ? channels[0]
+        : (channels.find((item) => item.route === 'oficial') ??
+          channels[channels.length - 1] ??
+          null));
+    return {
+      channels,
+      cliente: {
+        inbox_id: chosen?.inbox_id ?? null,
+        escolhido: Boolean(picked),
+        numero: chosen?.phone ?? null,
+      },
+    };
+  }
+
+  /**
+   * O número que o sistema mostra aos clientes: o botão do WhatsApp, o "?" e
+   * as páginas de conta suspensa e de senha. Rota pública, porque é a linha do
+   * suporte; guardado por um minuto para não ler o banco a cada página.
+   */
+  async customerContact(): Promise<{ whatsapp: string | null }> {
+    const cached = this.contactCache;
+    if (cached && Date.now() - cached.at < CONTACT_CACHE_MS) {
+      return { whatsapp: cached.value };
+    }
+    let value: string | null = null;
+    try {
+      const kit = await this.kit();
+      const state = await this.store.loadState(PLATFORM_TENANT);
+      value = (await this.customerChannels(kit, state)).cliente.numero;
+    } catch (error) {
+      // Sem atendimento configurado neste ambiente, as telas escondem o botão.
+      this.logger.warn(
+        `Número do suporte para os clientes: ${(error as { code?: string }).code ?? (error as Error).message}`,
+      );
+    }
+    this.contactCache = { at: Date.now(), value };
+    return { whatsapp: value };
+  }
+
+  /** Com os dois números ligados, o superadmin escolhe qual os clientes chamam. */
+  async chooseCustomerChannel(
+    person: AtendimentoPerson | null,
+    inboxId: unknown,
+  ): Promise<Answer> {
+    if (!person?.isSuperadmin) {
+      return forbidden('Você não pode mudar o número.');
+    }
+    const kit = await this.kit();
+    const id = Number(inboxId);
+    const state = await this.store.loadState(PLATFORM_TENANT);
+    if (!kit.health.currentInboxes(state).some((inbox) => inbox.id === id)) {
+      return {
+        status: 409,
+        body: {
+          code: 'inbox_not_connected',
+          message:
+            'Este número não está mais ligado ao atendimento. Atualize a tela.',
+        },
+      };
+    }
+    await this.store.saveCustomerContact({ inbox_id: id });
+    this.contactCache = null;
+    return { status: 200, body: { ok: true } };
+  }
+
+  /** Guarda o número que a conferência viu em cada caixa (o do WhatsApp Web só vem dela). */
+  private async rememberPhones(
+    seen: Array<{ inbox_id: number; phone?: string | null }>,
+  ) {
+    const numeros: Record<string, string> = {};
+    for (const item of seen) {
+      const phone = whatsappDigits(item.phone);
+      if (phone) numeros[String(item.inbox_id)] = phone;
+    }
+    const current = await this.store.loadCustomerContact();
+    const changed = Object.entries(numeros).some(
+      ([id, phone]) => current.numeros[id] !== phone,
+    );
+    if (!changed) return;
+    await this.store.saveCustomerContact({ numeros });
+    this.contactCache = null;
   }
 
   /**
@@ -858,6 +980,8 @@ export class AtendimentoService {
       };
     }
     await this.store.saveState(PLATFORM_TENANT, next);
+    // Se era o número dos clientes, eles passam a chamar o que ficou.
+    this.contactCache = null;
     return { status: 200, body: { ok: true } };
   }
 
@@ -929,6 +1053,12 @@ export class AtendimentoService {
       const fresh = (await this.store.loadState(PLATFORM_TENANT)) ?? state;
       await this.store.saveState(PLATFORM_TENANT, { ...fresh, health });
     }
+    // Por último e sem derrubar a conferência: o aviso e a memória já saíram.
+    await this.rememberPhones(report.inboxes).catch((error) =>
+      this.logger.warn(
+        `Números vistos na conferência não gravados: ${(error as Error).message}`,
+      ),
+    );
     return { skipped: null, report, alerts };
   }
 
@@ -977,6 +1107,7 @@ export class AtendimentoService {
             cloud,
           });
       await this.store.saveState(PLATFORM_TENANT, result.state);
+      this.contactCache = null;
       return { status: 200, body: { metaWebhook: result.metaWebhook } };
     }
     const result = await kit.provision.connectOpenWA({
@@ -998,6 +1129,7 @@ export class AtendimentoService {
       },
     });
     await this.store.saveState(PLATFORM_TENANT, result.state);
+    this.contactCache = null;
     return { status: 200, body: { ok: true } };
   }
 
