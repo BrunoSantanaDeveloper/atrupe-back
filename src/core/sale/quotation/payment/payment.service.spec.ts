@@ -100,6 +100,42 @@ describe('PaymentService', () => {
       expect(prisma.quotationPayment.update).not.toHaveBeenCalled();
     });
 
+    it('à vista integral: a lista vazia com a entrada cobrindo o total tira as parcelas', async () => {
+      // Lista Lite 24/11, item 1: sem crédito livre, "Receber à vista" manda
+      // a venda inteira na entrada e nenhuma parcela; a parcela antiga ficava
+      await service.updatePayment(quotationId, {
+        hasDownPayment: true,
+        totalValue: 20000,
+        downPayment: {
+          amount: 20000,
+          dueDate: '2026-11-25T12:00:00.000Z',
+          paymentConditionId,
+        },
+        installments: [],
+      });
+
+      expect(prisma.quotationInstallment.deleteMany).toHaveBeenCalledWith({
+        where: { quotationPaymentId: 'payment-1' },
+      });
+      const { data } = prisma.quotationPayment.update.mock.calls[0][0];
+      expect(data.installmentQty).toBe(0);
+    });
+
+    it('a lista vazia sem a entrada cobrindo o total não mexe nas parcelas', async () => {
+      await service.updatePayment(quotationId, {
+        hasDownPayment: true,
+        totalValue: 20000,
+        downPayment: {
+          amount: 5000,
+          dueDate: '2026-11-25T12:00:00.000Z',
+          paymentConditionId,
+        },
+        installments: [],
+      });
+
+      expect(prisma.quotationInstallment.deleteMany).not.toHaveBeenCalled();
+    });
+
     it('aceita entrada zerada sem data de vencimento', async () => {
       await service.updatePayment(quotationId, {
         hasDownPayment: true,

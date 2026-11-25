@@ -94,6 +94,14 @@ export class PaymentService {
       // "Internal server error" sem causa visível.
       const orZero = (value?: number | null) => value ?? 0;
 
+      // Sem crédito livre, a venda inteira na entrada e nenhuma parcela
+      const fullUpfront =
+        Array.isArray(updateData.installments) &&
+        updateData.installments.length === 0 &&
+        !!hasDownPayment &&
+        totalValue > 0 &&
+        (downPayment?.amount ?? 0) >= totalValue;
+
       // Prepare base payment data
       const paymentData: any = {
         ...(type && { type }),
@@ -106,6 +114,7 @@ export class PaymentService {
         ...(minInstallmentQty && { minInstallmentQty }),
         ...(mainAdditionalFee !== undefined && { mainAdditionalFee }),
         ...(additionalFeeType && { additionalFeeType }),
+        ...(fullUpfront && { installmentQty: 0, mainAdditionalFee: 0 }),
       };
 
       // Handle payment condition
@@ -181,6 +190,15 @@ export class PaymentService {
               where: { quotationId },
               data: paymentData,
             });
+
+            // À vista integral (Lista Lite 24/11, item 1): a lista vazia
+            // com a entrada cobrindo o total tira as parcelas antigas. Fora
+            // disso, a lista vazia segue não mexendo nas parcelas
+            if (fullUpfront) {
+              await prisma.quotationInstallment.deleteMany({
+                where: { quotationPaymentId: updatedPayment.id },
+              });
+            }
 
             // Delete all existing installments if we have new ones
             if (installments.length > 0) {

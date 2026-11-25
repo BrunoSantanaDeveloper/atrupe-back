@@ -28,6 +28,7 @@ const createMockPrismaService = () => ({
     create: jest.fn(),
   },
   receivableInstallment: {
+    create: jest.fn(),
     createMany: jest.fn(),
   },
   payable: {
@@ -260,6 +261,68 @@ describe('QuotationFinancialService', () => {
           }),
         ],
       });
+    });
+
+    it('à vista integral: só o título da entrada, sem título principal vazio', async () => {
+      // Lista Lite 24/11, item 1: a venda inteira na entrada, sem parcelas
+      prisma.receivable.create.mockResolvedValue({ id: 'down-payment-id' });
+      const quotation = {
+        id: 'quotation-id',
+        companyId: mockCompanyId,
+        clientId: 'client-id',
+        quotationNumber: 40,
+        description: null,
+        totalValue: 20000,
+        series: { code: 'T1' },
+        deliveryInfo: { value: 0 },
+        quotationPayment: {
+          billing: 'ON_ORDER',
+          totalValue: 20000,
+          finalValue: 20000,
+          discountTotal: 0,
+          quotationInstallment: [],
+          commission: null,
+          downPayment: 20000,
+          downPaymentDueDate: new Date('2026-11-25T12:00:00.000Z'),
+          downPaymentAdditionalFee: 0,
+          description: '',
+          downPaymentConditionId: 'payment-condition-id',
+        },
+      };
+
+      const result = await service.generateReceivableFromQuotation(
+        quotation as any,
+        prisma as any,
+      );
+
+      expect(prisma.receivable.create).toHaveBeenCalledTimes(1);
+      expect(prisma.receivable.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ financialType: 'DOWN_PAYMENT' }),
+      });
+      expect(result).toEqual({ id: 'down-payment-id' });
+    });
+
+    it('à vista integral: na liberação da pendência não há mais nada a gerar', async () => {
+      const quotation = {
+        id: 'quotation-id',
+        companyId: mockCompanyId,
+        quotationPayment: {
+          quotationInstallment: [],
+          downPayment: 20000,
+          downPaymentDueDate: new Date('2026-11-25T12:00:00.000Z'),
+          downPaymentAdditionalFee: 0,
+          downPaymentConditionId: 'payment-condition-id',
+        },
+      };
+
+      const result = await service.generateReceivableFromQuotation(
+        quotation as any,
+        prisma as any,
+        { skipDownPayment: true },
+      );
+
+      expect(result).toBeNull();
+      expect(prisma.receivable.create).not.toHaveBeenCalled();
     });
   });
 

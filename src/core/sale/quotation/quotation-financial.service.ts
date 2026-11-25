@@ -45,13 +45,18 @@ export class QuotationFinancialService {
       quotation.quotationPayment.downPaymentAdditionalFee;
     const paymentCondition =
       quotation?.quotationPayment?.downPaymentConditionId ?? null;
-    if (
-      options.only !== 'DOWN_PAYMENT' &&
-      (!quotationInstallments || quotationInstallments.length === 0)
-    ) {
-      throw new BadRequestException(
-        'Não há parcelas para gerar contas a receber.',
-      );
+    const noInstallments =
+      !quotationInstallments || quotationInstallments.length === 0;
+    if (options.only !== 'DOWN_PAYMENT' && noInstallments) {
+      // À vista integral (Lista Lite 24/11, item 1): a venda inteira na
+      // entrada, sem parcelas. Gera só a entrada; na liberação da pendência,
+      // a entrada já existe e não há mais nada a gerar
+      if (!(downPayment > 0)) {
+        throw new BadRequestException(
+          'Não há parcelas para gerar contas a receber.',
+        );
+      }
+      if (options.skipDownPayment) return null;
     }
 
     // A parcela da entrada usa esta data e `dueDate` e NOT NULL. Sem a
@@ -191,6 +196,13 @@ export class QuotationFinancialService {
             'Esta venda não tem entrada para gerar o título do pagamento antecipado.',
           );
         }
+        return receivableDownPayment;
+      }
+
+      // À vista integral (Lista Lite 24/11, item 1): sem crédito livre, a
+      // venda inteira entra como entrada, sem parcelas. Não há título
+      // principal: antes ele nascia vazio, sem parcela
+      if (!effectiveInstallments.length && receivableDownPayment) {
         return receivableDownPayment;
       }
 
