@@ -1235,8 +1235,8 @@ describe('NfeService', () => {
           comFechamento({
             discountTotal: 0,
             quotationInstallment: [
-              { value: 6000, dueDate: new Date('2026-12-20T03:00:00.000Z') },
-              { value: 4000, dueDate: new Date('2026-11-20T03:00:00.000Z') },
+              { value: 6000, dueDate: new Date('2099-12-20T03:00:00.000Z') },
+              { value: 4000, dueDate: new Date('2099-11-20T03:00:00.000Z') },
             ],
           }),
         );
@@ -1247,8 +1247,8 @@ describe('NfeService', () => {
         );
 
         expect(result.duplicatas).toEqual([
-          { numero: '001', dataVencimento: '2026-11-20', valor: 40 },
-          { numero: '002', dataVencimento: '2026-12-20', valor: 60 },
+          { numero: '001', dataVencimento: '2099-11-20', valor: 40 },
+          { numero: '002', dataVencimento: '2099-12-20', valor: 60 },
         ]);
       });
 
@@ -1261,7 +1261,49 @@ describe('NfeService', () => {
           comFechamento({
             discountTotal: 0,
             quotationInstallment: [
-              { value: 12000, dueDate: new Date('2026-12-20T03:00:00.000Z') },
+              { value: 12000, dueDate: new Date('2099-12-20T03:00:00.000Z') },
+            ],
+          }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.duplicatas).toEqual([]);
+      });
+
+      /**
+       * A O.S. é aprovada muito antes de a nota sair: parcela vencida vira
+       * "Data de vencimento da parcela menor que a Data de Emissão" na SEFAZ.
+       */
+      it('não traz parcela já vencida, que a SEFAZ recusaria', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comFechamento({
+            discountTotal: 0,
+            quotationInstallment: [
+              { value: 10000, dueDate: new Date('2020-01-10T03:00:00.000Z') },
+            ],
+          }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.duplicatas).toEqual([]);
+      });
+
+      /** Uma vencida no meio derruba todas: a soma tem de fechar com a nota. */
+      it('uma parcela vencida descarta o conjunto inteiro', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comFechamento({
+            discountTotal: 0,
+            quotationInstallment: [
+              { value: 4000, dueDate: new Date('2020-01-10T03:00:00.000Z') },
+              { value: 6000, dueDate: new Date('2099-12-20T03:00:00.000Z') },
             ],
           }),
         );
@@ -1280,8 +1322,8 @@ describe('NfeService', () => {
           comFechamento({
             discountTotal: 2500,
             quotationInstallment: [
-              { value: 2500, dueDate: new Date('2026-11-20T03:00:00.000Z') },
-              { value: 5000, dueDate: new Date('2026-12-20T03:00:00.000Z') },
+              { value: 2500, dueDate: new Date('2099-11-20T03:00:00.000Z') },
+              { value: 5000, dueDate: new Date('2099-12-20T03:00:00.000Z') },
             ],
           }),
         );
@@ -2185,8 +2227,8 @@ describe('NfeService', () => {
             ...(mockQuotation as any).quotationPayment,
             discountTotal: 0,
             quotationInstallment: [
-              { value: 4000, dueDate: new Date('2026-11-20T03:00:00.000Z') },
-              { value: 6000, dueDate: new Date('2026-12-20T03:00:00.000Z') },
+              { value: 4000, dueDate: new Date('2099-11-20T03:00:00.000Z') },
+              { value: 6000, dueDate: new Date('2099-12-20T03:00:00.000Z') },
             ],
           },
         });

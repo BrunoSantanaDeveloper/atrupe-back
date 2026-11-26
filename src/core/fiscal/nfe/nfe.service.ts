@@ -480,6 +480,20 @@ export class NfeService {
         dataVencimento: toProjectDateKey(new Date(parcela.dueDate)),
         valor: arredondar((parcela.value || 0) / 100, 2),
       }));
+
+      /**
+       * Parcela vencida não vira duplicata: a SEFAZ recusa a nota com
+       * "Data de vencimento da parcela não informada ou menor que a Data de
+       * Emissão". A O.S. é aprovada muito antes de a nota sair — 25.994 das
+       * 30.586 O.S. aprovadas da base já têm parcela vencida —, então trazer
+       * a cobrança sem olhar a data troca o campo vazio por uma rejeição.
+       *
+       * Ou todas servem, ou nenhuma: tirar só as vencidas deixaria a soma
+       * fora do total da nota, que a SEFAZ também confere.
+       */
+      const hoje = toProjectDateKey(new Date());
+      if (duplicatas.some((dup) => dup.dataVencimento < hoje)) return [];
+
       return this.duplicatasQueFecham(duplicatas, valorNota);
     })();
 
