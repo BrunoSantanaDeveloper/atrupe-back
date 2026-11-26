@@ -12,6 +12,7 @@ import {
   Delete,
   UseGuards,
   Req,
+  Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ProductionStageService } from './production-stage.service';
@@ -23,9 +24,16 @@ import {
   UpdateItemStageDto,
   FinishAllStagesDto,
   AddScheduleStageDto,
+  WorkListQueryDto,
 } from './dto/item-stage.dto';
 
 const RESOURCE = 'production-stage';
+
+// Quem concluiu fica gravado na etapa do item (§4.16)
+const actorOf = (req: any) => ({
+  userId: req.user?.userId ?? null,
+  name: req.user?.name ?? null,
+});
 
 @ApiTags('Estágios de produção - Agenda de entrega')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -54,6 +62,16 @@ export class ProductionStageController {
     return this.productionStageService.findAll(req.user.companyId);
   }
 
+  // A lista de trabalhos do LITE (área 9 §4.16): antes de ':id'
+  @Get('work-list')
+  @HasPermission('view', 'production:delivery_schedule')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('delivery_production_stages')
+  @ApiOperation({ summary: 'Os trabalhos dos setores (lista do LITE)' })
+  workList(@Req() req, @Query() query: WorkListQueryDto) {
+    return this.productionStageService.workList(req.user.companyId, query);
+  }
+
   @Get(':id')
   @HasPermission('view', 'production:delivery_schedule')
   @ApiOperation({ summary: 'Buscar um estágio de produção pelo ID' })
@@ -76,6 +94,7 @@ export class ProductionStageController {
       id,
       updateProductionStageDto,
       req.user.companyId,
+      actorOf(req),
     );
   }
 
@@ -93,7 +112,12 @@ export class ProductionStageController {
     @Param('id') id: string,
     @Body() dto: UpdateItemStageDto,
   ) {
-    return this.productionStageService.updateItem(id, dto, req.user.companyId);
+    return this.productionStageService.updateItem(
+      id,
+      dto,
+      req.user.companyId,
+      actorOf(req),
+    );
   }
 
   // Concluir tudo de uma vez (gerencial, §4.7): chave própria no cargo, que
@@ -110,6 +134,7 @@ export class ProductionStageController {
     return this.productionStageService.finishAll(
       dto.scheduleIds,
       req.user.companyId,
+      actorOf(req),
     );
   }
 

@@ -2420,6 +2420,11 @@ model ProductionItemStage {
   notes              String?
   /// Veio de uma etapa de cobrança do produto (§4.16): não sai do pedido
   fixed              Boolean               @default(false)
+  /// Quem concluiu e quando (pela agenda ou pela lista de trabalhos do
+  /// LITE): o nome fica gravado como era no momento
+  doneAt             DateTime?
+  doneById           String?
+  doneByName         String?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime?             @updatedAt
   schedule           DeliverySchedule      @relation(fields: [scheduleId], references: [id], onDelete: Cascade)

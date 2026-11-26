@@ -170,7 +170,10 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
       });
       expect(prisma.productionItemStage.update).toHaveBeenCalledWith({
         where: { id: 'it-1' },
-        data: { status: 'DONE', prevStatus: 'NOT_STARTED' },
+        data: expect.objectContaining({
+          status: 'DONE',
+          prevStatus: 'NOT_STARTED',
+        }),
       });
       // Um item pronto e outro por começar: o setor está em andamento
       expect(prisma.productionStage.update).toHaveBeenCalledWith({
@@ -243,11 +246,19 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
       // Um updateMany por estado aberto, cada um gravando o próprio anterior
       expect(prisma.productionItemStage.updateMany).toHaveBeenCalledWith({
         where: { scheduleId: { in: ['sch-1'] }, status: 'IN_PROGRESS' },
-        data: { status: 'DONE', prevStatus: 'IN_PROGRESS' },
+        data: expect.objectContaining({
+          status: 'DONE',
+          prevStatus: 'IN_PROGRESS',
+        }),
       });
       expect(prisma.productionItemStage.updateMany).toHaveBeenCalledWith({
         where: { scheduleId: { in: ['sch-1'] }, status: 'NOT_STARTED' },
-        data: { status: 'DONE', prevStatus: 'NOT_STARTED' },
+        // Quem concluiu fica gravado (§4.16)
+        data: expect.objectContaining({
+          status: 'DONE',
+          prevStatus: 'NOT_STARTED',
+          doneAt: expect.any(Date),
+        }),
       });
       expect(prisma.productionStage.updateMany).toHaveBeenCalledWith({
         where: {
@@ -370,7 +381,14 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
       expect(prisma.productionItemStage.update).toHaveBeenCalledTimes(1);
       expect(prisma.productionItemStage.update).toHaveBeenCalledWith({
         where: { id: 'a' },
-        data: { status: 'IN_PROGRESS', prevStatus: 'DONE' },
+        // Reaberto, quem tinha concluído sai (§4.16)
+        data: {
+          status: 'IN_PROGRESS',
+          prevStatus: 'DONE',
+          doneAt: null,
+          doneById: null,
+          doneByName: null,
+        },
       });
       // O resumo bate com a volta: nada é desfeito depois
       expect(prisma.productionStage.update).toHaveBeenCalledTimes(1);
@@ -499,6 +517,126 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
       await expect(
         service.addToSchedule('sch-1', 'acab', 'c-1'),
       ).rejects.toThrow(new ConflictException(STAGE_ALREADY_IN_ORDER));
+    });
+  });
+
+  describe('tela do setor e quem concluiu (§4.16)', () => {
+    it('concluir a etapa do item grava quem e quando; voltar limpa', async () => {
+      prisma.productionItemStage.findFirst.mockResolvedValue({
+        id: 'is-1',
+        scheduleId: 'sch-1',
+        stageId: 'imp',
+        status: 'NOT_STARTED',
+      });
+      await service.updateItem('is-1', { status: 'DONE' } as any, 'c-1', {
+        userId: 'u-1',
+        name: 'Ana',
+      });
+      expect(prisma.productionItemStage.update).toHaveBeenCalledWith({
+        where: { id: 'is-1' },
+        data: expect.objectContaining({
+          status: 'DONE',
+          doneById: 'u-1',
+          doneByName: 'Ana',
+          doneAt: expect.any(Date),
+        }),
+      });
+      prisma.productionItemStage.findFirst.mockResolvedValue({
+        id: 'is-1',
+        scheduleId: 'sch-1',
+        stageId: 'imp',
+        status: 'DONE',
+      });
+      await service.updateItem('is-1', { status: 'PENDING' } as any, 'c-1');
+      expect(prisma.productionItemStage.update).toHaveBeenLastCalledWith({
+        where: { id: 'is-1' },
+        data: expect.objectContaining({
+          status: 'PENDING',
+          doneAt: null,
+          doneById: null,
+          doneByName: null,
+        }),
+      });
+    });
+
+    it('a lista do setor diz o que falta antes no mesmo item', async () => {
+      prisma.productionItemStage.groupBy = jest
+        .fn()
+        .mockResolvedValue([{ stageId: 'inst', _count: { _all: 2 } }]);
+      prisma.productionItemStage.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'is-2',
+            status: 'NOT_STARTED',
+            notes: null,
+            fixed: true,
+            doneAt: null,
+            doneByName: null,
+            order: 2,
+            stageId: 'inst',
+            scheduleId: 'sch-1',
+            quotationProductId: 'qp-1',
+            stage: {
+              id: 'inst',
+              name: 'Instalação',
+              icon: 'track',
+              color: null,
+            },
+            schedule: {
+              id: 'sch-1',
+              scheduledDate: new Date(),
+              addScheduleTime: false,
+            },
+            quotationProduct: {
+              id: 'qp-1',
+              description: 'Carro adesivado',
+              quantity: 1,
+              items: [{ quantity: 1, width: 2000, height: 1000 }],
+              quotation: {
+                id: 'q-1',
+                quotationNumber: 4,
+                description: 'Frota',
+                series: { code: 'V1' },
+                client: { name: 'Padaria' },
+              },
+            },
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'is-1',
+            quotationProductId: 'qp-1',
+            scheduleId: 'sch-1',
+            order: 1,
+            status: 'NOT_STARTED',
+            stage: { id: 'imp', name: 'Impressão' },
+          },
+          {
+            id: 'is-2',
+            quotationProductId: 'qp-1',
+            scheduleId: 'sch-1',
+            order: 2,
+            status: 'NOT_STARTED',
+            stage: { id: 'inst', name: 'Instalação' },
+          },
+        ]);
+      const result = await service.workList('c-1', { stageId: 'inst' });
+      expect(result.counts).toEqual({ inst: 2 });
+      expect(result.items[0]).toMatchObject({
+        reference: '4-V1',
+        client: 'Padaria',
+        item: 'Carro adesivado',
+        waitingFor: ['Impressão'],
+        fixed: true,
+      });
+      // O fluxo inteiro do item, com a etapa desta linha marcada
+      expect(
+        result.items[0].flow.map((step) => [step.sector.name, step.current]),
+      ).toEqual([
+        ['Impressão', false],
+        ['Instalação', true],
+      ]);
+      expect(result.items[0].measure).toContain('2 × 1 m');
     });
   });
 });

@@ -5,9 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { DeliveryScheduleStatus, Prisma } from '@prisma/client';
+import {
+  DeliveryScheduleStatus,
+  Prisma,
+  ProductionStageStatus,
+} from '@prisma/client';
 import { UpdateProductionStageDto } from './dto/update-production-stage.dto';
-import { UpdateItemStageDto } from './dto/item-stage.dto';
+import { UpdateItemStageDto, WorkListQueryDto } from './dto/item-stage.dto';
 import {
   ItemStage,
   OPEN,
@@ -17,6 +21,7 @@ import {
 } from './stage-aggregate';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
+import { compositionMeasure } from '../quotation/quotation-items.service';
 
 const STAGE_NOT_FOUND = 'Etapa de produção nao encontrada';
 const MANAGED_BY_PRODUCTION =
@@ -32,6 +37,58 @@ const CLOSED_SCHEDULE: DeliveryScheduleStatus[] = [
   'CANCELED',
   'FINISHED',
   'DONE',
+];
+
+/** Quem age na etapa: o nome fica gravado ao concluir (§4.16). */
+export type StageActor = { userId?: string | null; name?: string | null };
+
+/**
+ * Concluir grava quem e quando; sair de concluído limpa. Sem mudança de
+ * concluído (a pendência, a volta de outro estado), não mexe.
+ */
+const doneData = (
+  status: string | undefined,
+  actor?: StageActor,
+  from?: string | null,
+) =>
+  status === 'DONE' && from !== 'DONE'
+    ? {
+        doneAt: new Date(),
+        doneById: actor?.userId ?? null,
+        doneByName: actor?.name ?? null,
+      }
+    : status && status !== 'DONE' && from === 'DONE'
+      ? { doneAt: null, doneById: null, doneByName: null }
+      : {};
+
+/** "4 un · 1 × 0,5 m", como na Agenda de entrega (design §7). */
+const workMeasure = (
+  quantity: number,
+  lines: { quantity: number; width: number | null; height: number | null }[],
+) => {
+  const mm = (value: number) =>
+    (value / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+  const {
+    quantity: total,
+    width,
+    height,
+  } = compositionMeasure(quantity, lines);
+  const size =
+    width && height
+      ? ` · ${mm(width)} × ${mm(height)} m`
+      : width
+        ? ` · ${mm(width)} m`
+        : '';
+  return `${total} un${size}`;
+};
+
+const WORK_OPEN: ProductionStageStatus[] = [
+  'NOT_STARTED',
+  'IN_PROGRESS',
+  'PAUSED',
+  'PENDING',
+  'WAITING_PRODUCTION',
+  'OVERDUE',
 ];
 
 /**
@@ -77,6 +134,7 @@ export class ProductionStageService {
     id: string,
     updateProductionStageDto: UpdateProductionStageDto,
     companyId: string,
+    actor?: StageActor,
   ) {
     const productionStage = await this.findOne(id, companyId);
     await this.assertNotManaged(productionStage.scheduleId);
@@ -113,6 +171,7 @@ export class ProductionStageService {
           from,
           next,
           updateProductionStageDto.notes,
+          actor,
         );
       }
 
@@ -127,7 +186,12 @@ export class ProductionStageService {
    * A troca de estado na etapa de um item (área 9 §4.7; Maicol, 23/11/2026).
    * Vale só para aquele item; a etapa do pedido no mesmo setor é recalculada.
    */
-  async updateItem(id: string, dto: UpdateItemStageDto, companyId: string) {
+  async updateItem(
+    id: string,
+    dto: UpdateItemStageDto,
+    companyId: string,
+    actor?: StageActor,
+  ) {
     const item = await this.prisma.productionItemStage.findFirst({
       where: { id, schedule: scheduleOfCompany(companyId) },
     });
@@ -140,6 +204,7 @@ export class ProductionStageService {
         // Gravar o mesmo estado (só a nota) não perde para onde voltar
         prevStatus: dto.status === item.status ? item.prevStatus : item.status,
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+        ...doneData(dto.status, actor, item.status),
       },
     });
     await this.syncOrderStage(item.scheduleId, item.stageId);
@@ -159,6 +224,7 @@ export class ProductionStageService {
     from: StageStatus,
     next: StageStatus,
     notes?: string,
+    actor?: StageActor,
   ) {
     const items = await this.prisma.productionItemStage.findMany({
       where: { scheduleId, stageId },
@@ -172,6 +238,11 @@ export class ProductionStageService {
           status: item.status,
           prevStatus: item.prevStatus,
           ...(notes !== undefined ? { notes } : {}),
+          ...doneData(
+            item.status,
+            actor,
+            items.find((row) => row.id === item.id)?.status,
+          ),
         },
       });
     }
@@ -216,7 +287,11 @@ export class ProductionStageService {
    * as etapas dela a traria de volta para a entrega. Cada etapa guarda o
    * estado de antes (prevStatus), como na troca de uma etapa.
    */
-  async finishAll(scheduleIds: string[], companyId: string) {
+  async finishAll(
+    scheduleIds: string[],
+    companyId: string,
+    actor?: StageActor,
+  ) {
     const schedules = await this.prisma.deliverySchedule.findMany({
       where: { id: { in: scheduleIds }, ...scheduleOfCompany(companyId) },
       select: { id: true, status: true },
@@ -241,7 +316,12 @@ export class ProductionStageService {
         ...OPEN.map((status) =>
           this.prisma.productionItemStage.updateMany({
             where: { scheduleId: { in: ids }, status },
-            data: { status: 'DONE', prevStatus: status },
+            // Quem concluiu fica gravado (§4.16)
+            data: {
+              status: 'DONE',
+              prevStatus: status,
+              ...doneData('DONE', actor, status),
+            },
           }),
         ),
         ...OPEN.map((status) =>
@@ -359,6 +439,155 @@ export class ProductionStageService {
       },
     });
     return managed > 0;
+  }
+
+  /**
+   * A lista de trabalhos do LITE (área 9 §4.16; Maicol, 26/11/2026): as
+   * etapas dos itens, de todos os setores ou de um, na ordem da entrega. É o
+   * mesmo registro da Agenda de entrega: concluir aqui conclui lá. A venda
+   * que segue o gerenciador (ELITE) fica de fora.
+   */
+  async workList(companyId: string, query: WorkListQueryDto) {
+    const done = query.view === 'done';
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const base: Prisma.ProductionItemStageWhereInput = {
+      schedule: {
+        AND: [
+          scheduleOfCompany(companyId),
+          { isActive: true },
+          done ? {} : { status: { in: ['IN_PRODUCTION', 'DELIVERING'] } },
+        ],
+      },
+      quotationProduct: { quotation: { productionProject: null } },
+      status: done ? 'DONE' : { in: WORK_OPEN },
+      ...(done ? { updatedAt: { gte: since } } : {}),
+    };
+    const [rows, counts] = await Promise.all([
+      this.prisma.productionItemStage.findMany({
+        where: {
+          ...base,
+          ...(query.stageId ? { stageId: query.stageId } : {}),
+        },
+        include: {
+          stage: { select: { id: true, name: true, icon: true, color: true } },
+          schedule: {
+            select: { id: true, scheduledDate: true, addScheduleTime: true },
+          },
+          quotationProduct: {
+            select: {
+              id: true,
+              description: true,
+              quantity: true,
+              items: {
+                select: { quantity: true, width: true, height: true },
+                orderBy: { createdAt: 'asc' },
+              },
+              quotation: {
+                select: {
+                  id: true,
+                  quotationNumber: true,
+                  description: true,
+                  series: { select: { code: true } },
+                  client: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: done
+          ? [{ doneAt: 'desc' }, { updatedAt: 'desc' }]
+          : [{ schedule: { scheduledDate: 'asc' } }, { order: 'asc' }],
+        take: 300,
+      }),
+      done
+        ? Promise.resolve([])
+        : this.prisma.productionItemStage.groupBy({
+            by: ['stageId'],
+            where: base,
+            _count: { _all: true },
+          }),
+    ]);
+
+    // O que ainda falta antes, no mesmo item: "depois de Impressão"
+    const siblings = rows.length
+      ? await this.prisma.productionItemStage.findMany({
+          where: {
+            quotationProductId: {
+              in: [...new Set(rows.map((row) => row.quotationProductId))],
+            },
+          },
+          select: {
+            id: true,
+            quotationProductId: true,
+            scheduleId: true,
+            order: true,
+            status: true,
+            stage: {
+              select: { id: true, name: true, icon: true, color: true },
+            },
+          },
+          orderBy: { order: 'asc' },
+        })
+      : [];
+
+    return {
+      counts: Object.fromEntries(
+        (counts as { stageId: string; _count: { _all: number } }[]).map(
+          (row) => [row.stageId, row._count._all],
+        ),
+      ),
+      items: rows.map((row) => {
+        const quotation = row.quotationProduct.quotation;
+        return {
+          id: row.id,
+          status: row.status,
+          notes: row.notes,
+          fixed: row.fixed,
+          doneAt: row.doneAt,
+          doneByName: row.doneByName,
+          sector: row.stage,
+          scheduleId: row.scheduleId,
+          scheduledDate: row.schedule.scheduledDate,
+          addScheduleTime: row.schedule.addScheduleTime,
+          quotationId: quotation.id,
+          reference: [quotation.quotationNumber, quotation.series?.code]
+            .filter(
+              (part) => part !== null && part !== undefined && part !== '',
+            )
+            .join('-'),
+          client: quotation.client?.name ?? null,
+          description: quotation.description,
+          item: row.quotationProduct.description ?? '',
+          measure: workMeasure(
+            row.quotationProduct.quantity,
+            row.quotationProduct.items,
+          ),
+          // O fluxo inteiro do item, só para ver (§4.16): na tela do setor
+          // se conclui só a etapa dele
+          flow: siblings
+            .filter(
+              (other) =>
+                other.quotationProductId === row.quotationProductId &&
+                other.scheduleId === row.scheduleId,
+            )
+            .map((other) => ({
+              id: other.id,
+              sector: other.stage,
+              status: other.status,
+              current: other.id === row.id,
+            })),
+          waitingFor: siblings
+            .filter(
+              (other) =>
+                other.quotationProductId === row.quotationProductId &&
+                other.scheduleId === row.scheduleId &&
+                other.order < row.order &&
+                !['DONE', 'CANCELED'].includes(other.status),
+            )
+            .map((other) => other.stage.name),
+        };
+      }),
+    };
   }
 
   /**
