@@ -127,6 +127,7 @@ const createMockPrismaService = () => ({
   },
   companySector: {
     findFirst: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
   },
   user: {
     findUnique: jest.fn().mockResolvedValue({ name: mockUserName }),
@@ -1328,6 +1329,11 @@ describe('QuotationWorkflowService', () => {
         },
       ]);
       prisma.companySector.findFirst.mockResolvedValue({ id: 'sector-pickup' });
+      // Os setores ativos de produção da empresa (§4.16)
+      prisma.companySector.findMany.mockResolvedValue([
+        { id: 'sector-1' },
+        { id: 'sector-2' },
+      ]);
       mockPlanControl.getCompanyPlanInfo.mockResolvedValue({
         features: { delivery_production_tabs: true },
       });

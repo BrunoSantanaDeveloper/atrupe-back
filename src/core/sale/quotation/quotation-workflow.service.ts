@@ -1588,6 +1588,20 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
     // produto, com os fixos das etapas de cobrança; o fixo cuja etapa ficou
     // zerada no pedido (Instalação 0 h, o cliente retira) sai deste pedido
     const productById = new Map(products.map((row) => [row.id, row]));
+    // O setor desativado (a empresa tirou na etapa "Seus setores de
+    // produção") não entra no fluxo do pedido
+    const activeSectors = new Set(
+      (
+        await this.prisma.companySector.findMany({
+          where: {
+            companyId: quotation.companyId,
+            isActive: true,
+            isProductionStage: true,
+          },
+          select: { id: true },
+        })
+      ).map((row) => row.id),
+    );
     const flowOf = new Map(
       quotation.quotationProduct
         .filter(
@@ -1610,7 +1624,7 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
                     )
                   : false,
               })),
-            ),
+            ).filter((stage) => activeSectors.has(stage.stageId)),
           ];
         }),
     );

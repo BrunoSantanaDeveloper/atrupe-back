@@ -39,6 +39,9 @@ model Company {
   // notas de antes pertencem ao CNPJ anterior — ficam como histórico, sem
   // manipulação, e a configuração fiscal recomeça do zero.
   fiscalResetAt          DateTime?
+  // Quando a empresa disse quais são os setores de produção dela (área 9
+  // §4.16; Maicol, 26/11/2026): a etapa aparece uma vez, no LITE em diante
+  productionSectorsSetAt DateTime?
   facebook               String?
   instagram              String?
   linkedin               String?

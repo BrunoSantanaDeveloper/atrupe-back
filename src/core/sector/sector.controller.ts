@@ -32,6 +32,7 @@ import { RequiresFeature } from '../plan/decorators/requires-feature.decorator';
 import { PlanControlService } from '../plan/plan-control.service';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { SectorFilterDto } from './dto/filter.dto';
+import { ProductionSetupDto } from './dto/production-setup.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -104,6 +105,25 @@ export class SectorController {
   async findAll(@Req() req, @Query() filter: SectorFilterDto) {
     filter.companyId = req.user.companyId;
     return this.withValues(req, await this.sectorService.findAll(filter));
+  }
+
+  // "Seus setores de produção" (área 9 §4.16): a etapa do LITE em diante
+  @Get('production-setup')
+  @HasPermission('view', 'company_settings:sectors')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('product_production_stages')
+  @ApiOperation({ summary: 'Os setores de produção e se a etapa foi feita' })
+  async productionSetup(@Req() req) {
+    return this.sectorService.productionSetup(req.user.companyId);
+  }
+
+  @Post('production-setup')
+  @HasPermission('edit', 'company_settings:sectors')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('product_production_stages')
+  @ApiOperation({ summary: 'Grava os setores de produção da empresa' })
+  async saveProductionSetup(@Req() req, @Body() dto: ProductionSetupDto) {
+    return this.sectorService.saveProductionSetup(req.user.companyId, dto);
   }
 
   @Get('with-products')

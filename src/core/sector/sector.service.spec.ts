@@ -159,3 +159,72 @@ describe('Setor: unidade de venda, cor, natureza e rateio', () => {
     });
   });
 });
+
+describe('SectorService: "Seus setores de produção" (área 9 §4.16)', () => {
+  const tx = {
+    companySector: { updateMany: jest.fn(), create: jest.fn() },
+    company: { update: jest.fn() },
+  };
+  const prisma: any = {
+    company: {
+      findUnique: jest.fn().mockResolvedValue({ productionSectorsSetAt: null }),
+    },
+    companySector: {
+      findMany: jest.fn().mockResolvedValue([
+        { id: 'imp', name: 'Impressão' },
+        { id: 'cnc', name: 'CNC' },
+      ]),
+    },
+    $transaction: jest.fn((fn) => fn(tx)),
+  };
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { SectorService } = require('./sector.service');
+  const service = new SectorService(prisma);
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('ativa os marcados, inativa os outros e cria os novos sem repetir nome', async () => {
+    await service.saveProductionSetup('c-1', {
+      activeIds: ['imp'],
+      newSectors: [
+        { name: 'Serralheria', icon: 'tool' },
+        { name: ' cnc ' },
+        { name: 'serralheria' },
+      ],
+    });
+    expect(tx.companySector.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ['imp'] } }),
+        data: { isActive: true },
+      }),
+    );
+    expect(tx.companySector.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { notIn: ['imp'] } }),
+        data: { isActive: false },
+      }),
+    );
+    expect(tx.companySector.create).toHaveBeenCalledTimes(1);
+    expect(tx.companySector.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        companyId: 'c-1',
+        name: 'Serralheria',
+        isProductionStage: true,
+      }),
+    });
+    expect(tx.company.update).toHaveBeenCalled();
+  });
+
+  it('sem nenhum setor, recusa', async () => {
+    await expect(
+      service.saveProductionSetup('c-1', { activeIds: [], newSectors: [] }),
+    ).rejects.toThrow('Marque ou crie pelo menos um setor de produção');
+    expect(tx.company.update).not.toHaveBeenCalled();
+  });
+
+  it('o setor de outra empresa responde 404', async () => {
+    await expect(
+      service.saveProductionSetup('c-1', { activeIds: ['outro'] }),
+    ).rejects.toThrow('Setor não encontrado.');
+  });
+});
