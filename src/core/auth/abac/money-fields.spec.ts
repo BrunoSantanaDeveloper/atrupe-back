@@ -22,6 +22,8 @@ const NOT_MONEY: Record<keyof typeof MONEY_COLUMNS, string[]> = {
     'duration',
     'height',
     'length',
+    // A ordem das unidades de venda no cadastro (25/11/2026)
+    'position',
     'volume',
     'weight',
     'width',
