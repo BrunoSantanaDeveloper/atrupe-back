@@ -6,7 +6,11 @@ import {
   SectorNature,
   SectorSaleUnit,
 } from '@prisma/client';
-import { SectorService } from './sector.service';
+import {
+  DELIVERY_SECTOR_NAME,
+  SectorService,
+  sectorNameTaken,
+} from './sector.service';
 import { CreateSectorDto } from './dto/create-sector.dto';
 import { UpdateSectorDto } from './dto/update-sector.dto';
 
@@ -169,19 +173,31 @@ describe('SectorService: "Seus setores de produção" (área 9 §4.16)', () => {
     company: {
       findUnique: jest.fn().mockResolvedValue({ productionSectorsSetAt: null }),
     },
-    companySector: {
-      findMany: jest.fn().mockResolvedValue([
-        { id: 'imp', name: 'Impressão' },
-        { id: 'cnc', name: 'CNC' },
-      ]),
-    },
+    companySector: { findMany: jest.fn() },
     $transaction: jest.fn((fn) => fn(tx)),
   };
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { SectorService } = require('./sector.service');
+  const production = { kind: 'PRODUCTION', isProductionStage: true };
+  // Todos os setores da empresa: os de produção, um inativo, um de outro
+  // tipo e a Entrega do sistema
+  const sectors = [
+    { id: 'imp', name: 'Impressão', ...production, isSystem: false },
+    { id: 'cnc', name: 'CNC', ...production, isSystem: false },
+    { id: 'serig', name: 'Serigrafia', ...production, isSystem: false },
+    {
+      id: 'fin',
+      name: 'Financeiro',
+      kind: 'FINANCIAL',
+      isProductionStage: false,
+      isSystem: false,
+    },
+    { id: 'ent', name: 'Entrega', ...production, isSystem: true },
+  ];
   const service = new SectorService(prisma);
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.companySector.findMany.mockResolvedValue(sectors);
+  });
 
   it('ativa os marcados, inativa os outros e cria os novos sem repetir nome', async () => {
     await service.saveProductionSetup('c-1', {
@@ -192,15 +208,20 @@ describe('SectorService: "Seus setores de produção" (área 9 §4.16)', () => {
         { name: 'serralheria' },
       ],
     });
+    // O nome é comparado com todos os setores da empresa
+    expect(prisma.companySector.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { companyId: 'c-1' } }),
+    );
+    // " cnc " é o CNC que já existe: fica ativo, sem nascer de novo
     expect(tx.companySector.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: { in: ['imp'] } }),
+        where: expect.objectContaining({ id: { in: ['imp', 'cnc'] } }),
         data: { isActive: true },
       }),
     );
     expect(tx.companySector.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: { notIn: ['imp'] } }),
+        where: expect.objectContaining({ id: { notIn: ['imp', 'cnc'] } }),
         data: { isActive: false },
       }),
     );
@@ -226,5 +247,51 @@ describe('SectorService: "Seus setores de produção" (área 9 §4.16)', () => {
     await expect(
       service.saveProductionSetup('c-1', { activeIds: ['outro'] }),
     ).rejects.toThrow('Setor não encontrado.');
+  });
+
+  it('o setor fora da produção não é marcado pela etapa', async () => {
+    await expect(
+      service.saveProductionSetup('c-1', { activeIds: ['fin'] }),
+    ).rejects.toThrow('Setor não encontrado.');
+  });
+
+  it('o nome de um setor inativo o reativa, sem acento nem maiúsculas', async () => {
+    await service.saveProductionSetup('c-1', {
+      activeIds: [],
+      newSectors: [{ name: 'SERIGRAFÍA' }, { name: 'impressao' }],
+    });
+    expect(tx.companySector.create).not.toHaveBeenCalled();
+    expect(tx.companySector.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ['serig', 'imp'] } }),
+        data: { isActive: true },
+      }),
+    );
+    expect(tx.company.update).toHaveBeenCalled();
+  });
+
+  it.each(['Entrega', 'ENTREGA', ' cliente  retira '])(
+    'o nome de entrega (%s) é recusado',
+    async (name) => {
+      await expect(
+        service.saveProductionSetup('c-1', {
+          activeIds: ['imp'],
+          newSectors: [{ name }],
+        }),
+      ).rejects.toThrow(DELIVERY_SECTOR_NAME);
+      expect(tx.companySector.create).not.toHaveBeenCalled();
+      expect(tx.company.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('o nome de um setor fora da produção é recusado com o nome dele', async () => {
+    await expect(
+      service.saveProductionSetup('c-1', {
+        activeIds: ['imp'],
+        newSectors: [{ name: 'financeiro' }],
+      }),
+    ).rejects.toThrow(sectorNameTaken('Financeiro'));
+    expect(tx.companySector.create).not.toHaveBeenCalled();
+    expect(tx.company.update).not.toHaveBeenCalled();
   });
 });

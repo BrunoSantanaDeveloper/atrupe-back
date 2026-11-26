@@ -13,8 +13,13 @@ FROM "products" AS p,
      LATERAL jsonb_array_elements(
        CASE jsonb_typeof(p."productionStages"::jsonb)
          WHEN 'array' THEN p."productionStages"::jsonb
-         -- gravado como texto JSON por versões antigas
-         WHEN 'string' THEN (p."productionStages"::jsonb #>> '{}')::jsonb
+         -- gravado como texto JSON por versões antigas: só o texto de uma
+         -- lista vira lista; o outro texto fica sem fluxo
+         WHEN 'string' THEN
+           CASE WHEN (p."productionStages"::jsonb #>> '{}') ~ '^\s*\['
+             THEN (p."productionStages"::jsonb #>> '{}')::jsonb
+             ELSE '[]'::jsonb END
+         -- objeto, número, booleano ou nulo: sem fluxo
          ELSE '[]'::jsonb END
      ) AS stage,
      "sectors" AS s
@@ -22,7 +27,8 @@ WHERE pi."productId" = p."id"
   AND pi."sectorId" IS NULL
   AND s."id" = stage->>'id'
   AND s."companyId" = p."companyId"
-  AND COALESCE((stage->>'isActive')::boolean, true)
+  -- só a etapa marcada ativa (true); o texto que não é booleano não conta
+  AND COALESCE(stage->>'isActive', 'true') = 'true'
   AND lower(trim(s."name")) = lower(trim(pi."name"));
 
 -- O produto de uma unidade só: a unidade recebe o setor do produto, quando
@@ -34,16 +40,24 @@ WHERE pi."productId" = p."id"
   AND pi."sectorId" IS NULL
   AND p."sectorId" IS NOT NULL
   AND (SELECT COUNT(*) FROM "product_items" x WHERE x."productId" = p."id") = 1
+  -- o setor do produto é da empresa dele
+  AND EXISTS (
+    SELECT 1 FROM "sectors" s
+    WHERE s."id" = p."sectorId" AND s."companyId" = p."companyId"
+  )
   AND EXISTS (
     SELECT 1
     FROM jsonb_array_elements(
       CASE jsonb_typeof(p."productionStages"::jsonb)
         WHEN 'array' THEN p."productionStages"::jsonb
-        WHEN 'string' THEN (p."productionStages"::jsonb #>> '{}')::jsonb
+        WHEN 'string' THEN
+          CASE WHEN (p."productionStages"::jsonb #>> '{}') ~ '^\s*\['
+            THEN (p."productionStages"::jsonb #>> '{}')::jsonb
+            ELSE '[]'::jsonb END
         ELSE '[]'::jsonb END
     ) AS stage
     WHERE stage->>'id' = p."sectorId"
-      AND COALESCE((stage->>'isActive')::boolean, true)
+      AND COALESCE(stage->>'isActive', 'true') = 'true'
   );
 
 -- O ícone que veio da etapa de cobrança não sai do pedido na agenda

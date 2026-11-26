@@ -2,4 +2,5 @@
 -- aparece para a conta que entra no LITE. As contas que já existem não
 -- passam por ela: os setores delas continuam como estão.
 ALTER TABLE "companies" ADD COLUMN "productionSectorsSetAt" TIMESTAMP(3);
-UPDATE "companies" SET "productionSectorsSetAt" = NOW();
+UPDATE "companies" SET "productionSectorsSetAt" = NOW()
+WHERE "productionSectorsSetAt" IS NULL;

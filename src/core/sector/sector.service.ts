@@ -11,8 +11,30 @@ import { SectorFilterDto } from './dto/filter.dto';
 import {
   Prisma,
   SectorAllocationCriterion,
+  SectorKind,
   SectorNature,
 } from '@prisma/client';
+import { normalizeText } from '../material/material-text';
+
+// Entrega e Cliente Retira são as etapas de entrega do sistema (as mesmas
+// de DELIVERY_STAGES na agenda): não nascem como setor de produção
+const DELIVERY_NAMES = ['Entrega', 'Cliente Retira'].map(normalizeText);
+export const DELIVERY_SECTOR_NAME =
+  'Entrega e Cliente Retira são etapas de entrega do sistema e não entram como setor de produção';
+export const sectorNameTaken = (name: string) =>
+  `Já existe o setor "${name}" fora dos setores de produção. Use outro nome ou ajuste esse setor em Setores`;
+
+type SetupSector = {
+  id: string;
+  name: string;
+  kind: SectorKind;
+  isProductionStage: boolean;
+  isSystem: boolean;
+};
+
+/** O setor da etapa "Seus setores de produção" (o mesmo de productionWhere) */
+const isProductionSector = (row: SetupSector) =>
+  row.kind === 'PRODUCTION' && row.isProductionStage && !row.isSystem;
 
 @Injectable()
 export class SectorService {
@@ -66,24 +88,49 @@ export class SectorService {
   /**
    * Grava a etapa: os marcados ficam ativos, os demais setores de produção
    * ficam inativos (não se apagam) e os novos nascem como etapa de produção.
+   * O nome novo é comparado, sem acento nem maiúsculas, com todos os setores
+   * da empresa: o de produção com o mesmo nome (até o inativo) fica ativo, em
+   * vez de nascer de novo ou sumir em silêncio; o de mesmo nome fora da
+   * produção e os nomes de entrega são recusados.
    */
   async saveProductionSetup(companyId: string, dto: ProductionSetupDto) {
-    const existing = await this.prisma.companySector.findMany({
-      where: this.productionWhere(companyId),
-      select: { id: true, name: true },
+    const all: SetupSector[] = await this.prisma.companySector.findMany({
+      where: { companyId },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        isProductionStage: true,
+        isSystem: true,
+      },
     });
+    const existing = all.filter(isProductionSector);
     const active = new Set(dto.activeIds);
     if (dto.activeIds.some((id) => !existing.some((row) => row.id === id))) {
       throw new NotFoundException('Setor não encontrado.');
     }
-    const norm = (value: string) => value.trim().toLowerCase();
-    const names = new Set(existing.map((row) => norm(row.name)));
-    const created = (dto.newSectors ?? []).filter((row) => {
-      const name = norm(row.name);
-      if (!name || names.has(name)) return false;
-      names.add(name);
-      return true;
-    });
+    const created: { name: string; icon?: string }[] = [];
+    const seen = new Set<string>();
+    for (const row of dto.newSectors ?? []) {
+      const name = normalizeText(row.name);
+      // O mesmo nome duas vezes na lista entra uma vez só
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      if (DELIVERY_NAMES.includes(name)) {
+        throw new BadRequestException(DELIVERY_SECTOR_NAME);
+      }
+      const sameName = all.filter(
+        (other) => normalizeText(other.name) === name,
+      );
+      const production = sameName.find(isProductionSector);
+      if (production) {
+        active.add(production.id);
+      } else if (sameName.length) {
+        throw new BadRequestException(sectorNameTaken(sameName[0].name));
+      } else {
+        created.push(row);
+      }
+    }
     if (!active.size && !created.length) {
       throw new BadRequestException(
         'Marque ou crie pelo menos um setor de produção',

@@ -15,7 +15,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { ProductionStageService } from './production-stage.service';
+import { ProductionStageService, StageActor } from './production-stage.service';
 import { UpdateProductionStageDto } from './dto/update-production-stage.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
@@ -29,10 +29,10 @@ import {
 
 const RESOURCE = 'production-stage';
 
-// Quem concluiu fica gravado na etapa do item (§4.16)
-const actorOf = (req: any) => ({
+// Quem concluiu fica gravado na etapa do item (§4.16). O req.user do
+// JwtStrategy não traz o nome: o serviço o busca pelo userId ao concluir
+const actorOf = (req: any): StageActor => ({
   userId: req.user?.userId ?? null,
-  name: req.user?.name ?? null,
 });
 
 @ApiTags('Estágios de produção - Agenda de entrega')
@@ -62,9 +62,11 @@ export class ProductionStageController {
     return this.productionStageService.findAll(req.user.companyId);
   }
 
-  // A lista de trabalhos do LITE (área 9 §4.16): antes de ':id'
+  // A lista de trabalhos do LITE (área 9 §4.16): antes de ':id'. Rota nova:
+  // a permissão já recusa, fora do modo observar da classe
   @Get('work-list')
   @HasPermission('view', 'production:delivery_schedule')
+  @ObservePermissions(false)
   @UseGuards(FeatureGuard)
   @RequiresFeature('delivery_production_stages')
   @ApiOperation({ summary: 'Os trabalhos dos setores (lista do LITE)' })
@@ -138,9 +140,11 @@ export class ProductionStageController {
     );
   }
 
-  // O ícone livre acrescentado no pedido (área 9 §4.16)
+  // O ícone livre acrescentado no pedido (área 9 §4.16). Rota nova: a
+  // permissão já recusa, fora do modo observar da classe
   @Post('schedule/:id/stage')
   @HasPermission('edit', 'production:delivery_schedule')
+  @ObservePermissions(false)
   @UseGuards(FeatureGuard)
   @RequiresFeature('delivery_stage_status_change')
   @ApiOperation({ summary: 'Acrescentar um setor ao fluxo do pedido' })
@@ -174,6 +178,9 @@ export class ProductionStageController {
     { action: 'edit', resource: 'production:delivery_schedule' },
     { action: 'delete', resource: 'production:delivery_schedule' },
   )
+  // Tirar o ícone do pedido (§4.16): a permissão já recusa, fora do modo
+  // observar da classe
+  @ObservePermissions(false)
   // Mudar o status das etapas na agenda é recurso de plano.
   @UseGuards(FeatureGuard)
   @RequiresFeature('delivery_stage_status_change')

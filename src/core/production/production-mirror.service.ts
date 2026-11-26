@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { ProductionStageStatus } from '@prisma/client';
 import { PrismaService } from 'src/config/prisma/prisma.service';
 import { ProductionStageService } from '../sale/production-stage/production-stage.service';
@@ -39,6 +39,11 @@ export const aggregateStatus = (statuses: Status[]): Status => {
 export class ProductionMirrorService {
   constructor(
     private readonly prisma: PrismaService,
+    // forwardRef: os arquivos se importam em ciclo (production-stage →
+    // quotation-items → quotation-lines → production-project → este →
+    // production-stage). Sem ele, a classe chega undefined e a API não sobe
+    // (26/11/2026; o mesmo caso do OrderRedoService em 24/11)
+    @Inject(forwardRef(() => ProductionStageService))
     private readonly stages: ProductionStageService,
   ) {}
 

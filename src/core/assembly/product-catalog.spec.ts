@@ -4,6 +4,7 @@ import { valuesRuleOf } from '../auth/abac/values-visibility.interceptor';
 import { FeatureGuard } from '../plan/guards/feature.guard';
 import { ProductCatalogController } from './product-catalog.controller';
 import { ProductCatalogService } from './product-catalog.service';
+import { soldItemsWhere } from '../product/product.service';
 
 /**
  * Onde o produto é usado e duplicar: sem recurso de plano na rota; a
@@ -56,5 +57,28 @@ describe('ProductCatalogService', () => {
     expect(prisma.product.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'pr-1', companyId: 'c-1' } }),
     );
+  });
+
+  // A trava do tipo (25/11/2026): a tela e o PATCH contam igual
+  it('onde é usado conta os itens vendidos pelo mesmo filtro da trava', async () => {
+    const prisma = {
+      product: { findFirst: jest.fn().mockResolvedValue({ id: 'pr-1' }) },
+      assemblyBlock: { findMany: jest.fn().mockResolvedValue([]) },
+      quotationProduct: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(2),
+      },
+    };
+    const service = new ProductCatalogService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const result = await service.usage('c-1', 'pr-1');
+    expect(prisma.quotationProduct.count).toHaveBeenCalledWith({
+      where: soldItemsWhere('c-1', 'pr-1'),
+    });
+    expect(result.soldCount).toBe(2);
   });
 });

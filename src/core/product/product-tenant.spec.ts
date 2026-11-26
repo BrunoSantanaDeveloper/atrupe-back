@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { ProductService } from './product.service';
+import { ProductService, UNIT_SECTOR_NOT_FOUND } from './product.service';
 
 describe('ProductService: cadastros da empresa', () => {
   let prisma: any;
@@ -63,6 +63,54 @@ describe('ProductService: cadastros da empresa', () => {
     ).rejects.toThrow(new NotFoundException('Setor não encontrado.'));
     expect(prisma.companySector.count).toHaveBeenCalledWith({
       where: { id: { in: ['setor-1', 'setor-de-outra'] }, companyId: 'c-1' },
+    });
+  });
+
+  // O setor da etapa de cobrança vira ícone fixo (§4.16): só o de produção,
+  // ativo e da empresa
+  it('o setor da unidade de venda só pode ser de produção, ativo e da empresa', async () => {
+    prisma.companySector.count.mockResolvedValueOnce(0);
+
+    await expect(
+      service.create({
+        companyId: 'c-1',
+        code: 'P1',
+        items: [{ name: 'Impressão', sectorId: 'setor-admin' }],
+      } as any),
+    ).rejects.toThrow(new NotFoundException(UNIT_SECTOR_NOT_FOUND));
+    expect(prisma.companySector.count).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['setor-admin'] },
+        companyId: 'c-1',
+        isProductionStage: true,
+        isSystem: false,
+        isActive: true,
+      },
+    });
+    expect(prisma.product.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('na edição, só o setor novo da unidade é conferido', async () => {
+    prisma.product.findUnique.mockResolvedValueOnce({
+      companyId: 'c-1',
+      items: [{ sectorId: 'setor-antigo' }],
+    });
+    prisma.companySector.count.mockResolvedValueOnce(0);
+
+    await expect(
+      service.update('p-1', {
+        items: [
+          { id: 'i-1', name: 'A', sectorId: 'setor-antigo' },
+          { name: 'B', sectorId: 'setor-inativo' },
+        ],
+      } as any),
+    ).rejects.toThrow(new NotFoundException(UNIT_SECTOR_NOT_FOUND));
+    expect(prisma.companySector.count).toHaveBeenCalledTimes(1);
+    expect(prisma.companySector.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: { in: ['setor-inativo'] },
+        isActive: true,
+      }),
     });
   });
 

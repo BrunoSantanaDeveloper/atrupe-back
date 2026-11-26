@@ -30,6 +30,10 @@ const ITEM_STAGE_NOT_FOUND = 'Etapa do item não encontrada';
 export const FIXED_STAGE =
   'Esta etapa é cobrada na composição do produto e não sai do pedido';
 export const STAGE_ALREADY_IN_ORDER = 'O pedido já passa por este setor';
+export const FIXED_STAGE_SECTOR =
+  'Esta etapa é cobrada na composição do produto e o setor dela não muda no pedido';
+export const SCHEDULE_CLOSED =
+  'A agenda deste pedido foi cancelada ou já entregue e as etapas dela não mudam';
 // Entrega e Cliente Retira não são etapas de produção
 const DELIVERY_STAGES = ['Entrega', 'Cliente Retira'];
 /** A agenda fechada: entregue (FINISHED, DONE) ou cancelada */
@@ -39,7 +43,10 @@ const CLOSED_SCHEDULE: DeliveryScheduleStatus[] = [
   'DONE',
 ];
 
-/** Quem age na etapa: o nome fica gravado ao concluir (§4.16). */
+/**
+ * Quem age na etapa: o nome fica gravado ao concluir (§4.16). O token não
+ * traz o nome; o serviço o busca pelo userId (withName).
+ */
 export type StageActor = { userId?: string | null; name?: string | null };
 
 /**
@@ -107,9 +114,43 @@ function scheduleOfCompany(
   };
 }
 
+/**
+ * Uma agenda por vez ao acrescentar setor: dois cliques ao mesmo tempo
+ * leriam as etapas sem o setor e o criariam duas vezes. A trava, presa até o
+ * fim da transação, faz o segundo esperar o primeiro e ver a etapa dele (o
+ * padrão de stock/purchasing/numbering.ts).
+ */
+const lockSchedule = (tx: Prisma.TransactionClient, scheduleId: string) =>
+  tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`schedule-stage:${scheduleId}`}))`;
+
 @Injectable()
 export class ProductionStageService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * O nome de quem concluiu (§4.16): o req.user do JwtStrategy não traz o
+   * nome, então ele vem do cadastro, uma vez por requisição. Sem userId ou
+   * com o nome já dado, não busca.
+   */
+  private async withName(actor?: StageActor): Promise<StageActor | undefined> {
+    if (!actor?.userId || actor.name) return actor;
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.userId },
+      select: { name: true },
+    });
+    return { ...actor, name: user?.name ?? null };
+  }
+
+  /** A agenda cancelada ou já entregue não ganha nem perde etapa. */
+  private async assertScheduleOpen(scheduleId: string) {
+    const schedule = await this.prisma.deliverySchedule.findUnique({
+      where: { id: scheduleId },
+      select: { status: true },
+    });
+    if (schedule && CLOSED_SCHEDULE.includes(schedule.status)) {
+      throw new BadRequestException(SCHEDULE_CLOSED);
+    }
+  }
 
   // Toda leitura e escrita fica nas agendas da empresa da sessão: a lista
   // trazia as etapas de todas as empresas, e o id de outra empresa alterava
@@ -146,6 +187,22 @@ export class ProductionStageService {
       { companyId },
       'Setor não encontrado.',
     );
+    // Trocar o setor da etapa tiraria do pedido o ícone fixo (§4.16), que
+    // veio de uma etapa de cobrança do produto e não sai (como no remove)
+    if (
+      updateProductionStageDto.stageId !== undefined &&
+      productionStage.stageId &&
+      updateProductionStageDto.stageId !== productionStage.stageId
+    ) {
+      const fixed = await this.prisma.productionItemStage.count({
+        where: {
+          scheduleId: productionStage.scheduleId,
+          stageId: productionStage.stageId,
+          fixed: true,
+        },
+      });
+      if (fixed > 0) throw new BadRequestException(FIXED_STAGE_SECTOR);
+    }
 
     // O anterior só muda quando o estado muda: gravar o mesmo estado (só a
     // nota, ou o setor) não perde para onde voltar
@@ -153,6 +210,9 @@ export class ProductionStageService {
     const next = updateProductionStageDto.status as StageStatus | undefined;
     updateProductionStageDto.prevStatus =
       next && next !== from ? from : productionStage.prevStatus;
+    // Com a troca de estado, os itens podem ser concluídos: o nome de quem
+    // concluiu vem do cadastro, uma vez só
+    const who = next ? await this.withName(actor) : actor;
 
     try {
       await this.prisma.productionStage.update({
@@ -171,7 +231,7 @@ export class ProductionStageService {
           from,
           next,
           updateProductionStageDto.notes,
-          actor,
+          who,
         );
       }
 
@@ -197,6 +257,11 @@ export class ProductionStageService {
     });
     if (!item) throw new NotFoundException(ITEM_STAGE_NOT_FOUND);
     await this.assertNotManaged(item.scheduleId);
+    // Só concluir grava quem: o nome vem do cadastro só nesse caso
+    const who =
+      dto.status === 'DONE' && item.status !== 'DONE'
+        ? await this.withName(actor)
+        : actor;
     await this.prisma.productionItemStage.update({
       where: { id },
       data: {
@@ -204,7 +269,7 @@ export class ProductionStageService {
         // Gravar o mesmo estado (só a nota) não perde para onde voltar
         prevStatus: dto.status === item.status ? item.prevStatus : item.status,
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
-        ...doneData(dto.status, actor, item.status),
+        ...doneData(dto.status, who, item.status),
       },
     });
     await this.syncOrderStage(item.scheduleId, item.stageId);
@@ -311,6 +376,7 @@ export class ProductionStageService {
       ids.push(id);
     }
     if (ids.length) {
+      const who = await this.withName(actor);
       // Um updateMany por estado aberto: cada etapa grava o próprio anterior
       await this.prisma.$transaction([
         ...OPEN.map((status) =>
@@ -320,7 +386,7 @@ export class ProductionStageService {
             data: {
               status: 'DONE',
               prevStatus: status,
-              ...doneData('DONE', actor, status),
+              ...doneData('DONE', who, status),
             },
           }),
         ),
@@ -494,8 +560,9 @@ export class ProductionStageService {
             },
           },
         },
+        // Nos concluídos, o sem data (de antes da coluna) vai para o fim
         orderBy: done
-          ? [{ doneAt: 'desc' }, { updatedAt: 'desc' }]
+          ? [{ doneAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }]
           : [{ schedule: { scheduledDate: 'asc' } }, { order: 'asc' }],
         take: 300,
       }),
@@ -601,8 +668,9 @@ export class ProductionStageService {
       select: { id: true, status: true },
     });
     if (!schedule) throw new NotFoundException('Agenda não encontrada');
-    if (['FINISHED', 'DONE'].includes(schedule.status)) {
-      throw new BadRequestException('A entrega deste pedido já foi concluída');
+    // A cancelada também: o setor novo a traria de volta para a produção
+    if (CLOSED_SCHEDULE.includes(schedule.status)) {
+      throw new BadRequestException(SCHEDULE_CLOSED);
     }
     await this.assertNotManaged(scheduleId);
     const sector = await this.prisma.companySector.findFirst({
@@ -617,42 +685,45 @@ export class ProductionStageService {
     if (!sector || DELIVERY_STAGES.includes(sector.name)) {
       throw new NotFoundException('Setor não encontrado.');
     }
-    const stages = await this.prisma.productionStage.findMany({
-      where: { scheduleId },
-      select: { id: true, stageId: true, order: true, stage: true },
-      orderBy: { order: 'asc' },
-    });
-    if (stages.some((stage) => stage.stageId === stageId)) {
-      throw new ConflictException(STAGE_ALREADY_IN_ORDER);
-    }
-    const delivery = stages.filter((stage) =>
-      DELIVERY_STAGES.includes(stage.stage?.name ?? ''),
-    );
-    const production = stages.filter((stage) => !delivery.includes(stage));
-    const order =
-      Math.max(0, ...production.map((stage) => stage.order ?? 0)) + 1;
-    const items = await this.prisma.quotationProduct.findMany({
-      where: {
-        quotation: {
-          OR: [
-            { DeliverySchedule: { is: { id: scheduleId } } },
-            {
-              deliveryInfo: {
-                is: { deliverySchedule: { is: { id: scheduleId } } },
-              },
-            },
-          ],
-        },
-      },
-      select: {
-        id: true,
-        productionItemStages: {
-          where: { scheduleId },
-          select: { order: true },
-        },
-      },
-    });
     await this.prisma.$transaction(async (tx) => {
+      // Com a agenda travada, as etapas lidas aqui são as de agora: o
+      // segundo clique vê o setor que o primeiro criou
+      await lockSchedule(tx, scheduleId);
+      const stages = await tx.productionStage.findMany({
+        where: { scheduleId },
+        select: { id: true, stageId: true, order: true, stage: true },
+        orderBy: { order: 'asc' },
+      });
+      if (stages.some((stage) => stage.stageId === stageId)) {
+        throw new ConflictException(STAGE_ALREADY_IN_ORDER);
+      }
+      const delivery = stages.filter((stage) =>
+        DELIVERY_STAGES.includes(stage.stage?.name ?? ''),
+      );
+      const production = stages.filter((stage) => !delivery.includes(stage));
+      const order =
+        Math.max(0, ...production.map((stage) => stage.order ?? 0)) + 1;
+      const items = await tx.quotationProduct.findMany({
+        where: {
+          quotation: {
+            OR: [
+              { DeliverySchedule: { is: { id: scheduleId } } },
+              {
+                deliveryInfo: {
+                  is: { deliverySchedule: { is: { id: scheduleId } } },
+                },
+              },
+            ],
+          },
+        },
+        select: {
+          id: true,
+          productionItemStages: {
+            where: { scheduleId },
+            select: { order: true },
+          },
+        },
+      });
       for (const [index, stage] of delivery.entries()) {
         await tx.productionStage.update({
           where: { id: stage.id },
@@ -686,6 +757,9 @@ export class ProductionStageService {
   async remove(id: string, companyId: string) {
     const stage = await this.findOne(id, companyId);
     await this.assertNotManaged(stage.scheduleId);
+    // A agenda cancelada ou entregue fica como foi: tirar uma etapa dela
+    // apagaria o registro do que se fez (e de quem concluiu)
+    await this.assertScheduleOpen(stage.scheduleId);
     if (stage.stageId) {
       const fixed = await this.prisma.productionItemStage.count({
         where: {

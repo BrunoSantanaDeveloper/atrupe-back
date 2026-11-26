@@ -1,4 +1,4 @@
-import { ProductService } from './product.service';
+import { ProductService, soldItemsWhere } from './product.service';
 
 /**
  * O PATCH /product/:id parcial (o descritivo, as permissões de edição, que a
@@ -185,6 +185,14 @@ describe('ProductService.update: a estrutura do produto', () => {
       service.update('pr-1', { structure: 'SHEET' } as any),
     ).rejects.toThrow('já foi usado em orçamento');
     expect(prisma.product.update).not.toHaveBeenCalled();
+    // Pela empresa do produto, como o "onde é usado" da tela
+    expect(prisma.quotationProduct.count).toHaveBeenCalledWith({
+      where: soldItemsWhere('c-1', 'pr-1'),
+    });
+    expect(soldItemsWhere('c-1', 'pr-1')).toEqual({
+      productId: 'pr-1',
+      quotation: { companyId: 'c-1' },
+    });
   });
 
   it('produto usado pode ser editado sem trocar o tipo', async () => {

@@ -6,7 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'nestjs-prisma';
 import { PlanControlService } from '../plan/plan-control.service';
-import { ProductService } from '../product/product.service';
+import { ProductService, soldItemsWhere } from '../product/product.service';
 import { ASSEMBLY_INCLUDE } from './assembly-graph';
 import {
   PRODUCT_NOT_FOUND,
@@ -80,9 +80,10 @@ export class ProductCatalogService {
         },
       }),
       // Em quantos itens de orçamento ele já entrou, de qualquer situação:
-      // com algum, o tipo do produto trava (25/11/2026)
+      // com algum, o tipo do produto trava (25/11/2026). O mesmo filtro da
+      // trava no PATCH do produto
       this.prisma.quotationProduct.count({
-        where: { productId, quotation: { companyId } },
+        where: soldItemsWhere(companyId, productId),
       }),
     ]);
     return {

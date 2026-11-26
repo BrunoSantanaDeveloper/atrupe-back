@@ -5,7 +5,9 @@ import {
 } from '@nestjs/common';
 import {
   FIXED_STAGE,
+  FIXED_STAGE_SECTOR,
   ProductionStageService,
+  SCHEDULE_CLOSED,
   STAGE_ALREADY_IN_ORDER,
 } from './production-stage.service';
 
@@ -41,7 +43,10 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
         updateMany: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
       },
+      // O nome de quem concluiu vem do cadastro (o token não traz)
+      user: { findUnique: jest.fn().mockResolvedValue({ name: 'Ana' }) },
     };
     prisma.deliverySchedule.findMany = jest.fn().mockResolvedValue([]);
     prisma.productionStage.updateMany = jest.fn();
@@ -89,6 +94,43 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
       where: { id: { in: ['setor-b'] }, companyId: 'c-1' },
     });
     expect(prisma.productionStage.update).not.toHaveBeenCalled();
+  });
+
+  it('trocar o setor da etapa com ícone fixo é recusado, sem gravar', async () => {
+    prisma.productionStage.findFirst.mockResolvedValue({
+      id: 'st-1',
+      status: 'NOT_STARTED',
+      scheduleId: 'ag-1',
+      stageId: 'imp',
+    });
+    prisma.productionItemStage.count.mockResolvedValue(1);
+
+    await expect(
+      service.update('st-1', { stageId: 'acab' } as any, 'c-1'),
+    ).rejects.toThrow(new BadRequestException(FIXED_STAGE_SECTOR));
+    expect(prisma.productionItemStage.count).toHaveBeenCalledWith({
+      where: { scheduleId: 'ag-1', stageId: 'imp', fixed: true },
+    });
+    expect(prisma.productionStage.update).not.toHaveBeenCalled();
+  });
+
+  it('trocar o setor da etapa livre passa; o mesmo setor nem confere', async () => {
+    prisma.productionStage.findFirst.mockResolvedValue({
+      id: 'st-1',
+      status: 'NOT_STARTED',
+      scheduleId: 'ag-1',
+      stageId: 'imp',
+    });
+
+    await service.update('st-1', { stageId: 'imp', notes: 'x' } as any, 'c-1');
+    expect(prisma.productionItemStage.count).not.toHaveBeenCalled();
+
+    await service.update('st-1', { stageId: 'acab' } as any, 'c-1');
+    expect(prisma.productionItemStage.count).toHaveBeenCalledTimes(1);
+    expect(prisma.productionStage.update).toHaveBeenLastCalledWith({
+      where: { id: 'st-1' },
+      data: expect.objectContaining({ stageId: 'acab' }),
+    });
   });
 
   it('alterar a etapa da empresa passa e recalcula a agenda dela', async () => {
@@ -442,6 +484,7 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
         .fn()
         .mockResolvedValue({ id: 'acab', name: 'Acabamento' });
       prisma.$transaction = jest.fn((fn) => fn(prisma));
+      prisma.$executeRaw = jest.fn();
     });
 
     it('o ícone fixo (etapa de cobrança) não sai do pedido', async () => {
@@ -471,6 +514,38 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
         where: { id: 'st-2' },
       });
     });
+
+    it.each(['CANCELED', 'FINISHED', 'DONE'])(
+      'a agenda %s não perde etapa',
+      async (status) => {
+        prisma.productionStage.findFirst.mockResolvedValue({
+          id: 'st-2',
+          scheduleId: 'sch-1',
+          stageId: 'criacao',
+        });
+        prisma.deliverySchedule.findUnique.mockResolvedValue({ status });
+        await expect(service.remove('st-2', 'c-1')).rejects.toThrow(
+          new BadRequestException(SCHEDULE_CLOSED),
+        );
+        expect(prisma.productionItemStage.deleteMany).not.toHaveBeenCalled();
+        expect(prisma.productionStage.delete).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['CANCELED', 'FINISHED', 'DONE'])(
+      'a agenda %s não ganha setor',
+      async (status) => {
+        prisma.deliverySchedule.findFirst.mockResolvedValue({
+          id: 'sch-1',
+          status,
+        });
+        await expect(
+          service.addToSchedule('sch-1', 'acab', 'c-1'),
+        ).rejects.toThrow(new BadRequestException(SCHEDULE_CLOSED));
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(prisma.productionStage.create).not.toHaveBeenCalled();
+      },
+    );
 
     it('acrescentar entra antes da entrega e em cada item', async () => {
       prisma.deliverySchedule.findFirst.mockResolvedValue({
@@ -517,6 +592,28 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
       await expect(
         service.addToSchedule('sch-1', 'acab', 'c-1'),
       ).rejects.toThrow(new ConflictException(STAGE_ALREADY_IN_ORDER));
+      expect(prisma.productionStage.create).not.toHaveBeenCalled();
+    });
+
+    it('acrescentar trava a agenda e só depois lê as etapas (dois cliques)', async () => {
+      prisma.deliverySchedule.findFirst.mockResolvedValue({
+        id: 'sch-1',
+        status: 'IN_PRODUCTION',
+      });
+      prisma.productionStage.findMany.mockResolvedValue([]);
+      await service.addToSchedule('sch-1', 'acab', 'c-1');
+
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+      const [lockSql, lockKey] = prisma.$executeRaw.mock.calls[0];
+      expect(lockSql.join('?')).toContain('pg_advisory_xact_lock');
+      expect(lockKey).toBe('schedule-stage:sch-1');
+      // A leitura das etapas é depois da trava, dentro da transação
+      expect(prisma.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.productionStage.findMany.mock.invocationCallOrder[0],
+      );
+      expect(
+        prisma.productionStage.findMany.mock.invocationCallOrder[0],
+      ).toBeLessThan(prisma.productionStage.create.mock.invocationCallOrder[0]);
     });
   });
 
@@ -528,9 +625,13 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
         stageId: 'imp',
         status: 'NOT_STARTED',
       });
+      // O req.user não traz o nome: ele vem do cadastro pelo userId
       await service.updateItem('is-1', { status: 'DONE' } as any, 'c-1', {
         userId: 'u-1',
-        name: 'Ana',
+      });
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'u-1' },
+        select: { name: true },
       });
       expect(prisma.productionItemStage.update).toHaveBeenCalledWith({
         where: { id: 'is-1' },
@@ -547,7 +648,10 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
         stageId: 'imp',
         status: 'DONE',
       });
-      await service.updateItem('is-1', { status: 'PENDING' } as any, 'c-1');
+      prisma.user.findUnique.mockClear();
+      await service.updateItem('is-1', { status: 'PENDING' } as any, 'c-1', {
+        userId: 'u-1',
+      });
       expect(prisma.productionItemStage.update).toHaveBeenLastCalledWith({
         where: { id: 'is-1' },
         data: expect.objectContaining({
@@ -557,6 +661,66 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
           doneByName: null,
         }),
       });
+      // Sem concluir, o nome nem é buscado
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('concluir tudo busca o nome uma vez e grava em todas as etapas', async () => {
+      prisma.deliverySchedule.findMany.mockResolvedValue([
+        { id: 'sch-1', status: 'IN_PRODUCTION' },
+        { id: 'sch-2', status: 'IN_PRODUCTION' },
+      ]);
+      await service.finishAll(['sch-1', 'sch-2'], 'c-1', { userId: 'u-1' });
+
+      expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
+      expect(prisma.productionItemStage.updateMany).toHaveBeenCalled();
+      for (const [arg] of prisma.productionItemStage.updateMany.mock.calls) {
+        expect(arg.data).toMatchObject({
+          doneById: 'u-1',
+          doneByName: 'Ana',
+        });
+      }
+    });
+
+    it('concluir pelo pedido grava o nome nos itens, buscado uma vez', async () => {
+      prisma.productionStage.findFirst
+        .mockResolvedValueOnce({
+          id: 'st-imp',
+          scheduleId: 'sch-1',
+          stageId: 'sec-imp',
+          status: 'IN_PROGRESS',
+        })
+        .mockResolvedValueOnce({ id: 'st-imp', status: 'DONE' });
+      prisma.productionItemStage.findMany
+        .mockResolvedValueOnce([
+          { id: 'a', status: 'IN_PROGRESS' },
+          { id: 'b', status: 'NOT_STARTED' },
+        ])
+        .mockResolvedValueOnce([{ status: 'DONE' }, { status: 'DONE' }]);
+
+      await service.update('st-imp', { status: 'DONE' } as any, 'c-1', {
+        userId: 'u-1',
+      });
+
+      expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
+      expect(
+        prisma.productionItemStage.update.mock.calls.map(
+          ([arg]) => arg.data.doneByName,
+        ),
+      ).toEqual(['Ana', 'Ana']);
+    });
+
+    it('os concluídos sem data vão para o fim', async () => {
+      prisma.productionItemStage.findMany.mockResolvedValueOnce([]);
+      await service.workList('c-1', { view: 'done' });
+      expect(prisma.productionItemStage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [
+            { doneAt: { sort: 'desc', nulls: 'last' } },
+            { updatedAt: 'desc' },
+          ],
+        }),
+      );
     });
 
     it('a lista do setor diz o que falta antes no mesmo item', async () => {

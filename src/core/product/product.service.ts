@@ -19,6 +19,21 @@ export const STRUCTURE_LOCKED =
   'Este produto já foi usado em orçamento e o tipo dele não muda. Para outro tipo, duplique o produto ou inative este e cadastre um novo';
 export const OUTSOURCED_BLOCK_REQUIRED =
   'Informe o fornecedor e o custo do terceirizado';
+export const UNIT_SECTOR_NOT_FOUND =
+  'O setor da unidade de venda precisa ser um setor de produção ativo da empresa';
+
+/**
+ * Os itens de orçamento da empresa em que o produto já entrou, de qualquer
+ * situação: com algum, o tipo dele trava. O PATCH e o "onde é usado"
+ * (ProductCatalogService.usage) contam pelo mesmo filtro.
+ */
+export const soldItemsWhere = (
+  companyId: string,
+  productId: string,
+): Prisma.QuotationProductWhereInput => ({
+  productId,
+  quotation: { companyId },
+});
 import { JsonArray } from '@prisma/client/runtime/library';
 import * as fs from 'fs';
 import * as fastCsv from 'fast-csv';
@@ -71,10 +86,18 @@ export class ProductService {
         ...(Array.isArray(refs.productionStages)
           ? refs.productionStages.map((stage) => stage?.id)
           : []),
-        ...(refs.itemSectors ?? []),
       ],
       { companyId },
       'Setor não encontrado.',
+    );
+    // O setor da etapa de cobrança vira ícone fixo do fluxo (§4.16): só o
+    // setor de produção ativo da empresa, como os que a tela oferece (fora
+    // Entrega e Cliente Retira, do sistema)
+    await assertBelongsToCompany(
+      this.prisma.companySector,
+      refs.itemSectors,
+      { companyId, isProductionStage: true, isSystem: false, isActive: true },
+      UNIT_SECTOR_NOT_FOUND,
     );
   }
 
@@ -704,9 +727,12 @@ export class ProductService {
         nextStructure &&
         nextStructure !== product.structure
       ) {
-        const sold = await this.prisma.quotationProduct.count({
-          where: { productId: id },
-        });
+        // Pela empresa do produto, como o "onde é usado" da tela conta
+        const sold = product.companyId
+          ? await this.prisma.quotationProduct.count({
+              where: soldItemsWhere(product.companyId, id),
+            })
+          : 0;
         if (sold > 0) throw new BadRequestException(STRUCTURE_LOCKED);
       }
       const items = updateProductDto.items?.map((item, index) => ({

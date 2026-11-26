@@ -117,8 +117,10 @@ export class SectorController {
     return this.sectorService.productionSetup(req.user.companyId);
   }
 
+  // Rota nova: a permissão já recusa, fora do modo observar da classe
   @Post('production-setup')
   @HasPermission('edit', 'company_settings:sectors')
+  @ObservePermissions(false)
   @UseGuards(FeatureGuard)
   @RequiresFeature('product_production_stages')
   @ApiOperation({ summary: 'Grava os setores de produção da empresa' })
