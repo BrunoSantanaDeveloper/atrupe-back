@@ -224,6 +224,7 @@ export class DeliveryScheduleService {
                 prevStatus: true,
                 notes: true,
                 order: true,
+                fixed: true,
                 stage: { select: { id: true, name: true } },
               },
               orderBy: { order: 'asc' },
@@ -354,6 +355,11 @@ export class DeliveryScheduleService {
                 name: stage.stage.name,
                 icon: stage.stage.icon,
               },
+              // Veio de uma etapa de cobrança de algum item: não sai do
+              // pedido (área 9 §4.16)
+              fixed: (delivery.itemStages ?? []).some(
+                (item) => item.fixed && item.stage.id === stage.stage.id,
+              ),
             })),
             // O segundo nível da agenda (área 9 §4.7, 29/10/2026): os itens
             // da ordem, com a medida e, com projeto no gerenciador, as etapas

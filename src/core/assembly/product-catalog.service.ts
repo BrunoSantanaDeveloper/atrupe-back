@@ -170,6 +170,9 @@ export class ProductCatalogService {
                 width: item.width,
                 unitKind: item.unitKind,
                 defaultUnitOfMeasureId: item.defaultUnitOfMeasureId,
+                // A ordem e o setor da etapa de cobrança (§4.16)
+                position: item.position,
+                sectorId: item.sectorId,
               })),
             },
           },

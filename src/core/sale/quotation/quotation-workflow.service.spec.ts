@@ -1418,6 +1418,8 @@ describe('QuotationWorkflowService', () => {
             quotationProductId: 'qp-1',
             stageId: 'sector-1',
             order: 1,
+            // Sem etapa de cobrança com setor, o ícone é livre (§4.16)
+            fixed: false,
           },
         ],
       });

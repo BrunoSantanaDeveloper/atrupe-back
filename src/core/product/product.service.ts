@@ -25,6 +25,7 @@ import * as fastCsv from 'fast-csv';
 import { ProductFiscalService } from '../fiscal/product-fiscal/product-fiscal.service';
 import { buildProductListWhere } from './product-list-where.util';
 import { assertBelongsToCompany } from 'src/shared/tenant/company-scope';
+import { fixedSectors, parseStages, withFixedStages } from './production-flow';
 
 const EXPORT_LIMIT = '10000';
 
@@ -54,6 +55,7 @@ export class ProductService {
       categoryId?: string | null;
       sectorId?: string | null;
       productionStages?: { id?: string }[] | null;
+      itemSectors?: (string | null | undefined)[];
     },
   ) {
     await assertBelongsToCompany(
@@ -69,6 +71,7 @@ export class ProductService {
         ...(Array.isArray(refs.productionStages)
           ? refs.productionStages.map((stage) => stage?.id)
           : []),
+        ...(refs.itemSectors ?? []),
       ],
       { companyId },
       'Setor não encontrado.',
@@ -190,6 +193,7 @@ export class ProductService {
       categoryId: createProductDto.categoryId,
       sectorId: createProductDto.sectorId,
       productionStages: createProductDto.productionStages as any,
+      itemSectors: createProductDto.items?.map((item) => item.sectorId),
     });
 
     try {
@@ -225,9 +229,14 @@ export class ProductService {
           volume: item.volume,
           distance: item.distance,
           duration: item.duration,
+          sectorId: item.sectorId || null,
         })) || [];
 
-      const productionStages = createProductDto.productionStages || [];
+      // Os setores das etapas de cobrança são ícones fixos do fluxo (§4.16)
+      const productionStages = withFixedStages(
+        parseStages(createProductDto.productionStages || []),
+        fixedSectors(items),
+      );
 
       const outsourced = await this.structureData(
         createProductDto.companyId,
@@ -608,6 +617,7 @@ export class ProductService {
         categoryId: true,
         sectorId: true,
         productionStages: true,
+        items: { select: { sectorId: true } },
       },
     });
     // Sem o produto, o fluxo abaixo responde o 404
@@ -638,6 +648,11 @@ export class ProductService {
         productionStages: Array.isArray(stages)
           ? stages.filter((stage) => !savedStages.has(stage?.id))
           : stages,
+        itemSectors: updateProductDto.items
+          ?.map((item) => item.sectorId)
+          .filter(
+            (id) => id && !owner.items.some((item) => item.sectorId === id),
+          ),
       });
     }
 
@@ -709,7 +724,34 @@ export class ProductService {
         volume: item.volume,
         distance: item.distance,
         duration: item.duration,
+        // Sem o campo no corpo, o setor da unidade fica como está
+        ...(item.sectorId !== undefined && { sectorId: item.sectorId || null }),
       }));
+
+      // O fluxo com os fixos garantidos (§4.16): muda quando mudam as
+      // unidades ou a sequência; os fixos que faltam entram no fim
+      const nextStages =
+        updateProductDto.items ||
+        updateProductDto.productionStages !== undefined
+          ? withFixedStages(
+              parseStages(
+                updateProductDto.productionStages !== undefined
+                  ? updateProductDto.productionStages || []
+                  : product.productionStages,
+              ),
+              fixedSectors(
+                updateProductDto.items
+                  ? updateProductDto.items.map((item) => ({
+                      sectorId:
+                        item.sectorId !== undefined
+                          ? item.sectorId
+                          : product.items.find((row) => row.id === item.id)
+                              ?.sectorId,
+                    }))
+                  : product.items,
+              ),
+            )
+          : undefined;
 
       const itemsWithId = items?.filter((item) => item.id);
       const itemsWithoutId = items?.filter((item) => !item.id);
@@ -801,11 +843,10 @@ export class ProductService {
             })),
             create: itemsWithoutId?.map((item) => ({ ...item })),
           },
-          // Sem `productionStages` no corpo, as etapas ficam como estão
-          ...(updateProductDto.productionStages !== undefined && {
-            productionStages: JSON.parse(
-              JSON.stringify(updateProductDto.productionStages || []),
-            ),
+          // Sem `productionStages` nem `items` no corpo, as etapas ficam
+          // como estão
+          ...(nextStages !== undefined && {
+            productionStages: JSON.parse(JSON.stringify(nextStages)),
           }),
         },
       });

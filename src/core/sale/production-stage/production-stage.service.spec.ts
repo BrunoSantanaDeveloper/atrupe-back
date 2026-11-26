@@ -1,5 +1,13 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
-import { ProductionStageService } from './production-stage.service';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  FIXED_STAGE,
+  ProductionStageService,
+  STAGE_ALREADY_IN_ORDER,
+} from './production-stage.service';
 
 describe('ProductionStageService: etapas das agendas da empresa', () => {
   let prisma: any;
@@ -396,6 +404,101 @@ describe('ProductionStageService: etapas das agendas da empresa', () => {
         where: { id: 'st-imp' },
         data: { status: 'CANCELED', prevStatus: 'IN_PROGRESS' },
       });
+    });
+  });
+
+  describe('ícones fixos e livres no pedido (§4.16)', () => {
+    beforeEach(() => {
+      prisma.productionItemStage.count = jest.fn().mockResolvedValue(0);
+      prisma.productionItemStage.deleteMany = jest.fn();
+      prisma.productionItemStage.createMany = jest.fn();
+      prisma.productionStage.create = jest.fn();
+      prisma.quotationProduct = {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'qp-1', productionItemStages: [{ order: 1 }, { order: 2 }] },
+          ]),
+      };
+      prisma.companySector.findFirst = jest
+        .fn()
+        .mockResolvedValue({ id: 'acab', name: 'Acabamento' });
+      prisma.$transaction = jest.fn((fn) => fn(prisma));
+    });
+
+    it('o ícone fixo (etapa de cobrança) não sai do pedido', async () => {
+      prisma.productionStage.findFirst.mockResolvedValue({
+        id: 'st-1',
+        scheduleId: 'sch-1',
+        stageId: 'imp',
+      });
+      prisma.productionItemStage.count.mockResolvedValue(1);
+      await expect(service.remove('st-1', 'c-1')).rejects.toThrow(
+        new BadRequestException(FIXED_STAGE),
+      );
+      expect(prisma.productionStage.delete).not.toHaveBeenCalled();
+    });
+
+    it('o ícone livre sai do pedido e dos itens', async () => {
+      prisma.productionStage.findFirst.mockResolvedValue({
+        id: 'st-2',
+        scheduleId: 'sch-1',
+        stageId: 'criacao',
+      });
+      await service.remove('st-2', 'c-1');
+      expect(prisma.productionItemStage.deleteMany).toHaveBeenCalledWith({
+        where: { scheduleId: 'sch-1', stageId: 'criacao' },
+      });
+      expect(prisma.productionStage.delete).toHaveBeenCalledWith({
+        where: { id: 'st-2' },
+      });
+    });
+
+    it('acrescentar entra antes da entrega e em cada item', async () => {
+      prisma.deliverySchedule.findFirst.mockResolvedValue({
+        id: 'sch-1',
+        status: 'IN_PRODUCTION',
+      });
+      prisma.productionStage.findMany.mockResolvedValue([
+        { id: 'a', stageId: 'imp', order: 1, stage: { name: 'Impressão' } },
+        { id: 'b', stageId: 'ent', order: 2, stage: { name: 'Entrega' } },
+      ]);
+      await service.addToSchedule('sch-1', 'acab', 'c-1');
+      expect(prisma.productionStage.update).toHaveBeenCalledWith({
+        where: { id: 'b' },
+        data: { order: 3 },
+      });
+      expect(prisma.productionStage.create).toHaveBeenCalledWith({
+        data: {
+          scheduleId: 'sch-1',
+          stageId: 'acab',
+          order: 2,
+          prevStatus: null,
+        },
+      });
+      expect(prisma.productionItemStage.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            scheduleId: 'sch-1',
+            quotationProductId: 'qp-1',
+            stageId: 'acab',
+            order: 3,
+          },
+        ],
+      });
+    });
+
+    it('o setor que o pedido já tem não entra de novo', async () => {
+      prisma.deliverySchedule.findFirst.mockResolvedValue({
+        id: 'sch-1',
+        status: 'IN_PRODUCTION',
+      });
+      prisma.productionStage.findMany.mockResolvedValue([
+        { id: 'a', stageId: 'acab', order: 1, stage: { name: 'Acabamento' } },
+      ]);
+      await expect(
+        service.addToSchedule('sch-1', 'acab', 'c-1'),
+      ).rejects.toThrow(new ConflictException(STAGE_ALREADY_IN_ORDER));
     });
   });
 });

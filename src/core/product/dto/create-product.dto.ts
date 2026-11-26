@@ -60,6 +60,16 @@ export class CreateProductItemDto {
   })
   name: string;
 
+  // O setor da etapa de cobrança (área 9 §4.16): o ícone fixo do fluxo.
+  // Nulo = a unidade não passa por setor (ex.: as ponteiras do banner)
+  @IsOptional()
+  @IsUUID()
+  @ApiPropertyOptional({
+    description: 'Setor em que a unidade de venda é feita',
+    nullable: true,
+  })
+  sectorId?: string | null;
+
   @IsEnum(UnitKind)
   @ApiProperty({
     description: 'Tipo da unidade de medida do item',

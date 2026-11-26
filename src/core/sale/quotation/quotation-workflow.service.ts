@@ -15,6 +15,11 @@ import {
   OrderStatus,
   Quotation,
 } from '@prisma/client';
+import {
+  isZeroed,
+  itemFlow,
+  parseStages,
+} from 'src/core/product/production-flow';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { add } from 'date-fns';
 import { CancelOrderDto } from '../order/dto/create-order.dto';
@@ -1512,7 +1517,8 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
       include: {
-        quotationProduct: true,
+        // As unidades de venda do item: a etapa zerada tira o ícone fixo
+        quotationProduct: { include: { items: true } },
         deliveryInfo: {
           include: {
             deliverySchedule: true,
@@ -1565,15 +1571,49 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
         id: {
           in: quotationProductsIds,
         },
-        productionStages: {
-          not: null,
-        },
+        // O fluxo do produto, ou as etapas de cobrança com setor (§4.16)
+        OR: [
+          { productionStages: { not: Prisma.DbNull } },
+          { items: { some: { sectorId: { not: null } } } },
+        ],
       },
       select: {
         id: true,
         productionStages: true,
+        items: { select: { id: true, sectorId: true } },
       },
     });
+
+    // Os ícones de cada item (área 9 §4.16; Maicol, 26/11/2026): o fluxo do
+    // produto, com os fixos das etapas de cobrança; o fixo cuja etapa ficou
+    // zerada no pedido (Instalação 0 h, o cliente retira) sai deste pedido
+    const productById = new Map(products.map((row) => [row.id, row]));
+    const flowOf = new Map(
+      quotation.quotationProduct
+        .filter(
+          (item) =>
+            !withSnapshot.has(item.id) &&
+            item.productId &&
+            productById.has(item.productId),
+        )
+        .map((item) => {
+          const product = productById.get(item.productId!)!;
+          return [
+            item.id,
+            itemFlow(
+              parseStages(product.productionStages),
+              (product.items ?? []).map((unit) => ({
+                sectorId: unit.sectorId,
+                zeroed: item.items?.length
+                  ? isZeroed(
+                      item.items.find((row) => row.productItemId === unit.id),
+                    )
+                  : false,
+              })),
+            ),
+          ];
+        }),
+    );
 
     // O material de venda direta passa pelo setor dele, quando o setor é
     // etapa de produção (PO, 14/10/2026)
@@ -1617,14 +1657,9 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
     );
 
     const allStages: ProductionStageJson[] = [
-      ...products.flatMap((product) => {
-        const stages =
-          typeof product.productionStages === 'string'
-            ? JSON.parse(product.productionStages)
-            : product.productionStages;
-
-        return stages.filter((stage: ProductionStageJson) => stage.isActive);
-      }),
+      ...[...flowOf.values()].flatMap((flow) =>
+        flow.map((stage) => ({ id: stage.stageId, isActive: true })),
+      ),
       ...materialSectors.map((material) => ({
         id: material.sectorId,
         isActive: true,
@@ -1650,31 +1685,21 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
     // fluxo do item, na ordem em que o fluxo foi criado. A etapa do pedido do
     // mesmo setor passa a ser o resumo delas
     const orderSectors = new Set(uniqueStages.map((stage) => stage.id));
-    const productSectors = new Map(
-      products.map((product) => {
-        const stages: ProductionStageJson[] =
-          typeof product.productionStages === 'string'
-            ? JSON.parse(product.productionStages)
-            : (product.productionStages as unknown as ProductionStageJson[]);
-        return [
-          product.id,
-          (stages ?? [])
-            .filter((stage) => stage.isActive)
-            .map((stage) => stage.id),
-        ];
-      }),
-    );
     const materialSector = new Map(
       materialSectors.map((material) => [material.id, material.sectorId]),
     );
     const itemStages = quotation.quotationProduct.flatMap((item) => {
+      const flow = flowOf.get(item.id);
       const sectors = withSnapshot.has(item.id)
         ? (snapshotSectors.get(item.id) ?? [])
-        : item.productId
-          ? (productSectors.get(item.productId) ?? [])
+        : flow
+          ? flow.map((stage) => stage.stageId)
           : item.materialId && materialSector.get(item.materialId)
             ? [materialSector.get(item.materialId) as string]
             : [];
+      const fixed = new Set(
+        (flow ?? []).filter((stage) => stage.fixed).map((s) => s.stageId),
+      );
       return [...new Set(sectors)]
         .filter((sectorId) => orderSectors.has(sectorId))
         .map((stageId, index) => ({
@@ -1682,6 +1707,7 @@ export class QuotationWorkflowService implements PaymentHoldReleaser {
           quotationProductId: item.id,
           stageId,
           order: index + 1,
+          fixed: fixed.has(stageId),
         }));
     });
 

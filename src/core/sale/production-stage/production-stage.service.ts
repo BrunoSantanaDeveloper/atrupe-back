@@ -22,6 +22,9 @@ const STAGE_NOT_FOUND = 'Etapa de produção nao encontrada';
 const MANAGED_BY_PRODUCTION =
   'As etapas desta venda seguem o gerenciador de produção';
 const ITEM_STAGE_NOT_FOUND = 'Etapa do item não encontrada';
+export const FIXED_STAGE =
+  'Esta etapa é cobrada na composição do produto e não sai do pedido';
+export const STAGE_ALREADY_IN_ORDER = 'O pedido já passa por este setor';
 // Entrega e Cliente Retira não são etapas de produção
 const DELIVERY_STAGES = ['Entrega', 'Cliente Retira'];
 /** A agenda fechada: entregue (FINISHED, DONE) ou cancelada */
@@ -358,9 +361,121 @@ export class ProductionStageService {
     return managed > 0;
   }
 
+  /**
+   * Acrescenta ao pedido um ícone livre (área 9 §4.16; Maicol, 26/11/2026):
+   * o setor entra antes da Entrega ou do Cliente Retira, e cada item do
+   * pedido passa por ele.
+   */
+  async addToSchedule(scheduleId: string, stageId: string, companyId: string) {
+    const schedule = await this.prisma.deliverySchedule.findFirst({
+      where: { id: scheduleId, ...scheduleOfCompany(companyId) },
+      select: { id: true, status: true },
+    });
+    if (!schedule) throw new NotFoundException('Agenda não encontrada');
+    if (['FINISHED', 'DONE'].includes(schedule.status)) {
+      throw new BadRequestException('A entrega deste pedido já foi concluída');
+    }
+    await this.assertNotManaged(scheduleId);
+    const sector = await this.prisma.companySector.findFirst({
+      where: {
+        id: stageId,
+        companyId,
+        isActive: true,
+        isProductionStage: true,
+      },
+      select: { id: true, name: true },
+    });
+    if (!sector || DELIVERY_STAGES.includes(sector.name)) {
+      throw new NotFoundException('Setor não encontrado.');
+    }
+    const stages = await this.prisma.productionStage.findMany({
+      where: { scheduleId },
+      select: { id: true, stageId: true, order: true, stage: true },
+      orderBy: { order: 'asc' },
+    });
+    if (stages.some((stage) => stage.stageId === stageId)) {
+      throw new ConflictException(STAGE_ALREADY_IN_ORDER);
+    }
+    const delivery = stages.filter((stage) =>
+      DELIVERY_STAGES.includes(stage.stage?.name ?? ''),
+    );
+    const production = stages.filter((stage) => !delivery.includes(stage));
+    const order =
+      Math.max(0, ...production.map((stage) => stage.order ?? 0)) + 1;
+    const items = await this.prisma.quotationProduct.findMany({
+      where: {
+        quotation: {
+          OR: [
+            { DeliverySchedule: { is: { id: scheduleId } } },
+            {
+              deliveryInfo: {
+                is: { deliverySchedule: { is: { id: scheduleId } } },
+              },
+            },
+          ],
+        },
+      },
+      select: {
+        id: true,
+        productionItemStages: {
+          where: { scheduleId },
+          select: { order: true },
+        },
+      },
+    });
+    await this.prisma.$transaction(async (tx) => {
+      for (const [index, stage] of delivery.entries()) {
+        await tx.productionStage.update({
+          where: { id: stage.id },
+          data: { order: order + 1 + index },
+        });
+      }
+      await tx.productionStage.create({
+        data: { scheduleId, stageId, order, prevStatus: null },
+      });
+      if (items.length) {
+        await tx.productionItemStage.createMany({
+          data: items.map((item) => ({
+            scheduleId,
+            quotationProductId: item.id,
+            stageId,
+            order:
+              Math.max(0, ...item.productionItemStages.map((s) => s.order)) + 1,
+          })),
+        });
+      }
+    });
+    // O pedido que estava pronto volta a ter o que fazer
+    await this.updateStatusIfAllStagesAreDone(scheduleId);
+    return { ok: true };
+  }
+
+  /**
+   * Tira o ícone do pedido. O fixo, que veio de uma etapa de cobrança do
+   * produto (§4.16), não sai; o livre sai do pedido e dos itens.
+   */
   async remove(id: string, companyId: string) {
     const stage = await this.findOne(id, companyId);
     await this.assertNotManaged(stage.scheduleId);
-    return this.prisma.productionStage.delete({ where: { id } });
+    if (stage.stageId) {
+      const fixed = await this.prisma.productionItemStage.count({
+        where: {
+          scheduleId: stage.scheduleId,
+          stageId: stage.stageId,
+          fixed: true,
+        },
+      });
+      if (fixed > 0) throw new BadRequestException(FIXED_STAGE);
+    }
+    const removed = await this.prisma.$transaction(async (tx) => {
+      if (stage.stageId) {
+        await tx.productionItemStage.deleteMany({
+          where: { scheduleId: stage.scheduleId, stageId: stage.stageId },
+        });
+      }
+      return tx.productionStage.delete({ where: { id } });
+    });
+    await this.updateStatusIfAllStagesAreDone(stage.scheduleId);
+    return removed;
   }
 }

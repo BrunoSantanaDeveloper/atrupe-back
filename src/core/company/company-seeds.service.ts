@@ -19,6 +19,7 @@ import {
 } from 'src/seeds/reasons-status-base';
 import { BASE_PRODUCTS_CATEGORIES } from 'src/seeds/products-categories';
 import { BASE_SECTORS } from 'src/seeds/sectors-base';
+import { unitSectorFromFlow } from 'src/core/product/production-flow';
 import { BASE_CFOPS } from 'src/seeds/cfop-base';
 import { BASE_OPERATION_NATURES } from 'src/seeds/operation-nature-base';
 
@@ -824,6 +825,14 @@ export class CompanySeedsService {
           data: {
             name: item.nome,
             productId: product.id,
+            // A etapa de cobrança já com o setor dela (área 9 §4.16)
+            sectorId: unitSectorFromFlow(
+              item.nome,
+              productData.produto.length,
+              sector.id,
+              productionStages,
+              sectors,
+            ),
             unitKind: unitKind as any,
             salePrice: item.precoVenda || 0,
             unitCost: item.precoUnitario || 0,

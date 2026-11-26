@@ -249,6 +249,7 @@ model CompanySector {
   employees                   Employee[]
   productionStage             ProductionStage[]
   productionItemStages        ProductionItemStage[]
+  productItems                ProductItem[]
   product                     Product[]
   role                        Role[]
   productionManagers          ProductionManager[]
@@ -1931,6 +1932,10 @@ model ProductItem {
   weight                 Float?
   width                  Float?
   unitKind               UnitKind?
+  /// O setor da etapa de cobrança (área 9 §4.16; Maicol, 26/11/2026): o
+  /// ícone fixo do fluxo de produção do produto
+  sectorId               String?
+  sector                 CompanySector?         @relation(fields: [sectorId], references: [id], onDelete: SetNull)
   product                Product                @relation(fields: [productId], references: [id])
   quotationProductItem   QuotationProductItem[]
   DefaultUnitOfMeasure   DefaultUnitOfMeasure?  @relation(fields: [defaultUnitOfMeasureId], references: [id])
@@ -2410,6 +2415,8 @@ model ProductionItemStage {
   status             ProductionStageStatus @default(NOT_STARTED)
   prevStatus         String?
   notes              String?
+  /// Veio de uma etapa de cobrança do produto (§4.16): não sai do pedido
+  fixed              Boolean               @default(false)
   createdAt          DateTime              @default(now())
   updatedAt          DateTime?             @updatedAt
   schedule           DeliverySchedule      @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
@@ -4656,24 +4663,24 @@ model ProductionTaskStep {
 /// feriados da empresa, para a cadeia de alertas. Sem linha, segunda a sexta,
 /// das 08:00 às 18:00 (o fim de semana não conta como expediente).
 model ProductionCalendar {
-  id         String   @id @default(uuid())
-  companyId  String   @unique
+  id           String                 @id @default(uuid())
+  companyId    String                 @unique
   /// 0 = domingo … 6 = sábado
-  workDays   Int[]    @default([1, 2, 3, 4, 5])
-  startTime  String   @default("08:00")
-  endTime    String   @default("18:00")
+  workDays     Int[]                  @default([1, 2, 3, 4, 5])
+  startTime    String                 @default("08:00")
+  endTime      String                 @default("18:00")
   /// O intervalo (almoço) da empresa, opcional; o gerenciador novo copia
   /// o expediente com ele (GP-49)
-  breakStart String?
-  breakEnd   String?
+  breakStart   String?
+  breakEnd     String?
   /// YYYY-MM-DD
-  holidays   String[]
+  holidays     String[]
   /// Quando uma etapa atrasa (Maicol, 24/11/2026): só avisar toda a cadeia
   /// (WARN) ou avisar e reagendar (RESCHEDULE, a agenda viva), que refaz a
   /// agenda de todas as máquinas pela cadeia. Vale para a empresa inteira.
   liveSchedule ProductionLiveSchedule @default(WARN)
-  updatedAt  DateTime @updatedAt
-  company    Company  @relation(fields: [companyId], references: [id])
+  updatedAt    DateTime               @updatedAt
+  company      Company                @relation(fields: [companyId], references: [id])
 
   @@map("production_calendars")
 }

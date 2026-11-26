@@ -19,7 +19,11 @@ import { UpdateProductionStageDto } from './dto/update-production-stage.dto';
 import { JwtAuthGuard } from 'src/core/auth/guards/jwt.guard';
 import { FeatureGuard } from 'src/core/plan/guards/feature.guard';
 import { RequiresFeature } from 'src/core/plan/decorators/requires-feature.decorator';
-import { UpdateItemStageDto, FinishAllStagesDto } from './dto/item-stage.dto';
+import {
+  UpdateItemStageDto,
+  FinishAllStagesDto,
+  AddScheduleStageDto,
+} from './dto/item-stage.dto';
 
 const RESOURCE = 'production-stage';
 
@@ -105,6 +109,24 @@ export class ProductionStageController {
   finishAll(@Req() req, @Body() dto: FinishAllStagesDto) {
     return this.productionStageService.finishAll(
       dto.scheduleIds,
+      req.user.companyId,
+    );
+  }
+
+  // O ícone livre acrescentado no pedido (área 9 §4.16)
+  @Post('schedule/:id/stage')
+  @HasPermission('edit', 'production:delivery_schedule')
+  @UseGuards(FeatureGuard)
+  @RequiresFeature('delivery_stage_status_change')
+  @ApiOperation({ summary: 'Acrescentar um setor ao fluxo do pedido' })
+  addToSchedule(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: AddScheduleStageDto,
+  ) {
+    return this.productionStageService.addToSchedule(
+      id,
+      dto.stageId,
       req.user.companyId,
     );
   }

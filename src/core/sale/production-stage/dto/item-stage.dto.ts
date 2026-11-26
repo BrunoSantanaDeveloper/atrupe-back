@@ -33,3 +33,10 @@ export class FinishAllStagesDto {
   @IsUUID('all', { each: true })
   scheduleIds: string[];
 }
+
+/** O ícone livre acrescentado no pedido, pela agenda (área 9 §4.16) */
+export class AddScheduleStageDto {
+  @IsUUID()
+  @ApiProperty({ description: 'Setor (etapa de produção) a acrescentar' })
+  stageId: string;
+}
