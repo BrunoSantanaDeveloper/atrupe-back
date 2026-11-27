@@ -109,6 +109,26 @@ export class SupplierController {
     return this.supplierService.findOne(id);
   }
 
+  /**
+   * Mesma ação por dois caminhos: a tela de cadastro é a mesma de cliente e
+   * fornecedor e monta a rota com o tipo (`/client/:id/status`,
+   * `/supplier/:id/status`). Só o cliente tinha `:id/status`, então inativar
+   * um fornecedor respondia "Cannot PATCH /supplier/:id/status". O nome
+   * antigo fica para quem já o chamava.
+   */
+  @Patch(':id/status')
+  @HasPermission('edit', 'register:supplier')
+  @ApiOperation({ summary: 'Ativa ou inativa um fornecedor' })
+  @ApiParam({ name: 'id', required: true, description: 'ID do fornecedor' })
+  @ApiResponse({
+    status: 200,
+    description: 'Status do fornecedor alterado com sucesso.',
+  })
+  @ApiResponse({ status: 404, description: 'Fornecedor não encontrado.' })
+  alterarStatus(@Param('id') id: string) {
+    return this.supplierService.toggleStatus(id);
+  }
+
   @Patch(':id/toggle-status')
   @HasPermission('edit', 'register:supplier')
   @ApiOperation({

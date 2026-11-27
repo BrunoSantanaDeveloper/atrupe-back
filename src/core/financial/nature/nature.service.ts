@@ -10,6 +10,18 @@ import { PrismaService } from 'nestjs-prisma';
 import { NatureFilterDto } from './dto/nature-filter.dto';
 import { Nature, SubCategory } from '@prisma/client';
 
+/**
+ * Ordena por código sem quebrar quando ele falta.
+ *
+ * Natureza e subcategoria aceitam `code` nulo no banco, e a importação do
+ * financeiro criou várias assim: o `localeCompare` direto estourava
+ * "Cannot read properties of null", o catch virava 500 e a tela de Plano de
+ * contas aparecia vazia para a empresa inteira — com as abas contando certo,
+ * porque elas vêm de outra consulta. Seis contas estavam nesse estado.
+ */
+const porCodigo = (a: { code?: string | null }, b: { code?: string | null }) =>
+  (a.code ?? '').localeCompare(b.code ?? '');
+
 @Injectable()
 export class NatureService {
   private readonly logger = new Logger(NatureService.name);
@@ -169,11 +181,11 @@ export class NatureService {
         if (status === 'ACTIVES' || !status) {
           nature.subCategories = nature.subCategories
             .filter((sub) => sub.isActive)
-            .sort((a, b) => a.code.localeCompare(b.code));
+            .sort(porCodigo);
         } else if (status === 'INACTIVES') {
           nature.subCategories = nature.subCategories
             .filter((sub) => !sub.isActive)
-            .sort((a, b) => a.code.localeCompare(b.code));
+            .sort(porCodigo);
         }
       });
       // Agrupar por level2
@@ -182,7 +194,7 @@ export class NatureService {
       >((acc, level2Key) => {
         acc[level2Key] = filteredNatures
           .filter((nature) => nature.level2 === level2Key)
-          .sort((a, b) => a.code.localeCompare(b.code));
+          .sort(porCodigo);
         return acc;
       }, {});
 
@@ -211,7 +223,7 @@ export class NatureService {
               ...level2Group,
               natures: level2Group.natures
                 .filter((nature) => nature.level1 === level1Key)
-                .sort((a, b) => a.code.localeCompare(b.code)),
+                .sort(porCodigo),
             }))
             .filter(
               (group) =>
