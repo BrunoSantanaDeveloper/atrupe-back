@@ -35,6 +35,41 @@ export class ClientService {
   }
 
   /**
+   * Filtro que acha o cadastro que já ocupa o documento.
+   *
+   * A tela manda o CPF/CNPJ com máscara ("12.345.678/0001-95") e a gravação
+   * guarda só os dígitos. A checagem de duplicidade comparava o texto
+   * recebido com o que está no banco, então nunca batia: todo documento
+   * digitado passava, e o mesmo cliente entrava quantas vezes fosse
+   * cadastrado. Procura pelos dígitos e também pelo texto recebido, porque
+   * alguns registros antigos estão gravados com pontuação.
+   */
+  private mesmoDocumento(campo: 'cpf' | 'cnpj', valor: string) {
+    const digitos = this.normalizeDocument(valor) ?? valor;
+    const variantes = digitos === valor ? [valor] : [digitos, valor];
+
+    return {
+      OR: variantes.map((v) => (campo === 'cpf' ? { cpf: v } : { cnpj: v })),
+    };
+  }
+
+  /** Erro que diz qual cadastro está com o documento. */
+  private jaCadastrado(
+    tipo: 'cliente' | 'fornecedor',
+    rotulo: 'CPF' | 'CNPJ',
+    valor: string,
+    achado: { name?: string | null; status?: ClientStatus | null },
+  ) {
+    const nome = achado?.name ? `: ${achado.name}` : '';
+    const inativo =
+      achado?.status === ClientStatus.INACTIVE ? ' (inativo)' : '';
+
+    return new BadRequestException(
+      `Já existe um ${tipo} cadastrado com o ${rotulo} ${valor}${nome}${inativo}`,
+    );
+  }
+
+  /**
    * Determina o status do cliente baseado nos dados fornecidos
    * Regras:
    * - Se tiver só o nome: PROSPECT
@@ -92,32 +127,28 @@ export class ClientService {
         if (cpf) {
           const existingClient = await this.prisma.client.findFirst({
             where: {
-              cpf: cpf,
+              ...this.mesmoDocumento('cpf', cpf),
               companyId: createClientDto.companyId,
               isBranch: false, // Só valida se o existente NÃO for filial
             },
           });
 
           if (existingClient) {
-            throw new BadRequestException(
-              `Já existe um cliente cadastrado com o CPF ${cpf}`,
-            );
+            throw this.jaCadastrado('cliente', 'CPF', cpf, existingClient);
           }
         }
 
         if (cnpj) {
           const existingClient = await this.prisma.client.findFirst({
             where: {
-              cnpj: cnpj,
+              ...this.mesmoDocumento('cnpj', cnpj),
               companyId: createClientDto.companyId,
               isBranch: false, // Só valida se o existente NÃO for filial
             },
           });
 
           if (existingClient) {
-            throw new BadRequestException(
-              `Já existe um cliente cadastrado com o CNPJ ${cnpj}`,
-            );
+            throw this.jaCadastrado('cliente', 'CNPJ', cnpj, existingClient);
           }
         }
       }
@@ -599,7 +630,7 @@ export class ClientService {
         if (cpf) {
           const existingClient = await this.prisma.client.findFirst({
             where: {
-              cpf: cpf,
+              ...this.mesmoDocumento('cpf', cpf),
               companyId: client.companyId,
               id: { not: id },
               isBranch: false, // Só valida se o existente NÃO for filial
@@ -607,16 +638,14 @@ export class ClientService {
           });
 
           if (existingClient) {
-            throw new BadRequestException(
-              `Já existe um cliente cadastrado com o CPF ${cpf}`,
-            );
+            throw this.jaCadastrado('cliente', 'CPF', cpf, existingClient);
           }
         }
 
         if (cnpj) {
           const existingClient = await this.prisma.client.findFirst({
             where: {
-              cnpj: cnpj,
+              ...this.mesmoDocumento('cnpj', cnpj),
               companyId: client.companyId,
               id: { not: id },
               isBranch: false, // Só valida se o existente NÃO for filial
@@ -624,9 +653,7 @@ export class ClientService {
           });
 
           if (existingClient) {
-            throw new BadRequestException(
-              `Já existe um cliente cadastrado com o CNPJ ${cnpj}`,
-            );
+            throw this.jaCadastrado('cliente', 'CNPJ', cnpj, existingClient);
           }
         }
       }
@@ -946,23 +973,27 @@ export class ClientService {
     // 2. Verificar se já existe fornecedor com mesmo CPF ou CNPJ
     if (client.cpf) {
       const existing = await this.prisma.supplier.findFirst({
-        where: { cpf: client.cpf, companyId, isBranch: false },
+        where: {
+          ...this.mesmoDocumento('cpf', client.cpf),
+          companyId,
+          isBranch: false,
+        },
       });
       if (existing) {
-        throw new BadRequestException(
-          `Já existe um fornecedor cadastrado com o CPF ${client.cpf}`,
-        );
+        throw this.jaCadastrado('fornecedor', 'CPF', client.cpf, existing);
       }
     }
 
     if (client.cnpj) {
       const existing = await this.prisma.supplier.findFirst({
-        where: { cnpj: client.cnpj, companyId, isBranch: false },
+        where: {
+          ...this.mesmoDocumento('cnpj', client.cnpj),
+          companyId,
+          isBranch: false,
+        },
       });
       if (existing) {
-        throw new BadRequestException(
-          `Já existe um fornecedor cadastrado com o CNPJ ${client.cnpj}`,
-        );
+        throw this.jaCadastrado('fornecedor', 'CNPJ', client.cnpj, existing);
       }
     }
 

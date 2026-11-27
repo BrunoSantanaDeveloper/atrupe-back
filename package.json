@@ -72,7 +72,9 @@
     "produtos:salvar-no-produto": "node dist/src/scripts/repair-nfe-saved-product-prices.js",
     "produtos:salvar-no-produto:dev": "ts-node src/scripts/repair-nfe-saved-product-prices.ts",
     "financeiro:vinculos": "node dist/src/scripts/link-imported-financial-parties.js",
-    "financeiro:vinculos:dev": "ts-node src/scripts/link-imported-financial-parties.ts"
+    "financeiro:vinculos:dev": "ts-node src/scripts/link-imported-financial-parties.ts",
+    "fornecedores:enderecos": "node dist/src/scripts/dedupe-supplier-addresses.js",
+    "fornecedores:enderecos:dev": "ts-node src/scripts/dedupe-supplier-addresses.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

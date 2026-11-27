@@ -291,6 +291,52 @@ describe('ClientService', () => {
       await expect(service.create(dto)).rejects.toThrow(/CNPJ/);
     });
 
+    /**
+     * A tela manda o documento com máscara e o banco guarda só os dígitos: a
+     * comparação nunca batia e o mesmo cliente entrava de novo.
+     */
+    it('deve reconhecer o CNPJ com máscara contra o que está gravado', async () => {
+      prismaMock.client.findFirst.mockResolvedValue(makeClient());
+
+      const dto: any = {
+        type: 'COMPANY',
+        companyId: 'company-A',
+        general: {
+          name: 'Empresa Duplicada',
+          cnpj: '12.345.678/0001-95',
+          isBranch: false,
+        },
+      };
+
+      await expect(service.create(dto)).rejects.toThrow(BadRequestException);
+
+      const where = prismaMock.client.findFirst.mock.calls[0][0].where;
+      expect(where.OR).toEqual([
+        { cnpj: '12345678000195' },
+        { cnpj: '12.345.678/0001-95' },
+      ]);
+    });
+
+    it('deve dizer qual cadastro está com o documento', async () => {
+      prismaMock.client.findFirst.mockResolvedValue(
+        makeClient({ name: 'Mercado Capuava', status: 'INACTIVE' }),
+      );
+
+      const dto: any = {
+        type: 'COMPANY',
+        companyId: 'company-A',
+        general: {
+          name: 'Mercado Capuava 2',
+          cnpj: '12.345.678/0001-95',
+          isBranch: false,
+        },
+      };
+
+      await expect(service.create(dto)).rejects.toThrow(
+        /Mercado Capuava \(inativo\)/,
+      );
+    });
+
     it('deve rejeitar cliente com CPF duplicado na mesma empresa', async () => {
       prismaMock.client.findFirst.mockResolvedValue(
         makeClient({ cpf: '12345678901', cnpj: null }),
