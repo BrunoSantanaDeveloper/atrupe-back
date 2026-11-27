@@ -1316,6 +1316,27 @@ describe('NfeService', () => {
         expect(result.duplicatas).toEqual([]);
       });
 
+      /**
+       * Parcela vencendo hoje é pagamento à vista, e a SEFAZ recusa a nota
+       * com cobrança preenchida (rejeição 853). A O.S. aprovada hoje, com
+       * pagamento na entrega, cai exatamente aqui.
+       */
+      it('não traz parcela que vence hoje, que sai como pagamento à vista', async () => {
+        prisma.quotation.findFirst.mockResolvedValue(
+          comFechamento({
+            discountTotal: 0,
+            quotationInstallment: [{ value: 10000, dueDate: new Date() }],
+          }),
+        );
+
+        const result = await service.prepareFromOrder(
+          mockCompanyId,
+          mockOrderId,
+        );
+
+        expect(result.duplicatas).toEqual([]);
+      });
+
       /** O caso completo: desconto rateado e parcelas que fecham no total. */
       it('desconto rateado e parcelas batendo com o total da nota', async () => {
         prisma.quotation.findFirst.mockResolvedValue(
@@ -2906,6 +2927,62 @@ describe('NfeService', () => {
         expect(previa.avisos.join(' ')).toMatch(/homologação/i);
         expect(previa.destinatario?.xNome_dest).toMatch(/SEM VALOR FISCAL/);
       });
+
+      /**
+       * Rejeição 853: "Dados de cobrança não devem ser informados para
+       * pagamento à vista". Duplicata vencendo na data de emissão é à vista,
+       * e a nota volta rejeitada — aconteceu com a 37 da Criarte e a 6 da
+       * GrafK. O relógio está fixo em 08/09/2026 pelo beforeEach.
+       */
+      describe('cobrança de nota à vista', () => {
+        const comDuplicata = (dataVencimento: string) => ({
+          ...mockEmitDto,
+          duplicatas: [{ numero: '001', dataVencimento, valor: 200 }],
+        });
+
+        it('não envia o quadro de cobrança quando a duplicata vence na emissão', async () => {
+          await service.emit(mockCompanyId, comDuplicata('2026-09-08') as any);
+
+          expect(payloadEmitido().Documento.cobr).toBeUndefined();
+        });
+
+        it('não envia o quadro de cobrança quando a duplicata já venceu', async () => {
+          await service.emit(mockCompanyId, comDuplicata('2026-09-01') as any);
+
+          expect(payloadEmitido().Documento.cobr).toBeUndefined();
+        });
+
+        it('envia a cobrança quando a duplicata vence depois da emissão', async () => {
+          await service.emit(mockCompanyId, comDuplicata('2026-10-08') as any);
+
+          expect(payloadEmitido().Documento.cobr.dup).toEqual([
+            { nDup: '001', dVenc: '2026-10-08', vDup: '200.00' },
+          ]);
+        });
+
+        /** Uma vencendo hoje derruba todas: a soma tem de fechar com a nota. */
+        it('uma duplicata vencendo hoje descarta o conjunto inteiro', async () => {
+          await service.emit(mockCompanyId, {
+            ...mockEmitDto,
+            duplicatas: [
+              { numero: '001', dataVencimento: '2026-09-08', valor: 100 },
+              { numero: '002', dataVencimento: '2026-10-08', valor: 100 },
+            ],
+          } as any);
+
+          expect(payloadEmitido().Documento.cobr).toBeUndefined();
+        });
+
+        it('a prévia explica a cobrança que a nota não leva', async () => {
+          const previa = await service.preview(
+            mockCompanyId,
+            comDuplicata('2026-09-08') as any,
+          );
+
+          expect(previa.avisos.join(' ')).toMatch(/cobrança/i);
+          expect(previa.duplicatas).toEqual([]);
+        });
+      });
     });
 
     /**
@@ -2964,7 +3041,7 @@ describe('NfeService', () => {
 
           await service.emit(mockCompanyId, {
             ...mockEmitDto,
-            duplicatas: [{ numero: '001', dataVencimento: '2026-12-01' }],
+            duplicatas: [{ numero: '001', dataVencimento: '2099-12-01' }],
           } as any);
 
           // 2 x 100 = 200 de produtos, IPI de 10% = 20.

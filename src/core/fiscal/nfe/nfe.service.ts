@@ -482,19 +482,16 @@ export class NfeService {
       }));
 
       /**
-       * Parcela vencida não vira duplicata: a SEFAZ recusa a nota com
-       * "Data de vencimento da parcela não informada ou menor que a Data de
-       * Emissão". A O.S. é aprovada muito antes de a nota sair — 25.994 das
-       * 30.586 O.S. aprovadas da base já têm parcela vencida —, então trazer
-       * a cobrança sem olhar a data troca o campo vazio por uma rejeição.
-       *
-       * Ou todas servem, ou nenhuma: tirar só as vencidas deixaria a soma
-       * fora do total da nota, que a SEFAZ também confere.
+       * Parcela vencida ou vencendo hoje não vira duplicata: a nota sairia
+       * com cobrança de uma venda à vista. A O.S. é aprovada muito antes de
+       * a nota sair — 25.994 das 30.586 O.S. aprovadas da base já têm
+       * parcela vencida —, então trazer a cobrança sem olhar a data troca o
+       * campo vazio por uma rejeição. O porquê está em `duplicatasAPrazo`.
        */
-      const hoje = toProjectDateKey(new Date());
-      if (duplicatas.some((dup) => dup.dataVencimento < hoje)) return [];
-
-      return this.duplicatasQueFecham(duplicatas, valorNota);
+      return this.duplicatasQueFecham(
+        this.duplicatasAPrazo(duplicatas, new Date()),
+        valorNota,
+      );
     })();
 
     // Verificar se já existe NF-e emitida para esta ordem
@@ -2395,6 +2392,36 @@ export class NfeService {
     return soma === arredondar(totalDaNota, 2) ? lista : [];
   }
 
+  /**
+   * Cobrança só vale quando a nota é mesmo a prazo.
+   *
+   * Duplicata vencendo na data de emissão é pagamento à vista, e a SEFAZ
+   * recusa a nota com a rejeição 853, "Dados de cobrança não devem ser
+   * informados para pagamento à vista" — foi o que barrou a nota 37 da
+   * Criarte e a 6 da GrafK, as duas únicas da base com esse vencimento.
+   * Vencimento já passado cai na rejeição "Data de vencimento da parcela não
+   * informada ou menor que a Data de Emissão". A O.S. é aprovada e
+   * parcelada antes de a nota sair, então as duas datas aparecem sozinhas.
+   *
+   * Ou todas as duplicatas servem, ou nenhuma: tirar só a que vence hoje
+   * deixaria a soma fora do total da nota, que a SEFAZ também confere.
+   */
+  private duplicatasAPrazo<T extends { dataVencimento?: string | null }>(
+    duplicatas: T[] | undefined | null,
+    dataEmissao: Date,
+  ): T[] {
+    const lista = duplicatas ?? [];
+    if (!lista.length) return [];
+
+    const emissao = toProjectDateKey(dataEmissao);
+    const aPrazo = lista.every(
+      (dup) =>
+        !!dup.dataVencimento && dup.dataVencimento.slice(0, 10) > emissao,
+    );
+
+    return aPrazo ? lista : [];
+  }
+
   private async itensComCstDoRegime(
     companyId: string,
     nfe: { invoicyConfigId?: string | null },
@@ -3013,6 +3040,13 @@ export class NfeService {
       const finalidadeNatureza = parseNat(natureza?.finality);
       const presencaNatureza = parseNat(natureza?.consumerPresence);
 
+      /**
+       * Última conferência da cobrança, antes de virar XML. O filtro da O.S.
+       * roda quando a tela monta, e entre montar e transmitir a nota ainda
+       * passam o rascunho guardado dias antes e a duplicata digitada à mão.
+       */
+      const duplicatasDaCobranca = this.duplicatasAPrazo(dto.duplicatas, now);
+
       // Construir payload para o Invoicy
       const invoicyRequest: InvoicyNfeRequest = {
         Documento: {
@@ -3250,7 +3284,7 @@ export class NfeService {
             return infCpl ? { infAdic: { infCpl } } : {};
           })(),
           // Duplicatas/Cobrança
-          ...(dto.duplicatas && dto.duplicatas.length > 0
+          ...(duplicatasDaCobranca.length > 0
             ? {
                 cobr: {
                   fat: {
@@ -3259,7 +3293,7 @@ export class NfeService {
                     vDesc: '0.00',
                     vLiq: valorTotalNota.toFixed(2),
                   },
-                  dup: dto.duplicatas.map((d) => ({
+                  dup: duplicatasDaCobranca.map((d) => ({
                     nDup: d.numero || '',
                     dVenc: d.dataVencimento || '',
                     vDup: (d.valor || 0).toFixed(2),
@@ -3303,6 +3337,11 @@ export class NfeService {
       if (tipoDocumento === 0 && (dto.tipo ?? 1) === 1) {
         avisos.push(
           'A nota sai como documento de entrada porque os CFOPs dos itens são de entrada.',
+        );
+      }
+      if (dto.duplicatas?.length && !duplicatasDaCobranca.length) {
+        avisos.push(
+          'A nota sai sem o quadro de cobrança: duplicata que vence na data de emissão, ou antes, é pagamento à vista, e a SEFAZ recusa a nota com os dados de cobrança preenchidos.',
         );
       }
       const semGtin = dto.items.filter(
